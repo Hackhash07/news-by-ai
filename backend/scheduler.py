@@ -1,8 +1,7 @@
 import schedule
 import time
 
-from news_collector import collect_news
-
+from backend.news_collector import collect_news
 
 def job():
 
