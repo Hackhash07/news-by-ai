@@ -1,10 +1,12 @@
 from flask import Flask
 from flask_cors import CORS
 from database import get_articles
+from market_data import get_market_data
 import json
 
 app = Flask(__name__)
-CORS(app)
+CORS(app
+)
 
 @app.route("/")
 def home():
@@ -13,6 +15,10 @@ def home():
         "message": "News By AI API Running"
     }
 
+@app.route("/market-data")
+def market_data():
+
+    return get_market_data()
 
 @app.route("/news")
 def news():
