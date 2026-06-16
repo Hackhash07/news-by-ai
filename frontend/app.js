@@ -187,7 +187,22 @@ function renderFilters() {
             renderDashboard();
         });
     });
+
 }
+function getCategoryIcon(category) {
+
+    if (category === "Finance")
+        return "💰";
+
+    if (category === "Geopolitics")
+        return "🌍";
+
+    if (category === "Technology")
+        return "💻";
+
+    return "📰";
+}
+
 
 function renderCards(articles) {
     if (!articles.length) {
@@ -214,7 +229,10 @@ function renderCards(articles) {
 
         card.innerHTML = `
             <div class="card-top">
-                <h2 class="news-title">${article.title}</h2>
+		<h2 class="news-title">
+		    ${getCategoryIcon(article.category)}
+		    ${article.title}
+		</h2>
                 <span class="badge ${String(article.sentiment || "").toLowerCase().includes("positive") ? "green" : String(article.sentiment || "").toLowerCase().includes("negative") ? "red" : "gray"}">
                     ${article.sentiment}
                 </span>
