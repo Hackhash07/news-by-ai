@@ -1,6 +1,7 @@
 from flask import Flask, send_from_directory
 from flask_cors import CORS
 from backend.database import get_articles
+from backend.news_collector import collect_news
 from backend.market_data import get_market_data
 import json
 
@@ -60,7 +61,10 @@ def news():
         })
 
     return articles
-
+@app.route("/update-news")
+def update_news():
+    collect_news()
+    return {"status":"updated"}
 
 if __name__ == "__main__":
     app.run(debug=True)
