@@ -1,7 +1,7 @@
 from flask import Flask
 from flask_cors import CORS
-from database import get_articles
-from market_data import get_market_data
+from backend.database import get_articles
+from backend.market_data import get_market_data
 import json
 
 app = Flask(__name__)
