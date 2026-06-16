@@ -27,6 +27,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // Market open/closed heuristic (Mon–Fri 09:15–15:30 IST)
     updateMarketStatus();
 
+	loadTicker();
+	setInterval(loadTicker, 60000);
+
     refs.searchInput.addEventListener("input", (e) => {
         state.search = e.target.value || "";
         renderDashboard();
@@ -358,4 +361,76 @@ function escapeHtml(str) {
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;");
+}
+async function loadTicker() {
+
+    try {
+
+        const response =
+            await fetch(
+                "http://127.0.0.1:5000/market-data"
+            );
+
+        const data =
+            await response.json();
+
+        const btcPrice =
+            document.getElementById("btc-price");
+
+        const btcChange =
+            document.getElementById("btc-change");
+
+        if (btcPrice && btcChange && data.BTC) {
+
+            btcPrice.textContent =
+                Number(data.BTC.price)
+                    .toLocaleString();
+
+            const change =
+                Number(data.BTC.change);
+
+            btcChange.textContent =
+                (change >= 0 ? "▲ " : "▼ ")
+                + Math.abs(change)
+                + "%";
+
+            btcChange.style.color =
+                change >= 0
+                ? "#10b981"
+                : "#ef4444";
+        }
+
+        const usdinrPrice =
+            document.getElementById(
+                "usdinr-price"
+            );
+
+        const usdinrChange =
+            document.getElementById(
+                "usdinr-change"
+            );
+
+        if (
+            usdinrPrice &&
+            usdinrChange &&
+            data.USDINR
+        ) {
+
+            usdinrPrice.textContent =
+                data.USDINR.price;
+
+            usdinrChange.textContent =
+                "LIVE";
+
+            usdinrChange.style.color =
+                "#10b981";
+        }
+
+    } catch (error) {
+
+        console.error(
+            "Ticker Error:",
+            error
+        );
+    }
 }
