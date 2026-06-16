@@ -15,6 +15,22 @@ def frontend():
         "../frontend",
         "index.html"
     )
+@app.route("/style.css")
+def style():
+
+    return send_from_directory(
+        "../frontend",
+        "style.css"
+    )
+
+
+@app.route("/app.js")
+def script():
+
+    return send_from_directory(
+        "../frontend",
+        "app.js"
+    )
 @app.route("/market-data")
 def market_data():
 
