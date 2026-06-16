@@ -1,4 +1,4 @@
-const API_URL = "http://127.0.0.1:5000/news";
+const API_URL = "https://news-by-ai.onrender.com/news";
 
 const state = {
     articles: [],
@@ -325,7 +325,8 @@ async function loadNews() {
         if (refs.lastUpdated) refs.lastUpdated.textContent = "Refreshing…";
         if (refs.refreshBtn) refs.refreshBtn.disabled = true;
 
-        const response = await fetch(API_URL, { cache: "no-store" });
+        const response =     "http://127.0.0.1:5000/market-data"
+);await fetch(API_URL, { cache: "no-store" });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
 
@@ -368,7 +369,8 @@ async function loadTicker() {
 
         const response =
             await fetch(
-                "http://127.0.0.1:5000/market-data"
+    		"https://news-by-ai.onrender.com/market-data"
+	  
             );
 
         const data =
