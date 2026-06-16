@@ -321,39 +321,60 @@ function renderDashboard() {
 
 // ── LOAD NEWS ─────────────────────────────────────────────────────────
 async function loadNews() {
-    try {
-        if (refs.lastUpdated) refs.lastUpdated.textContent = "Refreshing…";
-        if (refs.refreshBtn) refs.refreshBtn.disabled = true;
 
-        const response =     "http://127.0.0.1:5000/market-data"
-);await fetch(API_URL, { cache: "no-store" });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    try {
+
+        if (refs.lastUpdated)
+            refs.lastUpdated.textContent = "Refreshing…";
+
+        if (refs.refreshBtn)
+            refs.refreshBtn.disabled = true;
+
+        const response = await fetch(
+            API_URL,
+            {
+                cache: "no-store"
+            }
+        );
+
+        if (!response.ok)
+            throw new Error(`HTTP ${response.status}`);
+
         const data = await response.json();
 
-        state.articles = data.map(normalizeArticle);
+        state.articles =
+            data.map(normalizeArticle);
 
         renderFilters();
         renderDashboard();
 
         if (refs.lastUpdated) {
-            refs.lastUpdated.textContent = "Updated " + new Date().toLocaleTimeString("en-IN", { hour12: true });
+
+            refs.lastUpdated.textContent =
+                "Updated " +
+                new Date().toLocaleTimeString(
+                    "en-IN",
+                    { hour12: true }
+                );
         }
+
     } catch (error) {
-        console.error("[TradeTrends]", error);
-        if (refs.lastUpdated) refs.lastUpdated.textContent = "Load failed";
-        if (refs.newsContainer) {
-            refs.newsContainer.innerHTML = `
-                <div class="empty-state">
-                    <strong>Unable to load feed</strong>
-                    Check that the Flask API is running on port 5000, then refresh.
-                </div>
-            `;
-        }
+
+        console.error(
+            "[TradeTrends]",
+            error
+        );
+
+        if (refs.lastUpdated)
+            refs.lastUpdated.textContent =
+                "Load failed";
+
     } finally {
-        if (refs.refreshBtn) refs.refreshBtn.disabled = false;
+
+        if (refs.refreshBtn)
+            refs.refreshBtn.disabled = false;
     }
 }
-
 // ── UTIL ──────────────────────────────────────────────────────────────
 function escapeHtml(str) {
     if (!str) return "";
