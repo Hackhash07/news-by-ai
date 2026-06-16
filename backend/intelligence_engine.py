@@ -1,9 +1,8 @@
-from news_analyzer import classify_article
-from asset_mapper import map_assets
-from impact_engine import determine_direction
-from confidence_engine import calculate_confidence
-from time_engine import estimate_horizon
-
+from backend.news_analyzer import classify_article
+from backend.asset_mapper import map_assets
+from backend.impact_engine import determine_direction
+from backend.confidence_engine import calculate_confidence
+from backend.time_engine import estimate_horizon
 
 def build_intelligence(title):
 

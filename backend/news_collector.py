@@ -1,8 +1,8 @@
 import feedparser
 
-from database import create_database
-from database import save_article
-from intelligence_engine import build_intelligence
+from backend.database import create_database
+from backend.database import save_article
+from backend.intelligence_engine import build_intelligence
 
 RSS_FEEDS = [
     "https://feeds.bbci.co.uk/news/rss.xml",
