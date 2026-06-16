@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>News By AI</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div class="app-shell">
+        <header class="hero">
+            <div>
+                <div class="eyebrow">Live AI Market Intelligence</div>
+                <h1>News By AI</h1>
+                <p class="hero-copy">
+                    AI-ranked headlines, market themes, and trading context in one dashboard.
+                </p>
+            </div>
+
+            <div class="hero-status">
+                <span class="live-dot"></span>
+                <span id="last-updated">Loading...</span>
+            </div>
+        </header>
+
+        <section id="brief-panel"></section>
+
+        <section class="toolbar">
+            <label class="search-wrap">
+                <span class="search-icon">⌕</span>
+                <input
+                    id="search-input"
+                    type="search"
+                    placeholder="Search headlines, assets, categories..."
+                    autocomplete="off"
+                />
+            </label>
+
+            <div class="toolbar-actions">
+                <div id="category-filters" class="chips"></div>
+                <button id="refresh-btn" class="refresh-btn" type="button">Refresh now</button>
+            </div>
+        </section>
+
+        <section id="news-container" class="news-grid"></section>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,9 +1,10 @@
 from flask import Flask
+from flask_cors import CORS
 from database import get_articles
 import json
 
 app = Flask(__name__)
-
+CORS(app)
 
 @app.route("/")
 def home():
