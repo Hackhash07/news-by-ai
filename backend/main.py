@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, send_from_directory
 from flask_cors import CORS
 from backend.database import get_articles
 from backend.market_data import get_market_data
@@ -9,12 +9,12 @@ CORS(app
 )
 
 @app.route("/")
-def home():
+def frontend():
 
-    return {
-        "message": "News By AI API Running"
-    }
-
+    return send_from_directory(
+        "../frontend",
+        "index.html"
+    )
 @app.route("/market-data")
 def market_data():
 
