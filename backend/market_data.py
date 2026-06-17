@@ -1,8 +1,4 @@
 import requests
-import os
-
-FMP_API_KEY = os.getenv("FMP_API_KEY")
-
 
 def get_market_data():
 
@@ -23,14 +19,6 @@ def get_market_data():
             timeout=10
         ).json()
 
-        sp500 = requests.get(
-            f"https://financialmodelingprep.com/api/v3/quote/%5EGSPC?apikey={FMP_API_KEY}"
-        ).json()
-
-        nasdaq = requests.get(
-            f"https://financialmodelingprep.com/api/v3/quote/%5EIXIC?apikey={FMP_API_KEY}"
-        ).json()
-
         return {
 
             "BTC": {
@@ -47,28 +35,6 @@ def get_market_data():
                     2
                 ),
                 "change": 0
-            },
-
-            "SP500": {
-                "price": round(
-                    sp500[0]["price"],
-                    2
-                ),
-                "change": round(
-                    sp500[0]["changesPercentage"],
-                    2
-                )
-            },
-
-            "NASDAQ": {
-                "price": round(
-                    nasdaq[0]["price"],
-                    2
-                ),
-                "change": round(
-                    nasdaq[0]["changesPercentage"],
-                    2
-                )
             }
         }
 
@@ -77,3 +43,4 @@ def get_market_data():
         print("Market Data Error:", e)
 
         return {}
+
