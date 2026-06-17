@@ -16,7 +16,7 @@ def collect_news():
     for feed_url in RSS_FEEDS:
         feed = feedparser.parse(feed_url)
 
-        for entry in feed.entries[:5]:
+        for entry in feed.entries[:2]:
             title = getattr(entry, "title", "").strip()
             link = getattr(entry, "link", "").strip()
 
