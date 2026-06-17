@@ -4,6 +4,11 @@ def get_market_data():
 
     try:
 
+        usdinr = requests.get(
+            "https://open.er-api.com/v6/latest/USD",
+            timeout=10
+        ).json()
+
         btc_url = "https://api.coingecko.com/api/v3/simple/price"
 
         btc_params = {
@@ -18,12 +23,24 @@ def get_market_data():
             timeout=10
         ).json()
 
-        print("BTC RESPONSE:", btc)
+        if "bitcoin" not in btc:
 
-        usdinr = requests.get(
-            "https://open.er-api.com/v6/latest/USD",
-            timeout=10
-        ).json()
+            print("CoinGecko Rate Limited")
+
+            return {
+                "BTC": {
+                    "price": "N/A",
+                    "change": 0
+                },
+
+                "USDINR": {
+                    "price": round(
+                        usdinr["rates"]["INR"],
+                        2
+                    ),
+                    "change": 0
+                }
+            }
 
         return {
 
@@ -48,4 +65,14 @@ def get_market_data():
 
         print("Market Data Error:", e)
 
-        return {}
+        return {
+            "BTC": {
+                "price": "N/A",
+                "change": 0
+            },
+
+            "USDINR": {
+                "price": "N/A",
+                "change": 0
+            }
+        }
