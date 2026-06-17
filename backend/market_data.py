@@ -1,46 +1,35 @@
 import requests
+import os
+
+FMP_API_KEY = os.getenv("FMP_API_KEY")
+
 
 def get_market_data():
 
     try:
+
+        btc = requests.get(
+            "https://api.coingecko.com/api/v3/simple/price",
+            params={
+                "ids": "bitcoin",
+                "vs_currencies": "usd",
+                "include_24hr_change": "true"
+            },
+            timeout=10
+        ).json()
 
         usdinr = requests.get(
             "https://open.er-api.com/v6/latest/USD",
             timeout=10
         ).json()
 
-        btc_url = "https://api.coingecko.com/api/v3/simple/price"
-
-        btc_params = {
-            "ids": "bitcoin",
-            "vs_currencies": "usd",
-            "include_24hr_change": "true"
-        }
-
-        btc = requests.get(
-            btc_url,
-            params=btc_params,
-            timeout=10
+        sp500 = requests.get(
+            f"https://financialmodelingprep.com/api/v3/quote/%5EGSPC?apikey={FMP_API_KEY}"
         ).json()
 
-        if "bitcoin" not in btc:
-
-            print("CoinGecko Rate Limited")
-
-            return {
-                "BTC": {
-                    "price": "N/A",
-                    "change": 0
-                },
-
-                "USDINR": {
-                    "price": round(
-                        usdinr["rates"]["INR"],
-                        2
-                    ),
-                    "change": 0
-                }
-            }
+        nasdaq = requests.get(
+            f"https://financialmodelingprep.com/api/v3/quote/%5EIXIC?apikey={FMP_API_KEY}"
+        ).json()
 
         return {
 
@@ -58,6 +47,28 @@ def get_market_data():
                     2
                 ),
                 "change": 0
+            },
+
+            "SP500": {
+                "price": round(
+                    sp500[0]["price"],
+                    2
+                ),
+                "change": round(
+                    sp500[0]["changesPercentage"],
+                    2
+                )
+            },
+
+            "NASDAQ": {
+                "price": round(
+                    nasdaq[0]["price"],
+                    2
+                ),
+                "change": round(
+                    nasdaq[0]["changesPercentage"],
+                    2
+                )
             }
         }
 
@@ -65,14 +76,4 @@ def get_market_data():
 
         print("Market Data Error:", e)
 
-        return {
-            "BTC": {
-                "price": "N/A",
-                "change": 0
-            },
-
-            "USDINR": {
-                "price": "N/A",
-                "change": 0
-            }
-        }
+        return {}
