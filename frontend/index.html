@@ -22,20 +22,21 @@
                 <span class="tick tick-down"><span class="tick-sym">NIFTY50</span><span class="tick-val">24,613.45</span><span class="tick-chg">▼ 0.18%</span></span>
                 <span class="tick tick-up"><span class="tick-sym">GOLD</span><span class="tick-val">2,386.50</span><span class="tick-chg">▲ 0.72%</span></span>
                 <span class="tick tick-down"><span class="tick-sym">WTI</span><span class="tick-val">81.24</span><span class="tick-chg">▼ 0.34%</span></span>
-		<span class="tick tick-up"><span class="tick-sym">BTC</span><span id="btc-price" class="tick-val">Loading...</span><span id="btc-change" class="tick-chg">--</span></span>
+                <span class="tick tick-up"><span class="tick-sym">BTC</span><span id="btc-price" class="tick-val">Loading...</span><span id="btc-change" class="tick-chg">--</span></span>
                 <span class="tick tick-down"><span class="tick-sym">DXY</span><span class="tick-val">104.32</span><span class="tick-chg">▼ 0.09%</span></span>
-		<span class="tick tick-up"><span class="tick-sym">USD/INR</span><span id="usdinr-price" class="tick-val">Loading...</span><span id="usdinr-change" class="tick-chg">--</span></span>
+                <span class="tick tick-up"><span class="tick-sym">USD/INR</span><span id="usdinr-price" class="tick-val">Loading...</span><span id="usdinr-change" class="tick-chg">--</span></span>
                 <span class="tick tick-up"><span class="tick-sym">SENSEX</span><span class="tick-val">80,812</span><span class="tick-chg">▲ 0.31%</span></span>
                 <span class="tick tick-down"><span class="tick-sym">EUR/USD</span><span class="tick-val">1.0842</span><span class="tick-chg">▼ 0.11%</span></span>
                 <span class="tick tick-up"><span class="tick-sym">NASDAQ</span><span class="tick-val">18,789</span><span class="tick-chg">▲ 0.57%</span></span>
+
                 <!-- duplicate for loop -->
                 <span class="tick tick-up"><span class="tick-sym">SPX</span><span class="tick-val">5,347.82</span><span class="tick-chg">▲ 0.43%</span></span>
                 <span class="tick tick-down"><span class="tick-sym">NIFTY50</span><span class="tick-val">24,613.45</span><span class="tick-chg">▼ 0.18%</span></span>
                 <span class="tick tick-up"><span class="tick-sym">GOLD</span><span class="tick-val">2,386.50</span><span class="tick-chg">▲ 0.72%</span></span>
                 <span class="tick tick-down"><span class="tick-sym">WTI</span><span class="tick-val">81.24</span><span class="tick-chg">▼ 0.34%</span></span>
-		<span class="tick tick-up"><span class="tick-sym">BTC</span><span  class="tick-val">Loading...</span><span class="tick-chg">--</span></span>
+                <span class="tick tick-up"><span class="tick-sym">BTC</span><span class="tick-val">Loading...</span><span class="tick-chg">--</span></span>
                 <span class="tick tick-down"><span class="tick-sym">DXY</span><span class="tick-val">104.32</span><span class="tick-chg">▼ 0.09%</span></span>
-		<span class="tick tick-up"><span class="tick-sym">USD/INR</span><span class="tick-val">Loading...</span><span class="tick-chg">--</span></span>
+                <span class="tick tick-up"><span class="tick-sym">USD/INR</span><span class="tick-val">Loading...</span><span class="tick-chg">--</span></span>
                 <span class="tick tick-up"><span class="tick-sym">SENSEX</span><span class="tick-val">80,812</span><span class="tick-chg">▲ 0.31%</span></span>
                 <span class="tick tick-down"><span class="tick-sym">EUR/USD</span><span class="tick-val">1.0842</span><span class="tick-chg">▼ 0.11%</span></span>
                 <span class="tick tick-up"><span class="tick-sym">NASDAQ</span><span class="tick-val">18,789</span><span class="tick-chg">▲ 0.57%</span></span>
@@ -84,7 +85,10 @@
             </div>
             <div class="cmd-actions">
                 <label class="search-wrap" for="search-input">
-                    <svg class="srch-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                    <svg class="srch-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.35-4.35"/>
+                    </svg>
                     <input
                         id="search-input"
                         type="search"
@@ -93,11 +97,53 @@
                     />
                 </label>
                 <button id="refresh-btn" class="refresh-btn" type="button" aria-label="Refresh news feed">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+                        <path d="M21 3v5h-5"/>
+                        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+                        <path d="M8 16H3v5"/>
+                    </svg>
                     Refresh
                 </button>
             </div>
         </div>
+
+        <section class="hero-panel" id="hero-panel">
+            <div class="hero-main">
+                <div class="hero-eyebrow">AI MARKET INTELLIGENCE</div>
+                <h2 id="hero-title" class="hero-title">Loading latest market story...</h2>
+                <p id="hero-summary" class="hero-summary">
+                    We are analyzing the freshest headlines.
+                </p>
+
+                <div class="hero-meta">
+                    <span id="hero-category" class="hero-pill">Category —</span>
+                    <span id="hero-sentiment" class="hero-pill">Sentiment —</span>
+                    <span id="hero-horizon" class="hero-pill">Horizon —</span>
+                </div>
+            </div>
+
+            <div class="hero-stats">
+                <div class="stat-card">
+                    <span class="stat-label">Market Mood</span>
+                    <strong id="market-mood" class="stat-value">—</strong>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Top Bullish Asset</span>
+                    <strong id="top-bullish" class="stat-value">—</strong>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Top Bearish Asset</span>
+                    <strong id="top-bearish" class="stat-value">—</strong>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Articles</span>
+                    <strong id="article-count" class="stat-value">0</strong>
+                </div>
+            </div>
+        </section>
+
+        <section id="signal-strip" class="signal-strip"></section>
 
         <!-- AI Brief -->
         <section id="brief-panel" aria-label="AI Market Brief"></section>
