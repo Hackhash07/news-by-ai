@@ -1,9 +1,31 @@
 import json
+import re
+
 import ollama
 
 
-def classify_article(title):
+def _extract_json_object(text):
+    if not text:
+        return None
 
+    text = text.strip()
+
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        return None
+
+    try:
+        return json.loads(match.group(0))
+    except Exception:
+        return None
+
+
+def classify_article(title):
     prompt = f"""
 Analyze this news headline.
 
@@ -40,9 +62,12 @@ Example:
 """
 
     try:
-
         response = ollama.chat(
             model="llama3.1:8b",
+            options={
+                "temperature": 0,
+                "num_predict": 80
+            },
             messages=[
                 {
                     "role": "user",
@@ -51,17 +76,13 @@ Example:
             ]
         )
 
-        content = response["message"]["content"]
+        content = response.get("message", {}).get("content", "")
+        result = _extract_json_object(content)
 
-        start = content.find("{")
-        end = content.rfind("}") + 1
-
-        json_text = content[start:end]
-
-        result = json.loads(json_text)
+        if not isinstance(result, dict):
+            raise ValueError(f"Invalid JSON from model: {content}")
 
         category = result.get("category", "General")
-
         if category not in [
             "Geopolitics",
             "Finance",
@@ -70,17 +91,26 @@ Example:
         ]:
             category = "General"
 
+        sentiment = result.get("sentiment", "Neutral")
+        if sentiment not in ["Positive", "Negative", "Neutral"]:
+            sentiment = "Neutral"
+
+        try:
+            importance = int(result.get("importance", 5))
+        except Exception:
+            importance = 5
+
+        importance = max(1, min(10, importance))
+
         return {
             "category": category,
-            "sentiment": result.get("sentiment", "Neutral"),
-            "importance": result.get("importance", 5),
+            "sentiment": sentiment,
+            "importance": importance,
             "market_impact": "Unknown"
         }
 
     except Exception as e:
-
         print("LLM Error:", e)
-
         return {
             "category": "General",
             "sentiment": "Neutral",

@@ -1,5 +1,5 @@
-const API_URL = "https://news-by-ai.onrender.com/news";
-const MARKET_API_URL = "https://news-by-ai.onrender.com/market-data";
+const API_URL = "/news";
+const MARKET_API_URL = "/market-data";
 
 const state = {
     articles: [],
@@ -13,7 +13,7 @@ const refs = {};
 document.addEventListener("DOMContentLoaded", () => {
     refs.briefPanel      = document.getElementById("brief-panel");
     refs.searchInput     = document.getElementById("search-input");
-    refs.categoryFilters  = document.getElementById("category-filters");
+    refs.categoryFilters = document.getElementById("category-filters");
     refs.refreshBtn      = document.getElementById("refresh-btn");
     refs.newsContainer   = document.getElementById("news-container");
     refs.lastUpdated     = document.getElementById("last-updated");
@@ -40,12 +40,16 @@ document.addEventListener("DOMContentLoaded", () => {
     loadTicker();
     setInterval(loadTicker, 60000);
 
-    refs.searchInput.addEventListener("input", (e) => {
-        state.search = e.target.value || "";
-        renderDashboard();
-    });
+    if (refs.searchInput) {
+        refs.searchInput.addEventListener("input", (e) => {
+            state.search = e.target.value || "";
+            renderDashboard();
+        });
+    }
 
-    refs.refreshBtn.addEventListener("click", loadNews);
+    if (refs.refreshBtn) {
+        refs.refreshBtn.addEventListener("click", loadNews);
+    }
 
     loadNews();
     setInterval(loadNews, 60000);
@@ -79,7 +83,11 @@ function updateMarketStatus() {
 function safeJsonParse(value, fallback) {
     if (Array.isArray(value) || (value && typeof value === "object")) return value;
     if (typeof value === "string") {
-        try { return JSON.parse(value); } catch { return fallback; }
+        try {
+            return JSON.parse(value);
+        } catch {
+            return fallback;
+        }
     }
     return fallback;
 }
@@ -99,6 +107,8 @@ function normalizeArticle(article) {
         directions,
         importance,
         confidence,
+        analysis: article.analysis || "",
+        added_at: article.added_at || "",
         ai_score: importance * confidence
     };
 }
@@ -108,13 +118,15 @@ function getFilteredArticles() {
     return state.articles.filter((a) => {
         if (state.activeCategory !== "All" && a.category !== state.activeCategory) return false;
         if (!search) return true;
+
         const hay = [
             a.title,
             a.category,
             a.sentiment,
-            a.time_horizon,
+            a.market_impact,
             Array.isArray(a.assets) ? a.assets.join(" ") : ""
         ].join(" ").toLowerCase();
+
         return hay.includes(search);
     });
 }
@@ -130,6 +142,7 @@ function getThemeCounts(articles) {
 
 function getSentimentMood(articles) {
     let pos = 0, neg = 0, neu = 0;
+
     articles.forEach((a) => {
         const w = a.ai_score || 0;
         const s = String(a.sentiment || "").toLowerCase();
@@ -137,6 +150,7 @@ function getSentimentMood(articles) {
         else if (s.includes("negative")) neg += w;
         else neu += w;
     });
+
     const total = pos + neg + neu || 1;
     if (pos / total >= 0.55) return "Risk-On";
     if (neg / total >= 0.55) return "Risk-Off";
@@ -181,6 +195,40 @@ function getTopSignal(signalMap, side) {
         .sort((a, b) => b.count - a.count || b.total - a.total)[0] || null;
 }
 
+function formatAddedAt(isoString) {
+    if (!isoString) return "Recently";
+    const date = new Date(isoString);
+    if (Number.isNaN(date.getTime())) return "Recently";
+
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffHour = Math.floor(diffMs / 3600000);
+    const diffDay = Math.floor(diffMs / 86400000);
+
+    if (diffMin < 1) return "Added just now";
+    if (diffMin < 60) return `Added ${diffMin} min ago`;
+    if (diffHour < 24) return `Added ${diffHour} hr ago`;
+    if (diffDay < 7) return `Added ${diffDay} day ago`;
+
+    return `Added ${date.toLocaleString("en-IN", {
+        dateStyle: "medium",
+        timeStyle: "short"
+    })}`;
+}
+
+function fallbackAnalysis(article) {
+    const assets = Array.isArray(article.assets) && article.assets.length
+        ? article.assets.join(", ")
+        : "broader markets";
+
+    const category = article.category || "General";
+    const sentiment = article.sentiment || "Neutral";
+    const impact = article.market_impact || "Neutral";
+
+    return `${article.title} is being tracked as a ${category.toLowerCase()} story that may influence ${assets}. The current sentiment is ${sentiment.toLowerCase()}, which suggests traders should expect ${impact.toLowerCase()} reaction depending on follow-up headlines. Watch the affected assets for confirmation rather than reacting to the headline alone.`;
+}
+
 // ── RENDER: HERO / SIGNALS ───────────────────────────────────────────
 function renderHero(articles) {
     const top = getTopStory(articles);
@@ -194,7 +242,7 @@ function renderHero(articles) {
         if (refs.heroSummary) refs.heroSummary.textContent = "Run the collector to load fresh headlines.";
         if (refs.heroCategory) refs.heroCategory.textContent = "Category —";
         if (refs.heroSentiment) refs.heroSentiment.textContent = "Sentiment —";
-        if (refs.heroHorizon) refs.heroHorizon.textContent = "Horizon —";
+        if (refs.heroHorizon) refs.heroHorizon.textContent = "Added —";
         if (refs.marketMood) refs.marketMood.textContent = "—";
         if (refs.topBullish) refs.topBullish.textContent = "—";
         if (refs.topBearish) refs.topBearish.textContent = "—";
@@ -202,14 +250,13 @@ function renderHero(articles) {
         return;
     }
 
-    const summary = top.analysis || top.summary ||
-        `Tagged as ${top.category} with ${top.confidence}% confidence. ${top.time_horizon ? top.time_horizon + " time horizon." : ""}`;
+    const summary = top.analysis || fallbackAnalysis(top);
 
     if (refs.heroTitle) refs.heroTitle.textContent = top.title;
     if (refs.heroSummary) refs.heroSummary.textContent = summary;
     if (refs.heroCategory) refs.heroCategory.textContent = `Category: ${top.category}`;
     if (refs.heroSentiment) refs.heroSentiment.textContent = `Sentiment: ${top.sentiment}`;
-    if (refs.heroHorizon) refs.heroHorizon.textContent = `Horizon: ${top.time_horizon}`;
+    if (refs.heroHorizon) refs.heroHorizon.textContent = `Added: ${formatAddedAt(top.added_at)}`;
     if (refs.marketMood) refs.marketMood.textContent = mood;
     if (refs.topBullish) refs.topBullish.textContent = bullish ? `${bullish.asset} (${bullish.count})` : "—";
     if (refs.topBearish) refs.topBearish.textContent = bearish ? `${bearish.asset} (${bearish.count})` : "—";
@@ -263,6 +310,7 @@ function renderBrief(articles) {
     const avgConf = total
         ? Math.round(articles.reduce((s, a) => s + (a.confidence || 0), 0) / total)
         : 0;
+
     const topArticle = [...articles].sort((a, b) => b.ai_score - a.ai_score)[0];
     const themeCounts = getThemeCounts(articles);
     const topThemes = Object.entries(themeCounts)
@@ -270,6 +318,7 @@ function renderBrief(articles) {
         .slice(0, 3)
         .map(([t, c]) => `${t} (${c})`)
         .join(", ") || "—";
+
     const mood = getSentimentMood(articles);
 
     refs.briefPanel.innerHTML = `
@@ -309,6 +358,7 @@ function renderFilters() {
     refs.categoryFilters.innerHTML = categories
         .map((c) => `<button class="chip ${c === state.activeCategory ? "active" : ""}" data-cat="${c}" type="button">${c}</button>`)
         .join("");
+
     refs.categoryFilters.querySelectorAll(".chip").forEach((btn) => {
         btn.addEventListener("click", () => {
             state.activeCategory = btn.dataset.cat;
@@ -356,13 +406,10 @@ function renderCards(articles) {
     articles.forEach((a) => {
         const sc = sentimentClass(a.sentiment);
         const assets = Array.isArray(a.assets) ? a.assets : [];
-        const aiNote = a.analysis || a.summary ||
-            `Tagged as ${a.category} with ${a.confidence}% confidence. ` +
-            `${a.time_horizon ? a.time_horizon + " time horizon. " : ""}` +
-            `${assets.length ? "Affects: " + assets.join(", ") + "." : "No specific assets mapped."}`;
+        const aiNote = a.analysis || fallbackAnalysis(a);
 
         const assetTagsHtml = assets.length
-            ? assets.map((t) => `<span class="asset-tag">${t}</span>`).join("")
+            ? assets.map((t) => `<span class="asset-tag">${escapeHtml(t)}</span>`).join("")
             : `<span style="font-size:11px;color:var(--t3)">No mapped assets</span>`;
 
         const card = document.createElement("article");
@@ -403,8 +450,8 @@ function renderCards(articles) {
                         <div class="data-val">${escapeHtml(a.category)}</div>
                     </div>
                     <div>
-                        <div class="data-label">Time Horizon</div>
-                        <div class="data-val">${escapeHtml(a.time_horizon || "Unknown")}</div>
+                        <div class="data-label">Added</div>
+                        <div class="data-val">${formatAddedAt(a.added_at)}</div>
                     </div>
                     <div>
                         <div class="data-label">Assets</div>
@@ -412,7 +459,7 @@ function renderCards(articles) {
                     </div>
                     <div>
                         <div class="data-label">Market Impact</div>
-                        <div class="data-val">${escapeHtml(a.market_impact || "Unknown")}</div>
+                        <div class="data-val">${escapeHtml(a.market_impact || "Neutral")}</div>
                     </div>
                 </div>
 
@@ -452,15 +499,17 @@ async function loadNews() {
 
         const response = await fetch(API_URL, { cache: "no-store" });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
 
+        const data = await response.json();
         state.articles = data.map(normalizeArticle);
 
         renderFilters();
         renderDashboard();
 
         if (refs.lastUpdated) {
-            refs.lastUpdated.textContent = "Updated " + new Date().toLocaleTimeString("en-IN", { hour12: true });
+            refs.lastUpdated.textContent = "Updated " + new Date().toLocaleTimeString("en-IN", {
+                hour12: true
+            });
         }
     } catch (error) {
         console.error("[TradeTrends]", error);
@@ -480,7 +529,7 @@ async function loadNews() {
 
 // ── UTIL ──────────────────────────────────────────────────────────────
 function escapeHtml(str) {
-    if (!str) return "";
+    if (str === null || str === undefined) return "";
     return String(str)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
@@ -488,45 +537,50 @@ function escapeHtml(str) {
         .replace(/"/g, "&quot;");
 }
 
+function setTickerPair(priceId, changeId, priceValue, changeValue, isLiveLabel = false) {
+    const priceEl = document.getElementById(priceId);
+    const changeEl = document.getElementById(changeId);
+
+    if (!priceEl || !changeEl) return;
+
+    if (priceValue === null || priceValue === undefined || priceValue === "N/A") {
+        priceEl.textContent = "N/A";
+    } else {
+        const numericPrice = Number(priceValue);
+        priceEl.textContent = Number.isFinite(numericPrice)
+            ? numericPrice.toLocaleString("en-IN")
+            : String(priceValue);
+    }
+
+    if (isLiveLabel) {
+        changeEl.textContent = "LIVE";
+        changeEl.style.color = "#10b981";
+        return;
+    }
+
+    const numericChange = Number(changeValue);
+    if (Number.isFinite(numericChange)) {
+        changeEl.textContent = (numericChange >= 0 ? "▲ " : "▼ ") + Math.abs(numericChange).toFixed(2) + "%";
+        changeEl.style.color = numericChange >= 0 ? "#10b981" : "#ef4444";
+    } else {
+        changeEl.textContent = "--";
+        changeEl.style.color = "#94a3b8";
+    }
+}
+
 async function loadTicker() {
     try {
-        const response = await fetch(MARKET_API_URL);
+        const response = await fetch(MARKET_API_URL, { cache: "no-store" });
         const data = await response.json();
 
-        const btcPrice = document.getElementById("btc-price");
-        const btcChange = document.getElementById("btc-change");
-        const btcPrice2 = document.getElementById("btc-price-2");
-        const btcChange2 = document.getElementById("btc-change-2");
-
-        if (btcPrice && btcChange && data.BTC) {
-            btcPrice.textContent = Number(data.BTC.price).toLocaleString();
-            const change = Number(data.BTC.change);
-            btcChange.textContent = (change >= 0 ? "▲ " : "▼ ") + Math.abs(change).toFixed(2) + "%";
-            btcChange.style.color = change >= 0 ? "#10b981" : "#ef4444";
+        if (data.BTC) {
+            setTickerPair("btc-price", "btc-change", data.BTC.price, data.BTC.change, false);
+            setTickerPair("btc-price-2", "btc-change-2", data.BTC.price, data.BTC.change, false);
         }
 
-        if (btcPrice2 && btcChange2 && data.BTC) {
-            btcPrice2.textContent = Number(data.BTC.price).toLocaleString();
-            const change = Number(data.BTC.change);
-            btcChange2.textContent = (change >= 0 ? "▲ " : "▼ ") + Math.abs(change).toFixed(2) + "%";
-            btcChange2.style.color = change >= 0 ? "#10b981" : "#ef4444";
-        }
-
-        const usdinrPrice = document.getElementById("usdinr-price");
-        const usdinrChange = document.getElementById("usdinr-change");
-        const usdinrPrice2 = document.getElementById("usdinr-price-2");
-        const usdinrChange2 = document.getElementById("usdinr-change-2");
-
-        if (usdinrPrice && usdinrChange && data.USDINR) {
-            usdinrPrice.textContent = Number(data.USDINR.price).toLocaleString();
-            usdinrChange.textContent = "LIVE";
-            usdinrChange.style.color = "#10b981";
-        }
-
-        if (usdinrPrice2 && usdinrChange2 && data.USDINR) {
-            usdinrPrice2.textContent = Number(data.USDINR.price).toLocaleString();
-            usdinrChange2.textContent = "LIVE";
-            usdinrChange2.style.color = "#10b981";
+        if (data.USDINR) {
+            setTickerPair("usdinr-price", "usdinr-change", data.USDINR.price, data.USDINR.change, true);
+            setTickerPair("usdinr-price-2", "usdinr-change-2", data.USDINR.price, data.USDINR.change, true);
         }
     } catch (error) {
         console.error("Ticker Error:", error);
