@@ -1,118 +1,60 @@
-from datetime import datetime, timezone
+import feedparser
 
-from backend.news_analyzer import classify_article
-from backend.asset_mapper import map_assets
-from backend.impact_engine import determine_direction
-from backend.confidence_engine import calculate_confidence
-from backend.time_engine import estimate_horizon
+from backend.database import create_database, save_article
+from backend.intelligence_engine import build_intelligence
 
 
-def classify_market_impact(category, sentiment, importance, assets):
-    category = str(category or "").lower()
-    sentiment = str(sentiment or "").lower()
-    assets = [str(a).lower() for a in (assets or [])]
-
-    if category == "geopolitics":
-        if sentiment == "negative" and importance >= 7:
-            return "High Volatility"
-        if importance >= 8:
-            return "High Volatility"
-        return "Neutral"
-
-    if category == "finance":
-        if sentiment == "positive":
-            return "Bullish"
-        if sentiment == "negative":
-            return "Bearish"
-        return "Neutral"
-
-    if category == "technology":
-        if sentiment == "positive":
-            return "Bullish"
-        if sentiment == "negative":
-            return "Bearish"
-        return "Neutral"
-
-    if any(a in assets for a in ["gold", "crude oil", "defense stocks"]):
-        if sentiment == "negative":
-            return "High Volatility"
-        return "Neutral"
-
-    if importance <= 4:
-        return "Low Impact"
-
-    return "Neutral"
+RSS_FEEDS = [
+    "https://feeds.bbci.co.uk/news/rss.xml",
+    "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+]
 
 
-def build_analysis_paragraph(title, category, sentiment, assets, directions, confidence):
-    asset_text = ", ".join(assets) if assets else "broader markets"
-    direction_text = (
-        ", ".join([f"{k}: {v}" for k, v in (directions or {}).items()])
-        if directions
-        else "no strong directional bias"
-    )
+def collect_news():
+    create_database()
 
-    if category == "Geopolitics":
-        opening = "This geopolitical development could influence global risk sentiment and safe-haven demand."
-    elif category == "Finance":
-        opening = "This financial headline may affect liquidity expectations, rates, and trader positioning."
-    elif category == "Technology":
-        opening = "This technology-related headline may impact growth stocks and innovation sentiment."
-    else:
-        opening = "This news may affect broader markets indirectly through sentiment and expectations."
+    for feed_url in RSS_FEEDS:
+        feed = feedparser.parse(feed_url)
 
-    middle = f"The current sentiment assessment is {sentiment.lower()} with a confidence score of {confidence}%."
+        for entry in feed.entries[:5]:
+            title = getattr(entry, "title", "").strip()
+            link = getattr(entry, "link", "").strip()
 
-    ending = (
-        f"Key exposed assets include {asset_text}. "
-        f"Directional signals suggest {direction_text}. "
-        "Traders should watch follow-up headlines and price action for confirmation."
-    )
+            if not title or not link:
+                continue
 
-    return f"{opening} {middle} {ending}"
+            try:
+                intelligence = build_intelligence(title)
+            except Exception as e:
+                print("Intelligence Error:", e)
+                continue
+
+            save_article(
+                title=title,
+                link=link,
+                category=intelligence["category"],
+                sentiment=intelligence["sentiment"],
+                importance=intelligence["importance"],
+                market_impact=intelligence["market_impact"],
+                assets=intelligence["assets"],
+                directions=intelligence["directions"],
+                confidence=intelligence["confidence"],
+                time_horizon=intelligence["time_horizon"],
+                analysis=intelligence["analysis"],
+                added_at=intelligence["added_at"],
+            )
+
+            print({
+                "title": title,
+                "category": intelligence["category"],
+                "sentiment": intelligence["sentiment"],
+                "importance": intelligence["importance"],
+                "market_impact": intelligence["market_impact"],
+                "confidence": intelligence["confidence"],
+                "analysis": intelligence["analysis"],
+                "added_at": intelligence["added_at"],
+            })
 
 
-def now_iso():
-    return datetime.now(timezone.utc).isoformat()
-
-
-def build_intelligence(title):
-    analysis = classify_article(title)
-
-    category = analysis["category"]
-    sentiment = analysis["sentiment"]
-    importance = analysis["importance"]
-
-    assets = map_assets(category, analysis.get("market_impact", "Neutral"))
-    directions = determine_direction(category, sentiment)
-    confidence = calculate_confidence(importance, sentiment, category)
-    time_horizon = estimate_horizon(category, importance)
-
-    market_impact = classify_market_impact(
-        category,
-        sentiment,
-        importance,
-        assets
-    )
-
-    ai_analysis = build_analysis_paragraph(
-        title,
-        category,
-        sentiment,
-        assets,
-        directions,
-        confidence
-    )
-
-    return {
-        "category": category,
-        "sentiment": sentiment,
-        "importance": importance,
-        "market_impact": market_impact,
-        "assets": assets,
-        "directions": directions,
-        "confidence": confidence,
-        "time_horizon": time_horizon,
-        "analysis": ai_analysis,
-        "added_at": now_iso()
-    }
+if __name__ == "__main__":
+    collect_news()
