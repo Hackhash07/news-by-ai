@@ -6,14 +6,14 @@ def get_market_data():
 
         btc = requests.get(
             "https://api.coingecko.com/api/v3/simple/price",
-            params={
+       params={
                 "ids": "bitcoin",
                 "vs_currencies": "usd",
                 "include_24hr_change": "true"
             },
             timeout=10
         ).json()
-
+	print("BTC RESPONSE:", btc)
         usdinr = requests.get(
             "https://open.er-api.com/v6/latest/USD",
             timeout=10
@@ -37,7 +37,6 @@ def get_market_data():
                 "change": 0
             }
         }
-
     except Exception as e:
 
         print("Market Data Error:", e)
