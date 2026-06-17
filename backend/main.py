@@ -1,9 +1,8 @@
 import json
-import time
+import os
 from pathlib import Path
-from threading import Lock
 
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from backend.database import get_articles
@@ -16,9 +15,7 @@ FRONTEND_DIR = BASE_DIR.parent / "frontend"
 app = Flask(__name__)
 CORS(app)
 
-NEWS_REFRESH_INTERVAL = 600  # 10 minutes
-_last_news_refresh = 0.0
-_refresh_lock = Lock()
+UPDATE_SECRET = os.getenv("UPDATE_SECRET", "changeme")
 
 
 def safe_json_loads(value, default):
@@ -34,30 +31,14 @@ def safe_json_loads(value, default):
     return default
 
 
-def maybe_refresh_news(force: bool = False):
-    global _last_news_refresh
-
-    now = time.time()
-    should_refresh = force or (_last_news_refresh == 0.0) or ((now - _last_news_refresh) >= NEWS_REFRESH_INTERVAL)
-
-    if not should_refresh:
-        return
-
-    if not _refresh_lock.acquire(blocking=False):
-        return
-
-    try:
-        collect_news()
-        _last_news_refresh = time.time()
-    except Exception as e:
-        print("Collector Error:", e)
-    finally:
-        _refresh_lock.release()
-
-
 @app.route("/")
 def home():
     return send_from_directory(str(FRONTEND_DIR), "index.html")
+
+
+@app.route("/admin")
+def admin():
+    return send_from_directory(str(FRONTEND_DIR), "admin.html")
 
 
 @app.route("/style.css")
@@ -77,8 +58,6 @@ def market_data():
 
 @app.route("/news")
 def news():
-    maybe_refresh_news()
-
     rows = get_articles()
     articles = []
 
@@ -104,8 +83,15 @@ def news():
 
 @app.route("/update-news")
 def update_news():
-    maybe_refresh_news(force=True)
-    return jsonify({"status": "updated"})
+    key = request.args.get("key", "")
+    if key != UPDATE_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        collect_news()
+        return jsonify({"status": "updated", "articles": len(get_articles())})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":

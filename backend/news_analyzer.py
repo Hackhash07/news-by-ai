@@ -1,10 +1,46 @@
 import json
+import os
 import re
 
-import ollama
+from google import genai
 
 
-def _extract_json_object(text):
+def fallback(title):
+    title = title.lower()
+
+    if any(x in title for x in [
+        "war", "missile", "attack",
+        "strike", "russia", "iran",
+        "israel", "china"
+    ]):
+        return {
+            "category": "Geopolitics",
+            "sentiment": "Negative",
+            "importance": 8,
+            "market_impact": "Unknown"
+        }
+
+    if any(x in title for x in [
+        "inflation", "fed", "rates",
+        "market", "stocks", "economy",
+        "bank", "bond"
+    ]):
+        return {
+            "category": "Finance",
+            "sentiment": "Neutral",
+            "importance": 6,
+            "market_impact": "Unknown"
+        }
+
+    return {
+        "category": "General",
+        "sentiment": "Neutral",
+        "importance": 5,
+        "market_impact": "Unknown"
+    }
+
+
+def _extract_json(text):
     if not text:
         return None
 
@@ -26,7 +62,17 @@ def _extract_json_object(text):
 
 
 def classify_article(title):
-    prompt = f"""
+    api_key = os.getenv("GEMINI_API_KEY")
+    print("DEBUG: API KEY PRESENT =", bool(api_key))
+
+    if not api_key:
+        print("Gemini API key missing")
+        return fallback(title)
+
+    try:
+        client = genai.Client(api_key=api_key)
+
+        prompt = f"""
 Analyze this news headline.
 
 Headline:
@@ -35,52 +81,41 @@ Headline:
 Return ONLY valid JSON.
 
 Rules:
+
 1. category must be exactly one of:
-   Geopolitics
-   Finance
-   Technology
-   General
+Geopolitics
+Finance
+Technology
+General
 
 2. sentiment must be exactly one of:
-   Positive
-   Negative
-   Neutral
+Positive
+Negative
+Neutral
 
 3. importance must be an integer from 1 to 10
 
-4. Return JSON only.
-Do not add explanations.
-Do not add markdown.
+Return JSON only.
 
 Example:
 
 {{
-    "category": "Geopolitics",
-    "sentiment": "Negative",
-    "importance": 8
+    "category":"Geopolitics",
+    "sentiment":"Negative",
+    "importance":8
 }}
 """
 
-    try:
-        response = ollama.chat(
-            model="llama3.1:8b",
-            options={
-                "temperature": 0,
-                "num_predict": 80
-            },
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
         )
 
-        content = response.get("message", {}).get("content", "")
-        result = _extract_json_object(content)
+        text = (getattr(response, "text", "") or "").strip()
+        result = _extract_json(text)
 
         if not isinstance(result, dict):
-            raise ValueError(f"Invalid JSON from model: {content}")
+            raise ValueError(f"Invalid JSON from Gemini: {text}")
 
         category = result.get("category", "General")
         if category not in [
@@ -92,15 +127,23 @@ Example:
             category = "General"
 
         sentiment = result.get("sentiment", "Neutral")
-        if sentiment not in ["Positive", "Negative", "Neutral"]:
+        if sentiment not in [
+            "Positive",
+            "Negative",
+            "Neutral"
+        ]:
             sentiment = "Neutral"
 
+        importance = result.get("importance", 5)
         try:
-            importance = int(result.get("importance", 5))
+            importance = int(importance)
         except Exception:
             importance = 5
 
-        importance = max(1, min(10, importance))
+        if importance < 1:
+            importance = 1
+        if importance > 10:
+            importance = 10
 
         return {
             "category": category,
@@ -110,10 +153,5 @@ Example:
         }
 
     except Exception as e:
-        print("LLM Error:", e)
-        return {
-            "category": "General",
-            "sentiment": "Neutral",
-            "importance": 5,
-            "market_impact": "Unknown"
-        }
+        print("Gemini Error:", repr(e))
+        return fallback(title)
