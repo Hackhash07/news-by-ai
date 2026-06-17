@@ -1,6 +1,5 @@
 import requests
 
-
 def get_market_data():
 
     try:
@@ -18,6 +17,8 @@ def get_market_data():
             params=btc_params,
             timeout=10
         ).json()
+
+        print("BTC RESPONSE:", btc)
 
         usdinr = requests.get(
             "https://open.er-api.com/v6/latest/USD",
