@@ -12,16 +12,15 @@
 </head>
 <body>
 
-    <!-- ── MARKET TICKER ─────────────────────────────────── -->
     <div class="ticker-bar">
         <div class="ticker-label">MARKETS</div>
         <div class="ticker-track">
             <div class="ticker-inner">
-                <!-- items duplicated for seamless loop -->
                 <span class="tick tick-up"><span class="tick-sym">SPX</span><span class="tick-val">5,347.82</span><span class="tick-chg">▲ 0.43%</span></span>
                 <span class="tick tick-down"><span class="tick-sym">NIFTY50</span><span class="tick-val">24,613.45</span><span class="tick-chg">▼ 0.18%</span></span>
                 <span class="tick tick-up"><span class="tick-sym">GOLD</span><span class="tick-val">2,386.50</span><span class="tick-chg">▲ 0.72%</span></span>
                 <span class="tick tick-down"><span class="tick-sym">WTI</span><span class="tick-val">81.24</span><span class="tick-chg">▼ 0.34%</span></span>
+
                 <span class="tick tick-up"><span class="tick-sym">BTC</span><span id="btc-price" class="tick-val">Loading...</span><span id="btc-change" class="tick-chg">--</span></span>
                 <span class="tick tick-down"><span class="tick-sym">DXY</span><span class="tick-val">104.32</span><span class="tick-chg">▼ 0.09%</span></span>
                 <span class="tick tick-up"><span class="tick-sym">USD/INR</span><span id="usdinr-price" class="tick-val">Loading...</span><span id="usdinr-change" class="tick-chg">--</span></span>
@@ -29,14 +28,14 @@
                 <span class="tick tick-down"><span class="tick-sym">EUR/USD</span><span class="tick-val">1.0842</span><span class="tick-chg">▼ 0.11%</span></span>
                 <span class="tick tick-up"><span class="tick-sym">NASDAQ</span><span class="tick-val">18,789</span><span class="tick-chg">▲ 0.57%</span></span>
 
-                <!-- duplicate for loop -->
                 <span class="tick tick-up"><span class="tick-sym">SPX</span><span class="tick-val">5,347.82</span><span class="tick-chg">▲ 0.43%</span></span>
                 <span class="tick tick-down"><span class="tick-sym">NIFTY50</span><span class="tick-val">24,613.45</span><span class="tick-chg">▼ 0.18%</span></span>
                 <span class="tick tick-up"><span class="tick-sym">GOLD</span><span class="tick-val">2,386.50</span><span class="tick-chg">▲ 0.72%</span></span>
                 <span class="tick tick-down"><span class="tick-sym">WTI</span><span class="tick-val">81.24</span><span class="tick-chg">▼ 0.34%</span></span>
-                <span class="tick tick-up"><span class="tick-sym">BTC</span><span class="tick-val">Loading...</span><span class="tick-chg">--</span></span>
+
+                <span class="tick tick-up"><span class="tick-sym">BTC</span><span id="btc-price-2" class="tick-val">Loading...</span><span id="btc-change-2" class="tick-chg">--</span></span>
                 <span class="tick tick-down"><span class="tick-sym">DXY</span><span class="tick-val">104.32</span><span class="tick-chg">▼ 0.09%</span></span>
-                <span class="tick tick-up"><span class="tick-sym">USD/INR</span><span class="tick-val">Loading...</span><span class="tick-chg">--</span></span>
+                <span class="tick tick-up"><span class="tick-sym">USD/INR</span><span id="usdinr-price-2" class="tick-val">Loading...</span><span id="usdinr-change-2" class="tick-chg">--</span></span>
                 <span class="tick tick-up"><span class="tick-sym">SENSEX</span><span class="tick-val">80,812</span><span class="tick-chg">▲ 0.31%</span></span>
                 <span class="tick tick-down"><span class="tick-sym">EUR/USD</span><span class="tick-val">1.0842</span><span class="tick-chg">▼ 0.11%</span></span>
                 <span class="tick tick-up"><span class="tick-sym">NASDAQ</span><span class="tick-val">18,789</span><span class="tick-chg">▲ 0.57%</span></span>
@@ -45,7 +44,6 @@
         <div class="ticker-time" id="ticker-time">--:--:--</div>
     </div>
 
-    <!-- ── TOP NAV ────────────────────────────────────────── -->
     <nav class="topnav" role="navigation" aria-label="Main navigation">
         <div class="nav-inner">
             <a href="#" class="brand" aria-label="Trade Trends home">
@@ -74,10 +72,7 @@
         </div>
     </nav>
 
-    <!-- ── MAIN ──────────────────────────────────────────── -->
     <main class="shell" role="main">
-
-        <!-- Page heading + controls -->
         <div class="cmd-bar">
             <div class="cmd-heading">
                 <h1 class="page-title">News Intelligence</h1>
@@ -112,10 +107,7 @@
             <div class="hero-main">
                 <div class="hero-eyebrow">AI MARKET INTELLIGENCE</div>
                 <h2 id="hero-title" class="hero-title">Loading latest market story...</h2>
-                <p id="hero-summary" class="hero-summary">
-                    We are analyzing the freshest headlines.
-                </p>
-
+                <p id="hero-summary" class="hero-summary">We are analyzing the freshest headlines.</p>
                 <div class="hero-meta">
                     <span id="hero-category" class="hero-pill">Category —</span>
                     <span id="hero-sentiment" class="hero-pill">Sentiment —</span>
@@ -145,21 +137,16 @@
 
         <section id="signal-strip" class="signal-strip"></section>
 
-        <!-- AI Brief -->
         <section id="brief-panel" aria-label="AI Market Brief"></section>
 
-        <!-- Filter bar -->
         <div class="filter-row">
             <div id="category-filters" class="chips" role="group" aria-label="Category filters"></div>
             <span id="last-updated" class="last-updated" aria-live="polite">Loading…</span>
         </div>
 
-        <!-- News cards -->
         <section id="news-container" class="news-grid" aria-label="News articles"></section>
-
     </main>
 
-    <!-- ── FOOTER ────────────────────────────────────────── -->
     <footer class="site-footer" role="contentinfo">
         <div class="footer-inner">
             <div class="footer-top">
