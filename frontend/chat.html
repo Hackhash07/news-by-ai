@@ -56,23 +56,52 @@
         </div>
       </div>
 
-      <div class="profile-panel">
-        <div class="profile-row">
-          <input id="chat-username" type="text" placeholder="Username" />
-          <input id="chat-display-name" type="text" placeholder="Display name" />
-          <button id="save-profile-btn" type="button">Save Profile</button>
-        </div>
-        <div class="profile-note" id="profile-status">Choose a username to join the room.</div>
-      </div>
+      <div class="chat-layout">
+        <aside class="chat-sidebar">
+          <div class="sidebar-card">
+            <div class="sidebar-title">Profile</div>
+            <div class="profile-fields">
+              <input id="chat-username" type="text" placeholder="Username" />
+              <input id="chat-display-name" type="text" placeholder="Display name" />
+              <button id="save-profile-btn" type="button">Save Profile</button>
+            </div>
+            <div class="profile-note" id="profile-status">Choose a username to join the room.</div>
+          </div>
 
-      <div class="chat-window">
-        <div class="chat-messages" id="chat-messages"></div>
-        <div class="chat-status" id="chat-status">Loading chat…</div>
+          <div class="sidebar-card">
+            <div class="sidebar-title">Rooms</div>
+            <div id="chat-rooms" class="room-list"></div>
+          </div>
 
-        <form id="chat-form" class="chat-form">
-          <input id="chat-input" type="text" placeholder="Share a finance idea..." maxlength="280" autocomplete="off" />
-          <button type="submit">Send</button>
-        </form>
+          <div class="sidebar-card">
+            <div class="sidebar-title">Rules</div>
+            <ul class="rules-list">
+              <li>Keep it finance only.</li>
+              <li>Use short, useful messages.</li>
+              <li>No spam or off-topic chat.</li>
+            </ul>
+          </div>
+        </aside>
+
+        <section class="chat-panel">
+          <div class="chat-panel-head">
+            <div>
+              <div class="hero-eyebrow">ROOM</div>
+              <h2 id="room-title">Global</h2>
+              <p id="room-description">Open finance discussion for markets, macro, and trades.</p>
+            </div>
+            <div class="room-pill">Messages update every 3 sec</div>
+          </div>
+
+          <div class="chat-messages" id="chat-messages"></div>
+
+          <div class="chat-status" id="chat-status">Loading chat…</div>
+
+          <form id="chat-form" class="chat-form">
+            <input id="chat-input" type="text" placeholder="Share a finance idea..." maxlength="280" autocomplete="off" />
+            <button type="submit">Send</button>
+          </form>
+        </section>
       </div>
     </section>
   </main>

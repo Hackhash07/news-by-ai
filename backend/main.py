@@ -18,6 +18,43 @@ CORS(app)
 
 UPDATE_SECRET = os.getenv("UPDATE_SECRET", "changeme")
 
+CHAT_ROOMS = [
+    {
+        "slug": "global",
+        "name": "Global",
+        "description": "Open finance discussion for markets, macro, and trades.",
+    },
+    {
+        "slug": "crypto",
+        "name": "Crypto",
+        "description": "Bitcoin, altcoins, on-chain moves, and crypto news.",
+    },
+    {
+        "slug": "nifty",
+        "name": "Nifty",
+        "description": "NIFTY, BANKNIFTY, Indian markets, and index action.",
+    },
+    {
+        "slug": "gold",
+        "name": "Gold",
+        "description": "Gold, silver, commodities, and safe-haven positioning.",
+    },
+    {
+        "slug": "oil",
+        "name": "Oil",
+        "description": "Crude oil, energy markets, and geopolitics.",
+    },
+]
+
+FINANCE_KEYWORDS = [
+    "stock", "stocks", "market", "markets", "nifty", "sensex", "banknifty",
+    "gold", "silver", "oil", "crude", "brent", "wti", "bitcoin", "btc",
+    "crypto", "forex", "usd", "inr", "rupee", "dollar", "bond", "bonds",
+    "yield", "rate", "rates", "inflation", "fed", "fomc", "rbi", "earnings",
+    "options", "futures", "economy", "recession", "bullish", "bearish",
+    "macro", "geopolitics", "commodities", "trading", "trade"
+]
+
 
 def safe_json_loads(value, default):
     if value is None:
@@ -32,13 +69,10 @@ def safe_json_loads(value, default):
     return default
 
 
-FINANCE_KEYWORDS = [
-    "stock", "stocks", "market", "markets", "nifty", "sensex", "banknifty",
-    "gold", "silver", "oil", "crude", "brent", "wti", "bitcoin", "btc",
-    "crypto", "forex", "usd", "inr", "rupee", "dollar", "bond", "bonds",
-    "yield", "rate", "rates", "inflation", "fed", "fomc", "rbi", "earnings",
-    "options", "futures", "economy", "recession", "bullish", "bearish"
-]
+def normalize_room_slug(room_slug):
+    room_slug = (room_slug or "global").strip().lower()
+    slugs = {room["slug"] for room in CHAT_ROOMS}
+    return room_slug if room_slug in slugs else "global"
 
 
 def is_finance_related(message: str) -> bool:
@@ -119,13 +153,23 @@ def update_news():
     return jsonify({"status": "updated", "articles": len(get_articles())})
 
 
+@app.route("/api/chat/rooms")
+def api_chat_rooms():
+    return jsonify({"rooms": CHAT_ROOMS})
+
+
 @app.route("/api/chat/messages", methods=["GET", "POST"])
 def api_chat_messages():
     if request.method == "GET":
+        room = normalize_room_slug(request.args.get("room", "global"))
         limit = request.args.get("limit", 100, type=int)
-        return jsonify({"messages": get_messages(limit=limit)})
+        return jsonify({
+            "room": room,
+            "messages": get_messages(room_slug=room, limit=limit),
+        })
 
     payload = request.get_json(silent=True) or {}
+    room = normalize_room_slug(payload.get("room", "global"))
     username = (payload.get("username") or "Anonymous").strip()[:40] or "Anonymous"
     display_name = (payload.get("display_name") or username).strip()[:40] or username
     message = (payload.get("message") or "").strip()
@@ -141,7 +185,13 @@ def api_chat_messages():
             "error": "Finance-related messages only. Mention markets, stocks, crypto, gold, oil, rates, or macro topics."
         }), 400
 
-    saved = save_message(username=username, display_name=display_name, message=message)
+    saved = save_message(
+        room_slug=room,
+        username=username,
+        display_name=display_name,
+        message=message,
+    )
+
     return jsonify({"message": saved}), 201
 
 
