@@ -27,27 +27,25 @@ async function init() {
   setInterval(loadMessages, 3000);
   setInterval(updateClock, 1000);
 }
-
 function cacheRefs() {
-  [
-    "chat-rooms",
-    "chat-messages",
-    "chat-form",
-    "chat-input",
-    "chat-username",
-    "chat-display-name",
-    "save-profile-btn",
-    "profile-status",
-    "nav-avatar",
-    "chat-status",
-    "ticker-time",
-    "room-title",
-    "room-description",
-  ].forEach((id) => {
-    refs[id] = document.getElementById(id);
-  });
-}
+  refs.chatRooms = document.getElementById("chat-rooms");
+  refs.chatMessages = document.getElementById("chat-messages");
+  refs.chatForm = document.getElementById("chat-form");
+  refs.chatInput = document.getElementById("chat-input");
 
+  refs.chatUsername = document.getElementById("chat-username");
+  refs.chatDisplayName = document.getElementById("chat-display-name");
+
+  refs.saveProfileBtn = document.getElementById("save-profile-btn");
+  refs.profileStatus = document.getElementById("profile-status");
+
+  refs.navAvatar = document.getElementById("nav-avatar");
+  refs.chatStatus = document.getElementById("chat-status");
+  refs.tickerTime = document.getElementById("ticker-time");
+
+  refs.roomTitle = document.getElementById("room-title");
+  refs.roomDescription = document.getElementById("room-description");
+}
 function bindEvents() {
   if (refs.saveProfileBtn) {
     refs.saveProfileBtn.addEventListener("click", () => {

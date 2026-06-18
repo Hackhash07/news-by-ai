@@ -180,10 +180,6 @@ def api_chat_messages():
     if len(message) > 280:
         return jsonify({"error": "Message too long"}), 400
 
-    if not is_finance_related(message):
-        return jsonify({
-            "error": "Finance-related messages only. Mention markets, stocks, crypto, gold, oil, rates, or macro topics."
-        }), 400
 
     saved = save_message(
         room_slug=room,
