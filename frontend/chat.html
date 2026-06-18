@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trade Trends — Chat</title>
+  <meta name="description" content="Global finance chat room for Trade Trends." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="ticker-bar">
+    <div class="ticker-label">CHAT</div>
+    <div class="ticker-track">
+      <span class="tick"><span class="tick-sym">GLOBAL</span> Finance-only discussion</span>
+    </div>
+    <div class="ticker-time" id="ticker-time">--:--:--</div>
+  </div>
+
+  <nav class="topnav">
+    <div class="brand">
+      <div class="brand-mark">TT</div>
+      <div>
+        <div class="brand-name">TRADE TRENDS</div>
+        <div class="brand-sub">Global Finance Chat</div>
+      </div>
+    </div>
+
+    <div class="nav-links">
+      <a href="/">Back to News</a>
+    </div>
+
+    <div class="nav-right">
+      <a class="chat-icon-btn" href="/" title="Back to news" aria-label="Back to news">🏠</a>
+      <div class="market-pill">
+        <span class="market-dot open"></span>
+        <span>Chat Room</span>
+      </div>
+      <div class="nav-avatar" id="nav-avatar">SA</div>
+    </div>
+  </nav>
+
+  <main class="shell chat-shell">
+    <section class="chat-page-card">
+      <div class="chat-page-head">
+        <div>
+          <div class="hero-eyebrow">LIVE DISCUSSION</div>
+          <h1>Global Finance Chat</h1>
+          <p>Talk about stocks, crypto, gold, oil, rates, indices, and macro topics only.</p>
+        </div>
+        <div class="chat-page-stat">
+          <span class="stat-label">Messages are shared by everyone</span>
+          <strong class="stat-value">Polling every few seconds</strong>
+        </div>
+      </div>
+
+      <div class="profile-panel">
+        <div class="profile-row">
+          <input id="chat-username" type="text" placeholder="Username" />
+          <input id="chat-display-name" type="text" placeholder="Display name" />
+          <button id="save-profile-btn" type="button">Save Profile</button>
+        </div>
+        <div class="profile-note" id="profile-status">Choose a username to join the room.</div>
+      </div>
+
+      <div class="chat-window">
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-status" id="chat-status">Loading chat…</div>
+
+        <form id="chat-form" class="chat-form">
+          <input id="chat-input" type="text" placeholder="Share a finance idea..." maxlength="280" autocomplete="off" />
+          <button type="submit">Send</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <script src="/chat.js"></script>
+</body>
+</html>
