@@ -1,10 +1,13 @@
 const API = {
+  rooms: "/api/chat/rooms",
   messages: "/api/chat/messages",
   send: "/api/chat/messages",
 };
 
 const state = {
   profile: loadProfile(),
+  rooms: [],
+  currentRoom: new URLSearchParams(window.location.search).get("room") || "global",
   messages: [],
 };
 
@@ -16,28 +19,34 @@ async function init() {
   cacheRefs();
   bindEvents();
   syncProfileToUI();
+  updateClock();
+
+  await loadRooms();
   await loadMessages();
+
   setInterval(loadMessages, 3000);
   setInterval(updateClock, 1000);
 }
 
 function cacheRefs() {
-  [
-    "chat-messages",
-    "chat-form",
-    "chat-input",
-    "chat-username",
-    "chat-display-name",
-    "save-profile-btn",
-    "profile-status",
-    "nav-avatar",
-    "chat-status",
-    "ticker-time",
-  ].forEach((id) => {
-    refs[id] = document.getElementById(id);
-  });
-}
+  refs.chatRooms = document.getElementById("chat-rooms");
+  refs.chatMessages = document.getElementById("chat-messages");
+  refs.chatForm = document.getElementById("chat-form");
+  refs.chatInput = document.getElementById("chat-input");
 
+  refs.chatUsername = document.getElementById("chat-username");
+  refs.chatDisplayName = document.getElementById("chat-display-name");
+
+  refs.saveProfileBtn = document.getElementById("save-profile-btn");
+  refs.profileStatus = document.getElementById("profile-status");
+
+  refs.navAvatar = document.getElementById("nav-avatar");
+  refs.chatStatus = document.getElementById("chat-status");
+  refs.tickerTime = document.getElementById("ticker-time");
+
+  refs.roomTitle = document.getElementById("room-title");
+  refs.roomDescription = document.getElementById("room-description");
+}
 function bindEvents() {
   if (refs.saveProfileBtn) {
     refs.saveProfileBtn.addEventListener("click", () => {
@@ -70,25 +79,86 @@ function saveProfile(profile) {
 }
 
 function saveProfileFromInputs() {
-  const username = (refs["chat-username"]?.value || "").trim() || "Anonymous";
-  const displayName = (refs["chat-display-name"]?.value || "").trim() || username;
+  const username = (refs.chatUsername?.value || "").trim() || "Anonymous";
+  const displayName = (refs.chatDisplayName?.value || "").trim() || username;
   saveProfile({ username, display_name: displayName });
 }
 
 function syncProfileToUI() {
-  if (refs["chat-username"]) refs["chat-username"].value = state.profile.username;
-  if (refs["chat-display-name"]) refs["chat-display-name"].value = state.profile.display_name;
+  if (refs.chatUsername) refs.chatUsername.value = state.profile.username;
+  if (refs.chatDisplayName) refs.chatDisplayName.value = state.profile.display_name;
   if (refs.navAvatar) refs.navAvatar.textContent = initials(state.profile.display_name || state.profile.username);
   if (refs.profileStatus) refs.profileStatus.textContent = `Signed in as ${state.profile.display_name}`;
 }
 
+async function loadRooms() {
+  try {
+    const response = await fetch(API.rooms, { cache: "no-store" });
+    const data = await response.json();
+    state.rooms = Array.isArray(data.rooms) ? data.rooms : [];
+
+    if (!state.rooms.some((room) => room.slug === state.currentRoom)) {
+      state.currentRoom = "global";
+    }
+
+    renderRooms();
+    renderRoomHeader();
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function renderRooms() {
+  if (!refs.chatRooms) return;
+
+  refs.chatRooms.innerHTML = state.rooms
+    .map((room) => {
+      const active = room.slug === state.currentRoom ? "active" : "";
+      return `
+        <button class="room-btn ${active}" data-room="${escapeHtml(room.slug)}" type="button">
+          <span class="room-name">${escapeHtml(room.name)}</span>
+          <span class="room-desc">${escapeHtml(room.description || "")}</span>
+        </button>
+      `;
+    })
+    .join("");
+
+  refs.chatRooms.querySelectorAll("[data-room]").forEach((button) => {
+    button.addEventListener("click", () => {
+      setActiveRoom(button.dataset.room);
+    });
+  });
+}
+
+function setActiveRoom(roomSlug) {
+  state.currentRoom = roomSlug;
+  renderRooms();
+  renderRoomHeader();
+  loadMessages();
+}
+
+function renderRoomHeader() {
+  const room = state.rooms.find((r) => r.slug === state.currentRoom) || state.rooms[0];
+
+  if (refs.roomTitle) refs.roomTitle.textContent = room ? room.name : "Global";
+  if (refs.roomDescription) refs.roomDescription.textContent = room ? room.description : "Open finance discussion for markets, macro, and trades.";
+}
+
 async function loadMessages() {
   try {
-    const response = await fetch(API.messages, { cache: "no-store" });
+    const url = new URL(API.messages, window.location.origin);
+    url.searchParams.set("room", state.currentRoom);
+    url.searchParams.set("limit", "100");
+
+    const response = await fetch(url, { cache: "no-store" });
     const data = await response.json();
+
     state.messages = Array.isArray(data.messages) ? data.messages : [];
     renderMessages();
-    if (refs.chatStatus) refs.chatStatus.textContent = `Loaded ${state.messages.length} messages`;
+
+    if (refs.chatStatus) {
+      refs.chatStatus.textContent = `Loaded ${state.messages.length} messages in ${state.currentRoom}`;
+    }
   } catch (error) {
     console.error(error);
     if (refs.chatStatus) refs.chatStatus.textContent = "Chat unavailable";
@@ -105,6 +175,7 @@ async function sendMessage() {
   saveProfileFromInputs();
 
   const payload = {
+    room: state.currentRoom,
     username: state.profile.username,
     display_name: state.profile.display_name,
     message,
@@ -147,12 +218,15 @@ function renderMessages() {
     .map((msg) => {
       const isMine = (msg.username || "").toLowerCase() === myName;
       return `
-        <article class="message ${isMine ? "mine" : ""}">
-          <div class="message-top">
-            <strong>${escapeHtml(msg.display_name || msg.username || "Anonymous")}</strong>
-            <span class="message-meta">${formatRelativeTime(msg.created_at)}</span>
+        <article class="chat-row ${isMine ? "mine" : ""}">
+          <div class="msg-avatar">${initials(msg.display_name || msg.username || "A")}</div>
+          <div class="msg-bubble">
+            <div class="msg-meta">
+              <strong>${escapeHtml(msg.display_name || msg.username || "Anonymous")}</strong>
+              <span>${formatRelativeTime(msg.created_at)}</span>
+            </div>
+            <div class="msg-text">${escapeHtml(msg.message || "")}</div>
           </div>
-          <div class="message-body">${escapeHtml(msg.message || "")}</div>
         </article>
       `;
     })

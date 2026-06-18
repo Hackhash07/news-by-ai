@@ -40,6 +40,19 @@ def _ensure_news_columns(conn):
         cursor.execute("ALTER TABLE news ADD COLUMN added_at TEXT DEFAULT ''")
 
 
+def _ensure_chat_columns(conn):
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(chat_messages)")
+    columns = {row[1] for row in cursor.fetchall()}
+
+    if "room_slug" not in columns:
+        cursor.execute("ALTER TABLE chat_messages ADD COLUMN room_slug TEXT DEFAULT 'global'")
+    if "display_name" not in columns:
+        cursor.execute("ALTER TABLE chat_messages ADD COLUMN display_name TEXT DEFAULT 'Anonymous'")
+    if "created_at" not in columns:
+        cursor.execute("ALTER TABLE chat_messages ADD COLUMN created_at TEXT DEFAULT ''")
+
+
 def create_database():
     Path("database").mkdir(exist_ok=True)
 
@@ -70,6 +83,7 @@ def create_database():
         """
         CREATE TABLE IF NOT EXISTS chat_messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            room_slug TEXT NOT NULL DEFAULT 'global',
             username TEXT NOT NULL,
             display_name TEXT NOT NULL,
             message TEXT NOT NULL,
@@ -79,6 +93,7 @@ def create_database():
     )
 
     _ensure_news_columns(conn)
+    _ensure_chat_columns(conn)
 
     conn.commit()
     conn.close()
@@ -176,9 +191,10 @@ def get_articles():
     return articles
 
 
-def save_message(username, display_name, message):
+def save_message(room_slug, username, display_name, message):
     create_database()
 
+    room_slug = (room_slug or "global").strip() or "global"
     username = (username or "Anonymous").strip()[:40] or "Anonymous"
     display_name = (display_name or username).strip()[:40] or username
     message = (message or "").strip()
@@ -193,10 +209,10 @@ def save_message(username, display_name, message):
     cursor.execute(
         """
         INSERT INTO chat_messages
-        (username, display_name, message, created_at)
-        VALUES (?, ?, ?, ?)
+        (room_slug, username, display_name, message, created_at)
+        VALUES (?, ?, ?, ?, ?)
         """,
-        (username, display_name, message, created_at),
+        (room_slug, username, display_name, message, created_at),
     )
     conn.commit()
 
@@ -209,6 +225,7 @@ def save_message(username, display_name, message):
 
     return {
         "id": row["id"],
+        "room_slug": row["room_slug"],
         "username": row["username"],
         "display_name": row["display_name"],
         "message": row["message"],
@@ -216,18 +233,22 @@ def save_message(username, display_name, message):
     }
 
 
-def get_messages(limit=100):
+def get_messages(room_slug="global", limit=100):
     create_database()
+
+    room_slug = (room_slug or "global").strip() or "global"
 
     conn = _connect()
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT * FROM chat_messages
+        SELECT *
+        FROM chat_messages
+        WHERE room_slug = ?
         ORDER BY id DESC
         LIMIT ?
         """,
-        (int(limit),),
+        (room_slug, int(limit)),
     )
     rows = cursor.fetchall()
     conn.close()
@@ -237,6 +258,7 @@ def get_messages(limit=100):
         messages.append(
             {
                 "id": row["id"],
+                "room_slug": row["room_slug"],
                 "username": row["username"],
                 "display_name": row["display_name"],
                 "message": row["message"],
