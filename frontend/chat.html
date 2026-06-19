@@ -1,238 +1,141 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Trade Trends — Chat</title>
-  <meta name="description" content="Global finance chat room for Trade Trends." />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/style.css" />
-
-  <!-- Google Identity Services -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trade Trends — Live Desk</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
 </head>
-<body>
-
-  <!-- ══════════════════════════════════════════════════════════
-       AUTH GATE — shown until user is signed in + profile set
-  ══════════════════════════════════════════════════════════ -->
-  <div class="auth-gate" id="auth-gate" aria-modal="true" role="dialog" aria-label="Sign in">
-
-    <div class="auth-card" id="auth-card">
-
-      <!-- ── STEP 1: GOOGLE SIGN-IN ── -->
-      <div id="auth-step-1" class="auth-step-panel">
-        <div class="auth-brand">
-          <div class="brand-mark">TT</div>
-          <span class="auth-brand-name">TRADE TRENDS</span>
-        </div>
-
-        <div class="auth-step-dots">
-          <span class="auth-dot active"></span>
-          <span class="auth-dot"></span>
-        </div>
-
-        <h1 class="auth-heading">Join the Chat Room</h1>
-        <p class="auth-sub">Sign in with Google to join real-time finance discussions. Free, no password needed.</p>
-
-        <div class="auth-divider"></div>
-
-        <!-- Google renders its button here -->
-        <div id="g-signin-container" class="g-signin-wrap"></div>
-
-        <p class="auth-disclaimer">
-          By continuing you agree to our
-          <a href="#" class="auth-link">Terms</a> and <a href="#" class="auth-link">Privacy Policy</a>.
-          We only use your email for your profile.
-        </p>
-      </div>
-
-      <!-- ── STEP 2: CREATE PROFILE ── -->
-      <div id="auth-step-2" class="auth-step-panel" hidden>
-        <div class="auth-brand">
-          <div class="brand-mark">TT</div>
-          <span class="auth-brand-name">TRADE TRENDS</span>
-        </div>
-
-        <div class="auth-step-dots">
-          <span class="auth-dot done">✓</span>
-          <span class="auth-dot active"></span>
-        </div>
-
-        <h1 class="auth-heading">Set Up Your Profile</h1>
-        <p class="auth-sub">Signed in as <strong id="auth-google-email" class="auth-email-highlight">—</strong></p>
-
-        <div class="auth-google-badge" id="auth-google-badge">
-          <div class="auth-google-avatar" id="auth-google-avatar">G</div>
-          <div class="auth-google-info">
-            <span class="auth-google-name" id="auth-google-name">—</span>
-            <span class="auth-google-verified">✓ Google verified</span>
-          </div>
-        </div>
-
-        <div class="auth-form">
-          <div class="auth-field">
-            <label class="auth-label" for="setup-display-name">Display Name</label>
-            <input id="setup-display-name" class="auth-input" type="text"
-              placeholder="How others see you in chat" maxlength="40" autocomplete="name" />
-          </div>
-          <div class="auth-field">
-            <label class="auth-label" for="setup-username">Trading Handle</label>
-            <div class="auth-handle-wrap">
-              <span class="auth-at">@</span>
-              <input id="setup-username" class="auth-input auth-input-handle" type="text"
-                placeholder="yourtag" maxlength="20" autocomplete="off" spellcheck="false" />
+<body class="chat-layout">
+    
+    <nav class="topnav" role="navigation" aria-label="Main navigation">
+        <div class="nav-inner">
+            <a href="index.html" class="brand" aria-label="Trade Trends home">
+                <div class="brand-mark" aria-hidden="true">TT</div>
+                <div class="brand-text">
+                    <span class="brand-name">TRADE TRENDS</span>
+                    <span class="brand-sub">Market Intelligence</span>
+                </div>
+            </a>
+            <div class="nav-links" role="list">
+                <a href="index.html" class="nav-link" role="listitem">Intelligence</a>
+                <a href="chat.html" class="nav-link active" role="listitem">Live Desk</a>
+                <a href="profile.html#watchlists" class="nav-link" role="listitem">Watchlist</a>
+                <a href="profile.html#saved" class="nav-link" role="listitem">Saved</a>
             </div>
-            <span class="auth-field-hint" id="handle-hint"></span>
-          </div>
-          <button class="auth-submit-btn" id="complete-profile-btn" type="button">
-            Enter Chat Room
-            <span class="auth-arrow">→</span>
-          </button>
+		    <div class="nav-right">
+                <div class="ticker-time" id="ticker-time" style="margin-right:20px;">--:--:--</div>
+                <a href="profile.html" class="nav-avatar-link">
+                    <div class="nav-avatar" id="nav-avatar">?</div>
+                </a>
+	        </div>
         </div>
-      </div>
+    </nav>
 
-    </div><!-- /auth-card -->
-  </div><!-- /auth-gate -->
-
-  <!-- ══════════════════════════════════════════════════════════
-       PROFILE EDIT MODAL (shown via Edit Profile button)
-  ══════════════════════════════════════════════════════════ -->
-  <div class="edit-modal-overlay" id="edit-modal" hidden role="dialog" aria-label="Edit profile">
-    <div class="edit-modal-card">
-      <div class="edit-modal-head">
-        <span class="edit-modal-title">Edit Profile</span>
-        <button class="edit-modal-close" id="edit-modal-close" aria-label="Close">✕</button>
-      </div>
-      <div class="auth-form">
-        <div class="auth-field">
-          <label class="auth-label" for="edit-display-name">Display Name</label>
-          <input id="edit-display-name" class="auth-input" type="text" maxlength="40" />
+    <!-- AUTH GATE -->
+    <div id="auth-gate" class="auth-overlay" hidden>
+        <div class="auth-modal">
+            <div class="auth-brand">
+                <div class="brand-mark" aria-hidden="true">TT</div>
+                <h2>Live Desk Authentication</h2>
+                <p>Join the conversation with other verified traders.</p>
+            </div>
+            
+            <div id="auth-step-1" class="auth-step">
+                <button id="google-login-btn" class="google-btn">Sign in with Google</button>
+            </div>
+            
+            <div id="auth-step-2" class="auth-step" hidden>
+                <h3>Complete your profile</h3>
+                <div class="auth-preview">
+                    <div id="auth-google-avatar" class="auth-google-avatar"></div>
+                    <div>
+                        <div id="auth-google-name" class="auth-google-name"></div>
+                        <div id="auth-google-email" class="auth-google-email"></div>
+                    </div>
+                </div>
+                
+                <div class="auth-form">
+                    <label class="auth-label">
+                        Display Name
+                        <input id="setup-display-name" type="text" class="auth-input" placeholder="e.g. John Doe" />
+                    </label>
+                    
+                    <label class="auth-label">
+                        Trading Handle
+                        <div class="auth-input-group">
+                            <span class="auth-addon">@</span>
+                            <input id="setup-username" type="text" class="auth-input" placeholder="e.g. jdoe_trades" />
+                        </div>
+                        <span id="handle-hint" class="auth-field-hint"></span>
+                    </label>
+                    
+                    <button id="complete-profile-btn" class="auth-submit-btn">Enter Live Desk →</button>
+                </div>
+            </div>
         </div>
-        <div class="auth-field">
-          <label class="auth-label" for="edit-username">Trading Handle</label>
-          <div class="auth-handle-wrap">
-            <span class="auth-at">@</span>
-            <input id="edit-username" class="auth-input auth-input-handle" type="text" maxlength="20" spellcheck="false" />
-          </div>
-        </div>
-        <button class="auth-submit-btn" id="save-edit-btn" type="button">Save Changes</button>
-      </div>
     </div>
-  </div>
 
-  <!-- ══════════════════════════════════════════════════════════
-       MAIN SITE (chat)
-  ══════════════════════════════════════════════════════════ -->
-  <div class="ticker-bar">
-    <div class="ticker-label">CHAT</div>
-    <div class="ticker-track">
-      <span class="tick"><span class="tick-sym">GLOBAL</span> Finance-only discussion</span>
-    </div>
-    <div class="ticker-time" id="ticker-time">--:--:--</div>
-  </div>
-
-  <nav class="topnav">
-    <div class="brand">
-      <div class="brand-mark">TT</div>
-      <div>
-        <div class="brand-name">TRADE TRENDS</div>
-        <div class="brand-sub">Global Finance Chat</div>
-      </div>
-    </div>
-    <div class="nav-links">
-      <a href="/">Back to News</a>
-    </div>
-    <div class="nav-right">
-      <a class="chat-icon-btn" href="/" title="Back to news" aria-label="Back to news">🏠</a>
-      <div class="market-pill">
-        <span class="market-dot open"></span>
-        <span>Chat Room</span>
-      </div>
-      <!-- avatar: img if google picture available, else initials div -->
-      <div class="nav-avatar" id="nav-avatar">?</div>
-    </div>
-  </nav>
-
-  <main class="shell chat-shell">
-    <section class="chat-page-card">
-      <div class="chat-page-head">
-        <div>
-          <div class="hero-eyebrow">LIVE DISCUSSION</div>
-          <h1>Global Finance Chat</h1>
-          <p>Stocks, crypto, gold, oil, rates, indices, and macro topics only.</p>
-        </div>
-        <div class="chat-page-stat">
-          <span class="stat-label">Updates live</span>
-          <strong class="stat-value">Every 3 seconds</strong>
-        </div>
-      </div>
-
-      <div class="chat-layout">
-
-        <!-- ── SIDEBAR ── -->
+    <main class="chat-shell">
         <aside class="chat-sidebar">
-
-          <!-- User profile widget (shown after auth) -->
-          <div class="sidebar-card user-widget" id="user-widget">
-            <div class="sidebar-title">Your Profile</div>
-            <div class="user-widget-inner">
-              <div class="user-widget-avatar" id="widget-avatar">?</div>
-              <div class="user-widget-info">
-                <div class="user-widget-name" id="widget-display-name">—</div>
-                <div class="user-widget-handle" id="widget-handle">@—</div>
-                <div class="user-widget-email" id="widget-email">—</div>
-              </div>
+            <div class="sidebar-header">
+                <h3>Live Desk</h3>
             </div>
-            <div class="user-widget-actions">
-              <button class="widget-btn" id="edit-profile-btn" type="button">Edit Profile</button>
-              <button class="widget-btn widget-btn-ghost" id="signout-btn" type="button">Sign Out</button>
+            
+            <div class="room-list" id="chat-rooms">
+                <button class="room-btn active" data-room="global" type="button">
+                  <span class="room-name">Global Markets</span>
+                  <span class="room-desc">Equities, bonds, and macro</span>
+                </button>
+                <button class="room-btn" data-room="crypto" type="button">
+                  <span class="room-name">Crypto Assets</span>
+                  <span class="room-desc">BTC, ETH, and altcoins</span>
+                </button>
+                <button class="room-btn" data-room="nifty" type="button">
+                  <span class="room-name">NIFTY 50</span>
+                  <span class="room-desc">Indian markets discussion</span>
+                </button>
             </div>
-          </div>
-
-          <div class="sidebar-card">
-            <div class="sidebar-title">Rooms</div>
-            <div id="chat-rooms" class="room-list"></div>
-          </div>
-
-          <div class="sidebar-card">
-            <div class="sidebar-title">Rules</div>
-            <ul class="rules-list">
-              <li>Finance topics only.</li>
-              <li>Keep messages short and useful.</li>
-              <li>No spam or off-topic chat.</li>
-            </ul>
-          </div>
+            
+            <div class="sidebar-profile">
+                <div class="sp-info">
+                    <div id="widget-avatar" class="sp-avatar">U</div>
+                    <div class="sp-text">
+                        <strong id="widget-display-name">Trader</strong>
+                        <span id="widget-handle">@user</span>
+                    </div>
+                </div>
+                <div class="sp-actions">
+                    <button id="signout-btn" class="sp-action-btn">Sign Out</button>
+                </div>
+            </div>
         </aside>
 
-        <!-- ── CHAT PANEL ── -->
-        <section class="chat-panel">
-          <div class="chat-panel-head">
-            <div>
-              <div class="hero-eyebrow">ROOM</div>
-              <h2 id="room-title">Global</h2>
-              <p id="room-description">Open finance discussion for markets, macro, and trades.</p>
-            </div>
-            <div class="room-pill">Polling every 3 sec</div>
-          </div>
-
-          <div class="chat-messages" id="chat-messages"></div>
-          <div class="chat-status" id="chat-status">Loading chat…</div>
-
-          <form id="chat-form" class="chat-form">
-            <input id="chat-input" type="text"
-              placeholder="Share a finance idea…"
-              maxlength="280" autocomplete="off" />
-            <button type="submit">Send</button>
-          </form>
+        <section class="chat-main">
+            <header class="chat-header">
+                <div>
+                    <h2 id="room-title">Global Markets</h2>
+                    <p id="room-description">Equities, bonds, and macro</p>
+                </div>
+                <div class="chat-status" id="chat-status">Connecting...</div>
+            </header>
+            
+            <div class="chat-messages" id="chat-messages"></div>
+            
+            <footer class="chat-composer">
+                <form id="chat-form" class="composer-form">
+                    <input id="chat-input" type="text" class="composer-input" placeholder="Share a signal or insight..." autocomplete="off" />
+                    <button type="submit" class="composer-send" aria-label="Send message">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                    </button>
+                </form>
+            </footer>
         </section>
-
-      </div>
-    </section>
-  </main>
-
-  <script src="/chat.js"></script>
+    </main>
+    
+    <script type="module" src="chat.js"></script>
 </body>
 </html>

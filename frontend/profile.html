@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trade Trends — Profile</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body class="profile-layout">
+    <nav class="topnav" role="navigation" aria-label="Main navigation">
+        <div class="nav-inner">
+            <a href="index.html" class="brand" aria-label="Trade Trends home">
+                <div class="brand-mark" aria-hidden="true">TT</div>
+                <div class="brand-text">
+                    <span class="brand-name">TRADE TRENDS</span>
+                    <span class="brand-sub">Market Intelligence</span>
+                </div>
+            </a>
+            <div class="nav-links" role="list">
+                <a href="index.html" class="nav-link" role="listitem">Intelligence</a>
+                <a href="chat.html" class="nav-link" role="listitem">Live Desk</a>
+                <a href="profile.html#watchlists" class="nav-link" role="listitem">Watchlist</a>
+                <a href="profile.html#saved" class="nav-link active" role="listitem">Saved</a>
+            </div>
+		    <div class="nav-right">
+                <div class="ticker-time" id="ticker-time" style="margin-right:20px;">--:--:--</div>
+                <a href="profile.html" class="nav-avatar-link">
+                    <div class="nav-avatar" id="nav-avatar">?</div>
+                </a>
+	        </div>
+        </div>
+    </nav>
+
+    <main class="shell" role="main" style="padding-top:40px;">
+        <div id="auth-warning" class="empty-state" hidden>
+            <strong>Authentication Required</strong>
+            Please <a href="chat.html" style="color:var(--a1)">sign in via the Live Desk</a> to access your profile.
+        </div>
+
+        <div id="profile-content" hidden>
+            <!-- Header -->
+            <section class="profile-header card">
+                <div class="ph-left">
+                    <div id="profile-avatar" class="ph-avatar">U</div>
+                    <div class="ph-info">
+                        <h1 id="profile-display-name">Trader</h1>
+                        <span id="profile-handle" class="ph-handle">@user</span>
+                    </div>
+                </div>
+                <div class="ph-right">
+                    <button id="edit-profile-btn" class="secondary-btn">Edit Profile</button>
+                    <button id="signout-btn" class="secondary-btn">Sign Out</button>
+                </div>
+            </section>
+
+            <!-- Dashboard Grid -->
+            <div class="profile-grid" style="display:grid; grid-template-columns: 1fr 2fr; gap:20px; margin-top:20px;">
+                
+                <!-- Watchlists -->
+                <aside id="watchlists">
+                    <div class="card" style="padding: 20px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                            <h2 style="margin:0;font-size:16px;">Watchlists</h2>
+                            <button id="new-wl-btn" class="refresh-btn">+ New</button>
+                        </div>
+                        <div id="watchlists-container">
+                            <div class="empty-state">No watchlists yet.</div>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Saved Articles -->
+                <section id="saved">
+                    <div class="card" style="padding: 20px;">
+                        <h2 style="margin:0;margin-bottom:20px;font-size:16px;">Saved Intelligence</h2>
+                        <div id="saved-container" class="news-grid" style="grid-template-columns: 1fr; gap: 15px;">
+                            <div class="empty-state">No saved articles.</div>
+                        </div>
+                    </div>
+                </section>
+                
+            </div>
+        </div>
+    </main>
+
+    <!-- Modals -->
+    <div id="edit-modal" class="auth-overlay" hidden>
+        <div class="auth-modal" style="text-align: left;">
+            <h2 style="margin-top:0">Edit Profile</h2>
+            <label class="auth-label">Display Name
+                <input type="text" id="edit-dname" class="auth-input">
+            </label>
+            <label class="auth-label">Handle
+                <input type="text" id="edit-handle" class="auth-input" disabled>
+                <span class="auth-field-hint" style="color:var(--t3)">Handle cannot be changed.</span>
+            </label>
+            <div style="display:flex;gap:10px;margin-top:20px;">
+                <button id="save-edit-btn" class="auth-submit-btn" style="flex:1">Save</button>
+                <button id="cancel-edit-btn" class="secondary-btn" style="flex:1">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="profile.js"></script>
+</body>
+</html>
