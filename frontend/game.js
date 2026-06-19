@@ -1,83 +1,92 @@
-/* Trading IQ Battle — full frontend room + game engine */
+/* Trading IQ Battle — simultaneous real-time room game
+   Works across tabs on the same browser using localStorage + BroadcastChannel.
+   Replace the sync layer with Firebase later for true internet multiplayer. */
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-const STORAGE_KEY = "trading-iq-rooms-v3";
-const ROOM_STATE_KEY = "trading-iq-current-room-v3";
-const CHANNEL_NAME = "trading-iq-battle-v3";
-const clientId = crypto.randomUUID();
-
-const ui = {
-  mode: "single",
-  roomCode: "",
-  myTeam: "A",
-  isHost: false,
-  phase: "lobby", // lobby | waiting | playing | finished
-  room: null,
-  timerHandle: null,
-  questionHandle: null,
-  startedAt: 0,
+const KEYS = {
+  rooms: "tiq_rooms_v6",
+  me: "tiq_me_v6",
+  activeRoom: "tiq_active_room_v6",
+  activeMode: "tiq_active_mode_v6",
 };
 
+const CHANNEL_NAME = "tiq_battle_v6";
+const bc = "BroadcastChannel" in window ? new BroadcastChannel(CHANNEL_NAME) : null;
+const me = getOrCreateMe();
+
 const state = {
-  settings: {
-    teamAName: "Alpha",
-    teamBName: "Beta",
-    playerName: "Player 1",
-    stocksPerTeam: 10,
-    initialWorth: 1000,
-    totalRounds: 10,
-  },
+  mode: "single",
+  roomCode: "",
+  team: "A",
   room: null,
-  game: null,
+  phase: "lobby",
+  lastQuestionId: "",
+  botTimer: null,
+  tickTimer: null,
 };
 
 const els = {
   modeCards: $$(".game-mode-card"),
+  lobbyStatusChip: $("#lobby-status-chip"),
   modeLabel: $("#mode-label"),
   lobbyStatus: $("#lobby-status"),
   roomHelp: $("#room-help"),
-  roomCode: $("#room-code"),
+  playerName: $("#player-name"),
+  teamChoice: $("#team-choice"),
   roomNameA: $("#room-name-a"),
   roomNameB: $("#room-name-b"),
-  playerName: $("#player-name"),
   stockCount: $("#stock-count"),
-  initialWorth: $("#initial-worth"),
-  totalRounds: $("#total-rounds"),
+  initialPrice: $("#initial-price"),
+  questionSeconds: $("#question-seconds"),
+  matchSeconds: $("#match-seconds"),
+  roomCode: $("#room-code"),
   createRoomBtn: $("#create-room-btn"),
   joinRoomBtn: $("#join-room-btn"),
-  startMatchBtn: $("#start-match-btn"),
-  backLobbyBtn: $("#back-lobby-btn"),
-  waitingScreen: $("#waiting-screen"),
+  copyCodeBtn: $("#copy-code-btn"),
+
   modeScreen: $("#mode-screen"),
+  waitingScreen: $("#waiting-screen"),
   arenaScreen: $("#arena-screen"),
   resultsScreen: $("#results-screen"),
+
   waitingTitle: $("#waiting-title"),
   waitingChip: $("#waiting-chip"),
-  activeRoomCode: $("#active-room-code"),
-  activeRoomMode: $("#active-room-mode"),
-  joinedList: $("#joined-list"),
+  waitingRoomCode: $("#waiting-room-code"),
+  waitingRoomMode: $("#waiting-room-mode"),
   waitingNote: $("#waiting-note"),
+  waitingTeamAName: $("#waiting-team-a-name"),
+  waitingTeamBName: $("#waiting-team-b-name"),
+  waitingTeamACount: $("#waiting-team-a-count"),
+  waitingTeamBCount: $("#waiting-team-b-count"),
+  waitingTeamAList: $("#waiting-team-a-list"),
+  waitingTeamBList: $("#waiting-team-b-list"),
+  startMatchBtn: $("#start-match-btn"),
+  backLobbyBtn: $("#back-lobby-btn"),
+
   arenaRoomCode: $("#arena-room-code"),
-  arenaRound: $("#arena-round"),
-  arenaTimer: $("#arena-timer"),
+  arenaMatchTimer: $("#arena-match-timer"),
+  arenaQuestionTimer: $("#arena-question-timer"),
   arenaPrice: $("#arena-price"),
-  arenaTurn: $("#arena-turn"),
+  arenaNet: $("#arena-net"),
   teamAName: $("#team-a-name"),
   teamBName: $("#team-b-name"),
   teamAWorth: $("#team-a-worth"),
   teamBWorth: $("#team-b-worth"),
   teamAStocks: $("#team-a-stocks"),
   teamBStocks: $("#team-b-stocks"),
+  teamAFlow: $("#team-a-flow"),
+  teamBFlow: $("#team-b-flow"),
   teamARoster: $("#team-a-roster"),
   teamBRoster: $("#team-b-roster"),
   questionText: $("#question-text"),
-  questionTime: $("#question-time"),
   answerInput: $("#answer-input"),
   submitAnswerBtn: $("#submit-answer-btn"),
+  marketNote: $("#market-note"),
   feedback: $("#feedback"),
   canvas: $("#market-chart"),
+
   resultsTitle: $("#results-title"),
   resultsSub: $("#results-sub"),
   mvpName: $("#mvp-name"),
@@ -85,306 +94,86 @@ const els = {
   winnerTeam: $("#winner-team"),
   winnerWorth: $("#winner-worth"),
   resTeamAName: $("#res-team-a-name"),
-  resTeamBName: $("#res-team-b-name"),
-  resTeamAWins: $("#res-team-a-wins"),
-  resTeamBWins: $("#res-team-b-wins"),
+  resTeamAWorth: $("#res-team-a-worth"),
   resTeamADetail: $("#res-team-a-detail"),
+  resTeamBName: $("#res-team-b-name"),
+  resTeamBWorth: $("#res-team-b-worth"),
   resTeamBDetail: $("#res-team-b-detail"),
   newMatchBtn: $("#new-match-btn"),
   returnLobbyBtn: $("#return-lobby-btn"),
 };
 
-const bc = "BroadcastChannel" in window ? new BroadcastChannel(CHANNEL_NAME) : null;
-
-function readRooms() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-  } catch {
-    return {};
+function getOrCreateMe() {
+  let id = localStorage.getItem(KEYS.me);
+  if (!id) {
+    id = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    localStorage.setItem(KEYS.me, id);
   }
-}
-
-function writeRooms(rooms) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms));
-  if (bc) bc.postMessage({ type: "rooms-updated" });
-}
-
-function saveCurrentRoom(code) {
-  localStorage.setItem(ROOM_STATE_KEY, code);
-}
-
-function getCurrentRoom() {
-  return localStorage.getItem(ROOM_STATE_KEY) || "";
-}
-
-function genRoomCode() {
-  const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-  const n = Math.floor(Math.random() * 900) + 100;
-  const prefix = letters[Math.floor(Math.random() * letters.length)] + letters[Math.floor(Math.random() * letters.length)];
-  return `${prefix}${n}`;
-}
-
-function clamp(n, a, b) {
-  return Math.max(a, Math.min(b, n));
-}
-
-function round2(n) {
-  return Math.round(n * 100) / 100;
-}
-
-function nowIso() {
-  return new Date().toISOString();
+  return id;
 }
 
 function clone(v) {
   return JSON.parse(JSON.stringify(v));
 }
 
-function initPlayer(name, team) {
-  return {
-    id: crypto.randomUUID(),
-    name: name.trim() || `Player ${team}`,
-    team,
-    stocks: 0,
-    worth: 0,
-    score: 0,
-    correct: 0,
-    bonus: 0,
-  };
-}
-
-function generateQuestion() {
-  const a = Math.floor(Math.random() * 900) + 100;
-  const b = Math.floor(Math.random() * 900) + 100;
-  const add = Math.random() > 0.5;
-
-  if (add) {
-    return { text: `${a} + ${b}`, answer: a + b, type: "add" };
+function loadRooms() {
+  try {
+    return JSON.parse(localStorage.getItem(KEYS.rooms) || "{}");
+  } catch {
+    return {};
   }
-
-  const big = Math.max(a, b);
-  const small = Math.min(a, b);
-  return { text: `${big} - ${small}`, answer: big - small, type: "sub" };
 }
 
-function computeTeamWorth(team, marketPrice) {
-  return round2(team.stocks * marketPrice);
-}
-
-function buildInitialGame(room) {
-  const { settings } = room;
-  const teamA = {
-    key: "A",
-    name: settings.teamAName,
-    players: [initPlayer(settings.playerName || "Player 1", "A")],
-    stocks: settings.stocksPerTeam,
-    score: 0,
-    worth: round2(settings.stocksPerTeam * settings.initialWorth),
-  };
-
-  const teamB = {
-    key: "B",
-    name: settings.teamBName,
-    players: [initPlayer(room.mode === "single" ? "Market Bot" : "Player 2", "B")],
-    stocks: settings.stocksPerTeam,
-    score: 0,
-    worth: round2(settings.stocksPerTeam * settings.initialWorth),
-  };
-
-  return {
-    phase: room.mode === "single" ? "playing" : "waiting",
-    roomCode: room.code,
-    mode: room.mode,
-    hostId: room.hostId,
-    myTeam: room.myTeam,
-    totalRounds: settings.totalRounds,
-    round: 1,
-    turnTeam: "A",
-    currentPlayerIndex: 0,
-    timerMs: 12000,
-    questionStartedAt: Date.now(),
-    marketPrice: settings.initialWorth,
-    chart: [settings.initialWorth],
-    question: generateQuestion(),
-    lastMessage: "Match ready.",
-    teams: { A: teamA, B: teamB },
-    winner: null,
-    mvp: null,
-  };
+function saveRooms(rooms) {
+  localStorage.setItem(KEYS.rooms, JSON.stringify(rooms));
+  if (bc) bc.postMessage({ type: "rooms-updated" });
 }
 
 function loadRoom(code) {
-  const rooms = readRooms();
-  return rooms[code] || null;
+  const rooms = loadRooms();
+  return rooms[code] ? clone(rooms[code]) : null;
 }
 
 function saveRoom(room) {
-  const rooms = readRooms();
+  const rooms = loadRooms();
   rooms[room.code] = room;
-  writeRooms(rooms);
+  saveRooms(rooms);
 }
 
-function setLobbyMode(mode) {
-  ui.mode = mode;
-  els.modeCards.forEach((card) => card.classList.toggle("active", card.dataset.mode === mode));
-  els.modeLabel.textContent = mode === "single" ? "Single Player" : "Multiplayer Room";
-  els.roomHelp.textContent =
-    mode === "single"
-      ? "Single player starts immediately against the market bot."
-      : "Create a room, share the code, and wait here until the second trader joins.";
-  els.lobbyStatus.textContent = mode === "single" ? "Solo ready" : "Room mode";
-  els.joinRoomBtn.disabled = mode !== "multi";
-  els.roomCode.disabled = mode === "single";
+function getActiveRoomCode() {
+  return localStorage.getItem(KEYS.activeRoom) || "";
 }
 
-function syncInputsToSettings() {
-  state.settings.teamAName = els.roomNameA.value.trim() || "Alpha";
-  state.settings.teamBName = els.roomNameB.value.trim() || "Beta";
-  state.settings.playerName = els.playerName.value.trim() || "Player 1";
-  state.settings.stocksPerTeam = clamp(Number(els.stockCount.value) || 10, 1, 99);
-  state.settings.initialWorth = clamp(Number(els.initialWorth.value) || 1000, 100, 999999);
-  state.settings.totalRounds = clamp(Number(els.totalRounds.value) || 10, 1, 50);
+function setActiveRoomCode(code) {
+  localStorage.setItem(KEYS.activeRoom, code || "");
 }
 
-function showPhase(phase) {
-  ui.phase = phase;
-  els.modeScreen.hidden = phase !== "lobby";
-  els.waitingScreen.hidden = phase !== "waiting";
-  els.arenaScreen.hidden = phase !== "playing";
-  els.resultsScreen.hidden = phase !== "finished";
+function setActiveMode(mode) {
+  localStorage.setItem(KEYS.activeMode, mode);
 }
 
-function renderRoomSummary(room) {
-  els.activeRoomCode.textContent = room.code;
-  els.activeRoomMode.textContent = room.mode === "single" ? "Single player" : "Multiplayer room";
-  els.waitingTitle.textContent = room.mode === "single" ? "Solo match" : "Waiting for opponent";
-  els.waitingChip.textContent = room.mode === "single" ? "Solo" : room.phase === "waiting" ? "Waiting" : "Ready";
-  els.waitingNote.textContent =
-    room.mode === "single"
-      ? "The match starts instantly with an AI opponent. No room code needed."
-      : room.statusText || "The host stays here until another trader joins the room.";
+function getActiveMode() {
+  return localStorage.getItem(KEYS.activeMode) || "single";
 }
 
-function renderJoinedList(room) {
-  const items = [];
-  const hostName = room.settings.playerName || "Player 1";
-  items.push({
-    side: "Team A",
-    name: hostName,
-    role: room.hostId === clientId ? "You / Host" : "Host",
-    status: room.participants?.A ? "Connected" : "Waiting",
-  });
-
-  if (room.mode === "single") {
-    items.push({
-      side: "Team B",
-      name: "Market Bot",
-      role: "AI",
-      status: "Ready",
-    });
-  } else {
-    const guest = room.participants?.B;
-    items.push({
-      side: "Team B",
-      name: guest?.name || "Waiting for trader",
-      role: guest ? "Joined" : "Open slot",
-      status: guest ? "Connected" : "Waiting",
-    });
-  }
-
-  els.joinedList.innerHTML = items
-    .map(
-      (item) => `
-      <div class="game-join-row">
-        <div>
-          <strong>${item.side}</strong>
-          <div class="game-join-name">${item.name}</div>
-        </div>
-        <div class="game-join-meta">
-          <span>${item.role}</span>
-          <span>${item.status}</span>
-        </div>
-      </div>
-    `
-    )
-    .join("");
+function uid() {
+  return (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 }
 
-function updateWaitingUI(room) {
-  renderRoomSummary(room);
-  renderJoinedList(room);
-  const ready = room.mode === "single" || (room.participants?.A && room.participants?.B);
-  els.startMatchBtn.disabled = !ready || room.hostId !== clientId;
-  els.startMatchBtn.textContent =
-    room.mode === "single" ? "Start solo match" : ready ? "Start match" : "Waiting for opponent";
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function activateWaiting(room) {
-  state.room = clone(room);
-  showPhase("waiting");
-  renderWaiting();
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
 }
 
-function renderWaiting() {
-  const room = state.room;
-  if (!room) return;
-  updateWaitingUI(room);
+function round2(n) {
+  return Math.round(n * 100) / 100;
 }
 
-function renderGame() {
-  const game = state.room?.game;
-  if (!game) return;
-
-  els.arenaRoomCode.textContent = game.roomCode;
-  els.arenaRound.textContent = `${game.round} / ${game.totalRounds}`;
-  els.arenaPrice.textContent = round2(game.marketPrice).toFixed(2);
-  els.arenaTurn.textContent = game.turnTeam === "A" ? `${game.teams.A.name} turn` : `${game.teams.B.name} turn`;
-
-  els.teamAName.textContent = game.teams.A.name.toUpperCase();
-  els.teamBName.textContent = game.teams.B.name.toUpperCase();
-  els.teamAWorth.textContent = round2(game.teams.A.worth).toFixed(2);
-  els.teamBWorth.textContent = round2(game.teams.B.worth).toFixed(2);
-  els.teamAStocks.textContent = game.teams.A.stocks;
-  els.teamBStocks.textContent = game.teams.B.stocks;
-  els.questionText.textContent = game.question?.text || "—";
-  els.questionTime.textContent = `${Math.max(0, game.timerMs / 1000).toFixed(1)}s`;
-
-  const currentTeam = game.turnTeam === "A" ? game.teams.A : game.teams.B;
-  const currentPlayer = currentTeam.players[game.currentPlayerIndex % currentTeam.players.length];
-  const canAnswer = state.room.mode === "single"
-    ? game.turnTeam === "A"
-    : game.turnTeam === game.myTeam;
-
-  els.feedback.textContent = canAnswer
-    ? `Current player: ${currentPlayer.name}`
-    : game.mode === "single"
-      ? "The bot is thinking..."
-      : "Waiting for the other side.";
-
-  els.answerInput.disabled = !canAnswer || game.phase !== "playing";
-  els.submitAnswerBtn.disabled = !canAnswer || game.phase !== "playing";
-
-  els.teamARoster.innerHTML = game.teams.A.players
-    .map((p, idx) => rosterRow(p, game.turnTeam === "A" && idx === game.currentPlayerIndex))
-    .join("");
-  els.teamBRoster.innerHTML = game.teams.B.players
-    .map((p, idx) => rosterRow(p, game.turnTeam === "B" && idx === game.currentPlayerIndex))
-    .join("");
-
-  drawChart(game.chart, game.marketPrice);
-}
-
-function rosterRow(player, active) {
-  return `
-    <div class="game-roster-row ${active ? "game-roster-active" : ""}">
-      <span class="game-roster-name">${escapeHtml(player.name)}</span>
-      <span class="game-roster-stats">${player.stocks} stk · ${round2(player.worth).toFixed(1)} val</span>
-    </div>
-  `;
-}
-
-function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, (m) => ({
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (m) => ({
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
@@ -393,36 +182,246 @@ function escapeHtml(str) {
   })[m]);
 }
 
-function drawChart(points, currentPrice) {
+function syncSettings() {
+  return {
+    playerName: (els.playerName.value || "Player 1").trim(),
+    team: els.teamChoice.value,
+    teamAName: (els.roomNameA.value || "Alpha").trim(),
+    teamBName: (els.roomNameB.value || "Beta").trim(),
+    stocksPerTeam: clamp(Number(els.stockCount.value) || 10, 1, 99),
+    initialPrice: clamp(Number(els.initialPrice.value) || 1000, 100, 999999),
+    questionSeconds: clamp(Number(els.questionSeconds.value) || 12, 5, 30),
+    matchSeconds: clamp(Number(els.matchSeconds.value) || 60, 30, 600),
+  };
+}
+
+function question() {
+  const a = randInt(100, 999);
+  const b = randInt(100, 999);
+  if (Math.random() > 0.5) {
+    return { id: uid(), text: `${a} + ${b}`, answer: a + b, createdAt: Date.now() };
+  }
+  const hi = Math.max(a, b);
+  const lo = Math.min(a, b);
+  return { id: uid(), text: `${hi} - ${lo}`, answer: hi - lo, createdAt: Date.now() };
+}
+
+function makePlayer({ id, name, team, bot = false }) {
+  return {
+    id,
+    name,
+    team,
+    bot,
+    score: 0,
+    correct: 0,
+    wrong: 0,
+    bonus: 0,
+    worth: 1000,
+    joinedAt: Date.now(),
+  };
+}
+
+function makeTeam(name, stocks) {
+  return {
+    name,
+    stocks,
+    buys: 0,
+    sells: 0,
+    score: 0,
+    members: [],
+  };
+}
+
+function createGame(settings) {
+  const q = question();
+  const now = Date.now();
+  return {
+    price: settings.initialPrice,
+    priceHistory: [settings.initialPrice],
+    startedAt: now,
+    endsAt: now + settings.matchSeconds * 1000,
+    question: q,
+    questionEndsAt: now + settings.questionSeconds * 1000,
+    questionIndex: 1,
+    submissions: {},
+    lastEvent: "Match started.",
+  };
+}
+
+function initRoom(mode, settings, code) {
+  const hostName = settings.playerName || "Player 1";
+  const hostTeam = settings.team || "A";
+  const botTeam = hostTeam === "A" ? "B" : "A";
+
+  const room = {
+    code,
+    mode,
+    hostId: me,
+    phase: mode === "single" ? "playing" : "waiting",
+    settings,
+    players: {},
+    teams: {
+      A: makeTeam(settings.teamAName, settings.stocksPerTeam),
+      B: makeTeam(settings.teamBName, settings.stocksPerTeam),
+    },
+    game: null,
+  };
+
+  addPlayer(room, {
+    id: me,
+    name: hostName,
+    team: hostTeam,
+  });
+
+  if (mode === "single") {
+    addPlayer(room, {
+      id: "bot",
+      name: "Market Bot",
+      team: botTeam,
+      bot: true,
+    });
+    room.game = createGame(settings);
+  }
+
+  return room;
+}
+
+function addPlayer(room, playerData) {
+  const existing = room.players[playerData.id];
+  const player = existing || makePlayer(playerData);
+  player.name = playerData.name;
+  player.team = playerData.team;
+  player.bot = !!playerData.bot;
+
+  room.players[player.id] = player;
+
+  ["A", "B"].forEach((key) => {
+    room.teams[key].members = room.teams[key].members.filter((id) => id !== player.id);
+  });
+  room.teams[player.team].members.push(player.id);
+
+  return player;
+}
+
+function roomReady(room) {
+  return room.mode === "single" || (room.teams.A.members.length > 0 && room.teams.B.members.length > 0);
+}
+
+function createRoomCode() {
+  const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  return `${letters[randInt(0, letters.length - 1)]}${letters[randInt(0, letters.length - 1)]}${randInt(100, 999)}`;
+}
+
+function setScreen(phase) {
+  state.phase = phase;
+  els.modeScreen.hidden = phase !== "lobby";
+  els.waitingScreen.hidden = phase !== "waiting";
+  els.arenaScreen.hidden = phase !== "playing";
+  els.resultsScreen.hidden = phase !== "finished";
+}
+
+function setFeedback(text, kind = "") {
+  els.feedback.className = `game-feedback ${kind ? `game-feedback-${kind}` : ""}`;
+  els.feedback.textContent = text;
+}
+
+function setLobbyMode(mode) {
+  state.mode = mode;
+  setActiveMode(mode);
+  els.modeCards.forEach((card) => card.classList.toggle("active", card.dataset.mode === mode));
+  els.modeLabel.textContent = mode === "single" ? "Single Player" : "Multiplayer Room";
+  els.lobbyStatus.textContent = mode === "single" ? "Solo ready" : "Room mode";
+  els.lobbyStatusChip.textContent = mode === "single" ? "Solo" : "Room";
+  els.roomHelp.textContent =
+    mode === "single"
+      ? "Single player starts immediately against the built-in market bot."
+      : "Create a room, share the code, and wait for the second trader to join.";
+  els.joinRoomBtn.disabled = mode === "single";
+  els.roomCode.disabled = mode === "single";
+}
+
+function renderWaiting(room) {
+  els.waitingRoomCode.textContent = room.code;
+  els.waitingRoomMode.textContent = room.mode === "single" ? "Single player" : "Multiplayer room";
+  els.waitingTitle.textContent = room.mode === "single" ? "Solo match" : "Waiting for opponent";
+
+  els.waitingTeamAName.textContent = room.teams.A.name;
+  els.waitingTeamBName.textContent = room.teams.B.name;
+
+  els.waitingTeamACount.textContent = `${room.teams.A.members.length} player${room.teams.A.members.length === 1 ? "" : "s"}`;
+  els.waitingTeamBCount.textContent = `${room.teams.B.members.length} player${room.teams.B.members.length === 1 ? "" : "s"}`;
+
+  els.waitingTeamAList.innerHTML = room.teams.A.members.map((id) => rosterLine(room.players[id], false, true)).join("") || `<div class="game-empty-mini">No players yet</div>`;
+  els.waitingTeamBList.innerHTML = room.teams.B.members.map((id) => rosterLine(room.players[id], false, true)).join("") || `<div class="game-empty-mini">No players yet</div>`;
+
+  const ready = roomReady(room);
+  const host = room.hostId === me;
+
+  els.waitingChip.textContent = room.mode === "single" ? "Solo" : ready ? "Ready" : "Waiting";
+  els.waitingNote.textContent =
+    room.mode === "single"
+      ? "The match starts instantly in solo mode."
+      : ready
+        ? "Both sides are present. The host can start the match."
+        : "The host stays here until the other side joins the room.";
+
+  els.startMatchBtn.disabled = !(host && ready);
+  els.startMatchBtn.textContent = room.mode === "single" ? "Start solo match" : host ? (ready ? "Start match" : "Waiting for opponent") : "Host starts the match";
+}
+
+function rosterLine(player, active = false, compact = false) {
+  if (!player) return "";
+  return `
+    <div class="game-roster-row ${active ? "game-roster-active" : ""} ${compact ? "game-roster-compact" : ""}">
+      <span class="game-roster-name">${escapeHtml(player.name)}${player.bot ? " · Bot" : ""}</span>
+      <span class="game-roster-stats">${player.correct}✓ ${player.wrong}✕ · ${round2(player.worth).toFixed(0)}</span>
+    </div>
+  `;
+}
+
+function teamWorth(room, key) {
+  const team = room.teams[key];
+  return round2(team.stocks * room.game.price + team.score * 10);
+}
+
+function playerWorth(player) {
+  return round2(player.worth);
+}
+
+function netPressure(room) {
+  const a = room.teams.A.buys - room.teams.A.sells;
+  const b = room.teams.B.buys - room.teams.B.sells;
+  return a - b;
+}
+
+function drawChart(points) {
   const canvas = els.canvas;
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
+  const rect = canvas.parentElement.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
-
-  const box = canvas.parentElement.getBoundingClientRect();
-  const w = Math.max(320, Math.floor(box.width));
-  const h = Math.max(320, Math.floor(box.height));
+  const w = Math.max(320, Math.floor(rect.width));
+  const h = Math.max(320, Math.floor(rect.height));
 
   canvas.width = Math.floor(w * dpr);
   canvas.height = Math.floor(h * dpr);
   canvas.style.width = `${w}px`;
   canvas.style.height = `${h}px`;
 
-  ctx.scale(dpr, dpr);
-
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
 
-  const pad = 26;
-  const min = Math.min(...points, currentPrice);
-  const max = Math.max(...points, currentPrice);
+  const pad = 24;
+  const min = Math.min(...points);
+  const max = Math.max(...points);
   const spread = Math.max(1, max - min);
-  const top = max + spread * 0.12;
-  const bottom = min - spread * 0.12;
+  const top = max + spread * 0.15;
+  const bottom = min - spread * 0.15;
 
   const xFor = (i) => pad + (i * (w - pad * 2)) / Math.max(1, points.length - 1);
   const yFor = (v) => h - pad - ((v - bottom) * (h - pad * 2)) / Math.max(1, top - bottom);
 
-  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.strokeStyle = "rgba(255,255,255,0.07)";
   ctx.lineWidth = 1;
   for (let i = 0; i < 4; i++) {
     const y = pad + ((h - pad * 2) * i) / 3;
@@ -443,74 +442,143 @@ function drawChart(points, currentPrice) {
   });
   ctx.stroke();
 
-  const lastX = xFor(points.length - 1);
-  const lastY = yFor(points[points.length - 1]);
+  const x = xFor(points.length - 1);
+  const y = yFor(points[points.length - 1]);
   ctx.fillStyle = "#d8b15b";
   ctx.beginPath();
-  ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
+  ctx.arc(x, y, 4, 0, Math.PI * 2);
   ctx.fill();
-
-  ctx.fillStyle = "rgba(148,163,184,0.95)";
-  ctx.font = "12px JetBrains Mono, monospace";
-  ctx.fillText(points[0].toFixed(1), 10, 18);
 }
 
-function setFeedback(text, kind = "") {
-  els.feedback.textContent = text;
-  els.feedback.className = `game-feedback ${kind ? `game-feedback-${kind}` : ""}`;
-}
+function renderArena(room) {
+  const g = room.game;
+  const mePlayer = room.players[me];
+  const canAnswer = room.phase === "playing" && mePlayer && Date.now() < g.questionEndsAt && !g.submissions[mePlayer.id];
 
-function createRoom(mode) {
-  syncInputsToSettings();
+  els.arenaRoomCode.textContent = room.code;
+  els.arenaMatchTimer.textContent = `${Math.max(0, (g.endsAt - Date.now()) / 1000).toFixed(1)}s`;
+  els.arenaQuestionTimer.textContent = `${Math.max(0, (g.questionEndsAt - Date.now()) / 1000).toFixed(1)}s`;
+  els.arenaPrice.textContent = round2(g.price).toFixed(2);
+  els.arenaNet.textContent = `${netPressure(room) > 0 ? "+" : ""}${netPressure(room)}`;
 
-  const code = mode === "single" ? "SOLO" : (els.roomCode.value.trim().toUpperCase() || genRoomCode());
-  const room = {
-    code,
-    mode,
-    hostId: clientId,
-    participants: {
-      A: { id: clientId, name: state.settings.playerName, joinedAt: nowIso() },
-      B: mode === "single" ? { id: "bot", name: "Market Bot", joinedAt: nowIso() } : null,
-    },
-    settings: clone(state.settings),
-    statusText: mode === "single" ? "Solo match ready" : "Waiting for opponent...",
-    phase: mode === "single" ? "playing" : "waiting",
-    game: mode === "single" ? buildInitialGame({
-      code,
-      mode,
-      hostId: clientId,
-      myTeam: "A",
-      settings: clone(state.settings),
-    }) : null,
-    myTeam: "A",
-  };
+  els.teamAName.textContent = room.teams.A.name.toUpperCase();
+  els.teamBName.textContent = room.teams.B.name.toUpperCase();
 
-  if (mode === "single") {
-    room.game.phase = "playing";
-    room.game.myTeam = "A";
-  }
+  const worthA = teamWorth(room, "A");
+  const worthB = teamWorth(room, "B");
 
-  saveRoom(room);
-  saveCurrentRoom(code);
-  state.room = clone(room);
+  els.teamAWorth.textContent = worthA.toFixed(2);
+  els.teamBWorth.textContent = worthB.toFixed(2);
+  els.teamAStocks.textContent = room.teams.A.stocks;
+  els.teamBStocks.textContent = room.teams.B.stocks;
+  els.teamAFlow.textContent = `${room.teams.A.buys} / ${room.teams.A.sells}`;
+  els.teamBFlow.textContent = `${room.teams.B.buys} / ${room.teams.B.sells}`;
 
-  ui.roomCode = code;
-  ui.isHost = true;
-  ui.myTeam = "A";
+  els.teamARoster.innerHTML = room.teams.A.members.map((id) => rosterLine(room.players[id])).join("") || `<div class="game-empty-mini">No players yet</div>`;
+  els.teamBRoster.innerHTML = room.teams.B.members.map((id) => rosterLine(room.players[id])).join("") || `<div class="game-empty-mini">No players yet</div>`;
 
-  if (mode === "single") {
-    showPhase("playing");
-    setFeedback("Solo match started.", "correct");
-    startGameLoop();
+  els.questionText.textContent = g.question.text;
+  els.marketNote.textContent = g.lastEvent || "All players are trading now.";
+
+  if (canAnswer) {
+    els.answerInput.disabled = false;
+    els.submitAnswerBtn.disabled = false;
   } else {
-    showPhase("waiting");
-    renderWaiting();
+    els.answerInput.disabled = true;
+    els.submitAnswerBtn.disabled = true;
+  }
+
+  const already = mePlayer ? g.submissions[mePlayer.id] : null;
+  if (already && room.phase === "playing") {
+    setFeedback("You already answered this question.", "correct");
+  } else if (canAnswer) {
+    setFeedback("Answer fast to push your side’s price.", "");
+  } else if (room.phase === "playing") {
+    setFeedback("Waiting for the next question window.", "");
+  }
+
+  drawChart(g.priceHistory);
+
+  if (room.mode === "single" && g.question.id !== state.lastQuestionId) {
+    state.lastQuestionId = g.question.id;
+    scheduleBot(room.code, g.question.id);
   }
 }
 
-function joinRoom() {
-  syncInputsToSettings();
-  const code = (els.roomCode.value.trim() || "").toUpperCase();
+function renderResults(room) {
+  const g = room.game;
+  const finalA = teamWorth(room, "A");
+  const finalB = teamWorth(room, "B");
+
+  const allPlayers = Object.values(room.players);
+  const mvp = allPlayers.sort((a, b) => playerWorth(b) - playerWorth(a))[0];
+
+  els.resultsTitle.textContent = finalA === finalB ? "Draw match" : `${finalA > finalB ? room.teams.A.name : room.teams.B.name} wins`;
+  els.resultsSub.textContent = `Final price: ${round2(g.price).toFixed(2)} · Match ended after ${room.settings.matchSeconds}s`;
+  els.mvpName.textContent = mvp?.name || "—";
+  els.mvpWorth.textContent = `${playerWorth(mvp).toFixed(2)} worth`;
+  els.winnerTeam.textContent = finalA === finalB ? "Draw" : finalA > finalB ? room.teams.A.name : room.teams.B.name;
+  els.winnerWorth.textContent = finalA === finalB ? "Both sides ended equal." : `Team worth decided by live price and stock flow.`;
+
+  els.resTeamAName.textContent = room.teams.A.name;
+  els.resTeamAWorth.textContent = `${finalA.toFixed(2)} worth`;
+  els.resTeamADetail.innerHTML = teamResultBlock(room, "A");
+
+  els.resTeamBName.textContent = room.teams.B.name;
+  els.resTeamBWorth.textContent = `${finalB.toFixed(2)} worth`;
+  els.resTeamBDetail.innerHTML = teamResultBlock(room, "B");
+}
+
+function teamResultBlock(room, key) {
+  const team = room.teams[key];
+  const players = team.members.map((id) => room.players[id]).filter(Boolean);
+  return `
+    <div class="game-result-line">Stocks: ${team.stocks}</div>
+    <div class="game-result-line">Buys / Sells: ${team.buys} / ${team.sells}</div>
+    <div class="game-result-line">Players: ${players.map((p) => escapeHtml(p.name)).join(", ") || "—"}</div>
+    <div class="game-result-line">Team score: ${team.score}</div>
+  `;
+}
+
+function render(room) {
+  state.room = room ? clone(room) : null;
+  if (!room) {
+    setScreen("lobby");
+    return;
+  }
+
+  if (room.phase === "waiting") {
+    setScreen("waiting");
+    renderWaiting(room);
+  } else if (room.phase === "playing") {
+    setScreen("playing");
+    renderArena(room);
+  } else if (room.phase === "finished") {
+    setScreen("finished");
+    renderResults(room);
+  }
+}
+
+function createMatch(mode) {
+  const settings = syncSettings();
+  const code = mode === "single" ? "SOLO" : (els.roomCode.value.trim().toUpperCase() || createRoomCode());
+  const room = initRoom(mode, settings, code);
+  saveRoom(room);
+  setActiveRoomCode(code);
+  state.roomCode = code;
+  render(room);
+  if (mode === "single") {
+    startTick();
+  } else {
+    stopTick();
+    setScreen("waiting");
+    renderWaiting(room);
+  }
+}
+
+function joinMatch() {
+  const settings = syncSettings();
+  const code = els.roomCode.value.trim().toUpperCase();
   if (!code) {
     setFeedback("Enter a room code first.", "wrong");
     return;
@@ -527,314 +595,225 @@ function joinRoom() {
     return;
   }
 
-  if (!room.participants.B) {
-    room.participants.B = { id: clientId, name: state.settings.playerName, joinedAt: nowIso() };
-    room.statusText = "Opponent joined.";
-    room.myTeam = "B";
-  } else if (room.participants.B.id !== clientId) {
-    setFeedback("Room already has two sides.", "wrong");
+  if (room.phase === "playing") {
+    setFeedback("That match already started.", "wrong");
     return;
   }
 
-  room.settings.teamAName = room.settings.teamAName || state.settings.teamAName;
-  room.settings.teamBName = room.settings.teamBName || state.settings.teamBName;
-  room.statusText = "Ready for host to start.";
+  addPlayer(room, {
+    id: me,
+    name: settings.playerName,
+    team: settings.team,
+  });
+
+  room.settings.playerName = settings.playerName;
+  room.settings.teamAName = settings.teamAName;
+  room.settings.teamBName = settings.teamBName;
+  room.settings.stocksPerTeam = settings.stocksPerTeam;
+  room.settings.initialPrice = settings.initialPrice;
+  room.settings.questionSeconds = settings.questionSeconds;
+  room.settings.matchSeconds = settings.matchSeconds;
+  room.phase = "waiting";
+
   saveRoom(room);
-  saveCurrentRoom(code);
-  state.room = clone(room);
-
-  ui.roomCode = code;
-  ui.isHost = false;
-  ui.myTeam = "B";
-
-  showPhase("waiting");
-  renderWaiting();
+  setActiveRoomCode(room.code);
+  state.roomCode = room.code;
+  setFeedback("Joined room. Waiting for the host.", "correct");
+  render(room);
+  startTick();
 }
 
-function startMatchFromLobby() {
-  const room = state.room || loadRoom(getCurrentRoom());
+function startMatch() {
+  const room = loadRoom(state.roomCode || getActiveRoomCode());
   if (!room) return;
-
-  const ready = room.mode === "single" || (room.participants?.A && room.participants?.B);
-  if (!ready) {
-    setFeedback("Need a second player in multiplayer mode.", "wrong");
+  if (room.hostId !== me) return;
+  if (!roomReady(room)) {
+    setFeedback("Need at least one player on both sides.", "wrong");
     return;
   }
 
-  room.game = buildInitialGame({
-    code: room.code,
-    mode: room.mode,
-    hostId: room.hostId,
-    myTeam: ui.myTeam || "A",
-    settings: room.settings,
-  });
-
-  room.game.phase = "playing";
+  room.game = createGame(room.settings);
   room.phase = "playing";
-  room.statusText = "Match live.";
+  room.game.lastEvent = "Match live.";
   saveRoom(room);
-  state.room = clone(room);
-
-  showPhase("playing");
-  startGameLoop();
+  render(room);
+  startTick();
 }
 
-function startGameLoop() {
-  clearInterval(ui.timerHandle);
-  clearTimeout(ui.questionHandle);
-
-  const tick = () => {
-    const room = loadRoom(ui.roomCode || state.room?.code || getCurrentRoom());
-    if (!room?.game) return;
-
-    if (room.game.phase !== "playing") {
-      state.room = clone(room);
-      renderGame();
-      return;
-    }
-
-    const elapsed = Date.now() - room.game.questionStartedAt;
-    room.game.timerMs = Math.max(0, 12000 - elapsed);
-
-    if (room.game.timerMs <= 0) {
-      applyRoundResult(room, { correct: false, bonus: false, timedOut: true, answer: null });
-      return;
-    }
-
-    room.game.phase = "playing";
-    saveRoom(room);
-    state.room = clone(room);
-    renderGame();
-
-    if (room.mode === "single" && room.game.turnTeam === "B") {
-      scheduleBotTurn(room.code);
-    }
-  };
-
-  ui.timerHandle = setInterval(tick, 120);
-  tick();
-}
-
-function scheduleBotTurn(roomCode) {
-  clearTimeout(ui.questionHandle);
-  ui.questionHandle = setTimeout(() => {
-    const room = loadRoom(roomCode);
-    if (!room?.game || room.game.phase !== "playing" || room.game.turnTeam !== "B") return;
-    const q = room.game.question;
-    const botKnows = Math.random() < 0.7;
-    const botAnswer = botKnows ? q.answer : q.answer + (Math.random() < 0.5 ? 1 : -1);
-    applyRoundResult(room, {
-      correct: botAnswer === q.answer,
-      bonus: botKnows && Math.random() < 0.35,
-      timedOut: false,
-      answer: botAnswer,
-    });
-  }, 700);
-}
-
-function submitAnswer() {
-  const room = loadRoom(getCurrentRoom());
-  if (!room?.game || room.game.phase !== "playing") return;
-
-  if (room.mode === "single" && room.game.turnTeam !== "A") return;
-  if (room.mode === "multi" && room.game.turnTeam !== ui.myTeam) return;
-
-  const value = Number(els.answerInput.value);
-  if (!Number.isFinite(value)) {
-    setFeedback("Enter a valid number.", "wrong");
-    return;
-  }
-
-  const elapsed = Date.now() - room.game.questionStartedAt;
-  const bonus = elapsed <= 3000;
-  applyRoundResult(room, {
-    correct: value === room.game.question.answer,
-    bonus,
-    timedOut: false,
-    answer: value,
-  });
-}
-
-function applyRoundResult(room, result) {
-  const game = room.game;
-  if (!game || game.phase !== "playing") return;
-
-  const activeTeam = game.turnTeam === "A" ? game.teams.A : game.teams.B;
-  const otherTeam = game.turnTeam === "A" ? game.teams.B : game.teams.A;
-  const activePlayer = activeTeam.players[game.currentPlayerIndex % activeTeam.players.length];
-
-  if (result.correct) {
-    if (otherTeam.stocks > 0) {
-      activeTeam.stocks += 1;
-      otherTeam.stocks -= 1;
-    }
-
-    activeTeam.score += result.bonus ? 3 : 1;
-    activePlayer.score += result.bonus ? 3 : 1;
-    activePlayer.correct += 1;
-    if (result.bonus) activePlayer.bonus += 1;
-
-    game.marketPrice = round2(game.marketPrice * (result.bonus ? 1.018 : 1.008));
-    game.lastMessage = result.bonus ? "Correct with bonus." : "Correct trade.";
-    setFeedback(result.bonus ? "Correct — bonus move!" : "Correct — stock transferred.", result.bonus ? "bonus" : "correct");
-  } else {
-    game.marketPrice = round2(Math.max(100, game.marketPrice * 0.993));
-    game.lastMessage = result.timedOut ? "Timed out." : "Wrong answer.";
-    setFeedback(result.timedOut ? "Time expired — missed trade." : "Wrong answer — no transfer.", "wrong");
-  }
-
-  game.marketPrice = Math.max(100, game.marketPrice);
-  game.chart.push(game.marketPrice);
-
-  activeTeam.worth = computeTeamWorth(activeTeam, game.marketPrice);
-  otherTeam.worth = computeTeamWorth(otherTeam, game.marketPrice);
-
-  activePlayer.worth = round2(activeTeam.worth / Math.max(1, activeTeam.players.length));
-
-  const reachedEnd = game.round >= game.totalRounds || activeTeam.stocks <= 0 || otherTeam.stocks <= 0;
-
-  if (reachedEnd) {
-    finishMatch(room);
-    return;
-  }
-
-  game.turnTeam = game.turnTeam === "A" ? "B" : "A";
-  game.currentPlayerIndex = (game.currentPlayerIndex + 1) % (game.turnTeam === "A" ? game.teams.A.players.length : game.teams.B.players.length);
-  game.round += 1;
-  game.question = generateQuestion();
-  game.questionStartedAt = Date.now();
-  game.timerMs = 12000;
-  room.phase = "playing";
-
-  saveRoom(room);
-  state.room = clone(room);
-  renderGame();
-
-  if (room.mode === "single" && game.turnTeam === "B") {
-    scheduleBotTurn(room.code);
-  }
-}
-
-function finishMatch(room) {
-  const game = room.game;
-  if (!game) return;
-
-  game.phase = "finished";
-
-  const allPlayers = [...game.teams.A.players, ...game.teams.B.players];
-  let mvp = allPlayers[0];
-  for (const p of allPlayers) {
-    if ((p.worth || 0) > (mvp.worth || 0)) mvp = p;
-  }
-
-  const teamAWorth = computeTeamWorth(game.teams.A, game.marketPrice);
-  const teamBWorth = computeTeamWorth(game.teams.B, game.marketPrice);
-
-  game.teams.A.worth = teamAWorth;
-  game.teams.B.worth = teamBWorth;
-  game.winner = teamAWorth === teamBWorth ? "Draw" : teamAWorth > teamBWorth ? game.teams.A.name : game.teams.B.name;
-  game.mvp = mvp;
-
+function endMatch(room) {
   room.phase = "finished";
-  room.statusText = "Match complete.";
   saveRoom(room);
-  state.room = clone(room);
-  renderResults();
+  render(room);
+  stopTick();
 }
 
-function renderResults() {
-  const game = state.room?.game;
-  if (!game) return;
-
-  showPhase("finished");
-  els.resultsTitle.textContent = game.winner === "Draw" ? "Draw match" : `${game.winner} wins`;
-  els.resultsSub.textContent = `Final market price: ${round2(game.marketPrice).toFixed(2)} · Rounds played: ${game.round - 1}`;
-
-  els.mvpName.textContent = game.mvp?.name || "—";
-  els.mvpWorth.textContent = `${round2(game.mvp?.worth || 0).toFixed(2)} value`;
-  els.winnerTeam.textContent = game.winner || "—";
-  els.winnerWorth.textContent = game.winner === "Draw"
-    ? "Both teams ended equal."
-    : `${game.winner} led the book.`;
-
-  els.resTeamAName.textContent = game.teams.A.name;
-  els.resTeamBName.textContent = game.teams.B.name;
-  els.resTeamAWins.textContent = `Worth ${round2(game.teams.A.worth).toFixed(2)}`;
-  els.resTeamBWins.textContent = `Worth ${round2(game.teams.B.worth).toFixed(2)}`;
-
-  els.resTeamADetail.innerHTML = `
-    <div class="game-result-line">Stocks: ${game.teams.A.stocks}</div>
-    <div class="game-result-line">Score: ${game.teams.A.score}</div>
-    <div class="game-result-line">Players: ${game.teams.A.players.map((p) => escapeHtml(p.name)).join(", ")}</div>
-  `;
-
-  els.resTeamBDetail.innerHTML = `
-    <div class="game-result-line">Stocks: ${game.teams.B.stocks}</div>
-    <div class="game-result-line">Score: ${game.teams.B.score}</div>
-    <div class="game-result-line">Players: ${game.teams.B.players.map((p) => escapeHtml(p.name)).join(", ")}</div>
-  `;
+function nextQuestion(room) {
+  const now = Date.now();
+  if (now >= room.game.endsAt) {
+    endMatch(room);
+    return;
+  }
+  room.game.question = question();
+  room.game.questionEndsAt = now + room.settings.questionSeconds * 1000;
+  room.game.questionIndex += 1;
+  room.game.submissions = {};
+  room.game.lastEvent = "New question window opened.";
+  saveRoom(room);
+  render(room);
+  if (room.mode === "single") {
+    scheduleBot(room.code, room.game.question.id);
+  }
 }
 
-function resetToLobby() {
-  clearInterval(ui.timerHandle);
-  clearTimeout(ui.questionHandle);
+function applyAnswer(room, playerId, rawAnswer) {
+  if (!room || room.phase !== "playing") return;
+  const g = room.game;
+  const player = room.players[playerId];
+  if (!player) return;
 
-  ui.roomCode = "";
-  ui.isHost = false;
-  ui.myTeam = "A";
+  if (Date.now() >= g.endsAt) {
+    endMatch(room);
+    return;
+  }
+
+  if (g.submissions[playerId] === g.question.id) return;
+  if (Date.now() >= g.questionEndsAt) return;
+
+  const answer = Number(rawAnswer);
+  if (!Number.isFinite(answer)) return;
+
+  const correct = answer === g.question.answer;
+  const elapsed = Date.now() - g.question.createdAt;
+  const bonus = correct && elapsed <= 3000;
+  const team = room.teams[player.team];
+
+  g.submissions[playerId] = g.question.id;
+
+  if (correct) {
+    team.buys += 1 + (bonus ? 1 : 0);
+    team.stocks += 1;
+    team.score += bonus ? 3 : 1;
+
+    player.correct += 1;
+    player.score += bonus ? 3 : 1;
+    player.bonus += bonus ? 1 : 0;
+    player.worth += bonus ? 60 : 25;
+
+    g.price *= bonus ? 1.018 : 1.009;
+    g.lastEvent = `${player.name} hit ${bonus ? "bonus" : "correct"} on ${g.question.text}.`;
+    setFeedback(bonus ? "Correct — bonus move!" : "Correct — stock bought.", bonus ? "bonus" : "correct");
+  } else {
+    team.sells += 1;
+    team.stocks = Math.max(0, team.stocks - 1);
+    team.score -= 1;
+
+    player.wrong += 1;
+    player.score -= 1;
+    player.worth -= 10;
+
+    g.price *= 0.992;
+    g.lastEvent = `${player.name} missed ${g.question.text}.`;
+    setFeedback("Wrong — sell pressure added.", "wrong");
+  }
+
+  g.price = Math.max(100, round2(g.price));
+  g.priceHistory.push(g.price);
+
+  saveRoom(room);
+  render(room);
+}
+
+function scheduleBot(roomCode, questionId) {
+  clearTimeout(state.botTimer);
+  state.botTimer = setTimeout(() => {
+    const room = loadRoom(roomCode);
+    if (!room || room.phase !== "playing" || room.mode !== "single") return;
+    if (!room.game || room.game.question.id !== questionId) return;
+
+    const bot = Object.values(room.players).find((p) => p.bot);
+    if (!bot) return;
+
+    const q = room.game.question;
+    const correct = Math.random() < 0.72;
+    const answer = correct
+      ? q.answer
+      : q.answer + (Math.random() < 0.5 ? 1 : -1);
+
+    applyAnswer(room, bot.id, answer);
+  }, 600 + Math.random() * 2500);
+}
+
+function startTick() {
+  if (state.tickTimer) return;
+  state.tickTimer = setInterval(() => {
+    const code = state.roomCode || getActiveRoomCode();
+    if (!code) return;
+
+    const room = loadRoom(code);
+    if (!room) return;
+
+    if (room.phase === "playing") {
+      if (room.hostId === me && Date.now() >= room.game.endsAt) {
+        endMatch(room);
+        return;
+      }
+      if (room.hostId === me && Date.now() >= room.game.questionEndsAt) {
+        nextQuestion(room);
+        return;
+      }
+      render(room);
+    } else if (room.phase === "waiting") {
+      render(room);
+    } else if (room.phase === "finished") {
+      render(room);
+    }
+  }, 120);
+}
+
+function stopTick() {
+  if (state.tickTimer) {
+    clearInterval(state.tickTimer);
+    state.tickTimer = null;
+  }
+}
+
+function restore() {
+  const code = getActiveRoomCode();
+  const mode = getActiveMode();
+  setLobbyMode(mode);
+
+  if (!code) {
+    setScreen("lobby");
+    return;
+  }
+
+  const room = loadRoom(code);
+  if (!room) {
+    setActiveRoomCode("");
+    setScreen("lobby");
+    return;
+  }
+
+  state.roomCode = code;
+  render(room);
+  startTick();
+}
+
+function copyRoomCode() {
+  const code = els.roomCode.value.trim().toUpperCase() || state.roomCode || getActiveRoomCode();
+  if (!code) return;
+  navigator.clipboard?.writeText(code);
+  els.roomHelp.textContent = `Room code copied: ${code}`;
+}
+
+function backToLobby() {
+  setActiveRoomCode("");
+  state.roomCode = "";
+  state.lastQuestionId = "";
   state.room = null;
-  saveCurrentRoom("");
-  showPhase("lobby");
-  els.feedback.textContent = "";
-  els.answerInput.value = "";
-}
-
-function restoreCurrentRoom() {
-  const code = getCurrentRoom();
-  if (!code) return;
-
-  const room = loadRoom(code);
-  if (!room) return;
-
-  state.room = clone(room);
-  ui.roomCode = code;
-  ui.isHost = room.hostId === clientId;
-  ui.myTeam = room.myTeam || "A";
-
-  if (room.phase === "playing" && room.game) {
-    showPhase("playing");
-    renderGame();
-    startGameLoop();
-    return;
-  }
-
-  if (room.phase === "waiting") {
-    showPhase("waiting");
-    renderWaiting();
-    return;
-  }
-
-  if (room.phase === "finished") {
-    renderResults();
-  }
-}
-
-function refreshCurrentRoomFromStorage() {
-  const code = ui.roomCode || getCurrentRoom();
-  if (!code) return;
-  const room = loadRoom(code);
-  if (!room) return;
-  state.room = clone(room);
-
-  if (room.phase === "waiting") {
-    showPhase("waiting");
-    renderWaiting();
-  } else if (room.phase === "playing") {
-    showPhase("playing");
-    renderGame();
-  } else if (room.phase === "finished") {
-    renderResults();
-  }
+  stopTick();
+  clearTimeout(state.botTimer);
+  setScreen("lobby");
 }
 
 function bindEvents() {
@@ -842,46 +821,69 @@ function bindEvents() {
     card.addEventListener("click", () => setLobbyMode(card.dataset.mode));
   });
 
-  ["input", "change"].forEach((evt) => {
-    [els.roomNameA, els.roomNameB, els.playerName, els.stockCount, els.initialWorth, els.totalRounds].forEach((el) => {
-      el.addEventListener(evt, syncInputsToSettings);
-    });
+  [
+    els.playerName,
+    els.roomNameA,
+    els.roomNameB,
+    els.stockCount,
+    els.initialPrice,
+    els.questionSeconds,
+    els.matchSeconds,
+    els.teamChoice,
+  ].forEach((el) => el.addEventListener("input", syncSettings));
+
+  els.createRoomBtn.addEventListener("click", () => {
+    const mode = state.mode;
+    createMatch(mode);
   });
 
-  els.createRoomBtn.addEventListener("click", () => createRoom(ui.mode));
-  els.joinRoomBtn.addEventListener("click", joinRoom);
-  els.startMatchBtn.addEventListener("click", startMatchFromLobby);
-  els.backLobbyBtn.addEventListener("click", resetToLobby);
-  els.newMatchBtn.addEventListener("click", resetToLobby);
-  els.returnLobbyBtn.addEventListener("click", resetToLobby);
-  els.submitAnswerBtn.addEventListener("click", submitAnswer);
+  els.joinRoomBtn.addEventListener("click", joinMatch);
+  els.copyCodeBtn.addEventListener("click", copyRoomCode);
+  els.startMatchBtn.addEventListener("click", startMatch);
+
+  els.backLobbyBtn.addEventListener("click", backToLobby);
+  els.newMatchBtn.addEventListener("click", backToLobby);
+  els.returnLobbyBtn.addEventListener("click", backToLobby);
+
+  els.submitAnswerBtn.addEventListener("click", () => {
+    const room = loadRoom(state.roomCode || getActiveRoomCode());
+    if (!room || room.phase !== "playing") return;
+    const player = room.players[me];
+    if (!player) return;
+    if (room.game.submissions[player.id] === room.game.question.id) return;
+
+    applyAnswer(room, player.id, els.answerInput.value);
+    els.answerInput.value = "";
+    els.answerInput.focus();
+  });
+
   els.answerInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") submitAnswer();
+    if (e.key === "Enter") {
+      e.preventDefault();
+      els.submitAnswerBtn.click();
+    }
   });
 
   window.addEventListener("resize", () => {
-    if (state.room?.game && ui.phase === "playing") renderGame();
+    if (state.room && state.room.phase === "playing") render(state.room);
   });
 
   window.addEventListener("storage", (e) => {
-    if (e.key === STORAGE_KEY || e.key === ROOM_STATE_KEY) {
-      refreshCurrentRoomFromStorage();
+    if (e.key === KEYS.rooms || e.key === KEYS.activeRoom) {
+      restore();
     }
   });
 
   if (bc) {
-    bc.onmessage = () => refreshCurrentRoomFromStorage();
+    bc.onmessage = () => restore();
   }
 }
 
 function init() {
-  syncInputsToSettings();
-  setLobbyMode("single");
+  setLobbyMode(getActiveMode());
   bindEvents();
-  restoreCurrentRoom();
-  if (ui.phase === "lobby") {
-    showPhase("lobby");
-  }
+  syncSettings();
+  restore();
 }
 
 init();
