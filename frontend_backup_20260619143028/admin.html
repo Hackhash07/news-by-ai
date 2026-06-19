@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trade Trends — Admin</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      background: #0b1020;
+      color: #e5e7eb;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+    }
+    .panel {
+      width: min(560px, calc(100vw - 32px));
+      background: #11182b;
+      border: 1px solid #24304a;
+      border-radius: 18px;
+      padding: 28px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+    p {
+      margin: 0 0 20px;
+      color: #94a3b8;
+    }
+    input, button {
+      width: 100%;
+      box-sizing: border-box;
+      border-radius: 12px;
+      border: 1px solid #334155;
+      padding: 14px 16px;
+      font-size: 16px;
+      background: #0f172a;
+      color: #e5e7eb;
+      outline: none;
+    }
+    input { margin-bottom: 12px; }
+    button {
+      background: #2563eb;
+      border-color: #2563eb;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: .65;
+      cursor: not-allowed;
+    }
+    #status {
+      margin-top: 16px;
+      min-height: 24px;
+      color: #93c5fd;
+    }
+    .small {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-top: 12px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h1>Trade Trends Admin</h1>
+    <p>Fetch and classify fresh news on the server.</p>
+
+    <input id="secret" type="password" placeholder="Update secret" />
+    <button id="updateBtn" onclick="updateNews()">Fetch &amp; Classify News</button>
+
+    <div id="status"></div>
+
+    <div class="small">
+      Set <strong>UPDATE_SECRET</strong> and <strong>GEMINI_API_KEY</strong> in Render environment variables.
+    </div>
+  </div>
+
+  <script>
+    async function updateNews() {
+      const secret = document.getElementById("secret").value.trim();
+      const btn = document.getElementById("updateBtn");
+      const status = document.getElementById("status");
+
+      if (!secret) {
+        status.textContent = "Enter the update secret first.";
+        return;
+      }
+
+      btn.disabled = true;
+      status.textContent = "Updating...";
+
+      try {
+        const res = await fetch(`/update-news?key=${encodeURIComponent(secret)}`, {
+          cache: "no-store"
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          status.textContent = data.error || "Update failed";
+          return;
+        }
+
+        status.textContent = `Updated successfully. Articles in DB: ${data.articles}`;
+      } catch (e) {
+        status.textContent = `Network error: ${e.message}`;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>

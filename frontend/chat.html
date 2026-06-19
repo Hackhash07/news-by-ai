@@ -9,8 +9,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="style.css" />
 </head>
-<body class="chat-layout">
+<body>
     
+    <!-- ── TOP NAV ────────────────────────────────────────── -->
     <nav class="topnav" role="navigation" aria-label="Main navigation">
         <div class="nav-inner">
             <a href="index.html" class="brand" aria-label="Trade Trends home">
@@ -27,7 +28,7 @@
                 <a href="profile.html#saved" class="nav-link" role="listitem">Saved</a>
             </div>
 		    <div class="nav-right">
-                <div class="ticker-time" id="ticker-time" style="margin-right:20px;">--:--:--</div>
+                <div class="ticker-time" id="ticker-time" style="margin-right:12px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);">--:--:--</div>
                 <a href="profile.html" class="nav-avatar-link">
                     <div class="nav-avatar" id="nav-avatar">?</div>
                 </a>
@@ -35,106 +36,113 @@
         </div>
     </nav>
 
-    <!-- AUTH GATE -->
-    <div id="auth-gate" class="auth-overlay" hidden>
-        <div class="auth-modal">
+    <!-- ── AUTH GATE ──────────────────────────────────────── -->
+    <div id="auth-gate" class="auth-gate" hidden>
+        <div class="auth-card">
             <div class="auth-brand">
                 <div class="brand-mark" aria-hidden="true">TT</div>
-                <h2>Live Desk Authentication</h2>
-                <p>Join the conversation with other verified traders.</p>
+                <span class="auth-brand-name">TRADE TRENDS</span>
             </div>
             
-            <div id="auth-step-1" class="auth-step">
-                <button id="google-login-btn" class="google-btn">Sign in with Google</button>
+            <!-- Step 1: Google Sign-In -->
+            <div id="auth-step-1" class="auth-step-panel">
+                <h2 class="auth-heading">Join the Live&nbsp;Desk</h2>
+                <p class="auth-sub">Real-time discussions with verified traders. Sign in to start.</p>
+                <button id="google-login-btn" class="auth-submit-btn" style="width:100%;justify-content:center;gap:10px;">
+                    <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#34A853" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#FBBC05" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                    Sign in with Google
+                </button>
+                <p class="auth-disclaimer" style="margin-top:18px;">By continuing, you agree to our <a href="#" class="auth-link">Terms</a> and <a href="#" class="auth-link">Privacy Policy</a></p>
             </div>
             
-            <div id="auth-step-2" class="auth-step" hidden>
-                <h3>Complete your profile</h3>
-                <div class="auth-preview">
+            <!-- Step 2: Complete Profile -->
+            <div id="auth-step-2" class="auth-step-panel" hidden>
+                <div class="auth-step-dots">
+                    <div class="auth-dot done">✓</div>
+                    <div style="width:20px;height:1px;background:rgba(255,255,255,0.15);"></div>
+                    <div class="auth-dot active">2</div>
+                </div>
+
+                <h2 class="auth-heading">Complete your profile</h2>
+                
+                <div class="auth-google-badge">
                     <div id="auth-google-avatar" class="auth-google-avatar"></div>
-                    <div>
+                    <div class="auth-google-info">
                         <div id="auth-google-name" class="auth-google-name"></div>
-                        <div id="auth-google-email" class="auth-google-email"></div>
+                        <div id="auth-google-email" class="auth-google-verified"></div>
                     </div>
                 </div>
                 
                 <div class="auth-form">
-                    <label class="auth-label">
-                        Display Name
+                    <div class="auth-field">
+                        <label class="auth-label" for="setup-display-name">Display Name</label>
                         <input id="setup-display-name" type="text" class="auth-input" placeholder="e.g. John Doe" />
-                    </label>
+                    </div>
                     
-                    <label class="auth-label">
-                        Trading Handle
-                        <div class="auth-input-group">
-                            <span class="auth-addon">@</span>
-                            <input id="setup-username" type="text" class="auth-input" placeholder="e.g. jdoe_trades" />
+                    <div class="auth-field">
+                        <label class="auth-label" for="setup-username">Trading Handle</label>
+                        <div class="auth-handle-wrap">
+                            <span class="auth-at">@</span>
+                            <input id="setup-username" type="text" class="auth-input auth-input-handle" placeholder="e.g. jdoe_trades" />
                         </div>
                         <span id="handle-hint" class="auth-field-hint"></span>
-                    </label>
+                    </div>
                     
-                    <button id="complete-profile-btn" class="auth-submit-btn">Enter Live Desk →</button>
+                    <button id="complete-profile-btn" class="auth-submit-btn" style="width:100%;justify-content:center;">
+                        Enter Live Desk <span class="auth-arrow">→</span>
+                    </button>
                 </div>
             </div>
         </div>
     </div>
 
-    <main class="chat-shell">
+    <!-- ── CHAT LAYOUT ───────────────────────────────────── -->
+    <div class="chat-layout">
         <aside class="chat-sidebar">
-            <div class="sidebar-header">
-                <h3>Live Desk</h3>
+            <div class="sidebar-card">
+                <div class="sidebar-title">Live Desk</div>
+                <div class="room-list" id="chat-rooms"></div>
             </div>
-            
-            <div class="room-list" id="chat-rooms">
-                <button class="room-btn active" data-room="global" type="button">
-                  <span class="room-name">Global Markets</span>
-                  <span class="room-desc">Equities, bonds, and macro</span>
-                </button>
-                <button class="room-btn" data-room="crypto" type="button">
-                  <span class="room-name">Crypto Assets</span>
-                  <span class="room-desc">BTC, ETH, and altcoins</span>
-                </button>
-                <button class="room-btn" data-room="nifty" type="button">
-                  <span class="room-name">NIFTY 50</span>
-                  <span class="room-desc">Indian markets discussion</span>
-                </button>
-            </div>
-            
-            <div class="sidebar-profile">
-                <div class="sp-info">
-                    <div id="widget-avatar" class="sp-avatar">U</div>
-                    <div class="sp-text">
-                        <strong id="widget-display-name">Trader</strong>
-                        <span id="widget-handle">@user</span>
+
+            <div class="sidebar-card">
+                <div class="sidebar-title">Your Profile</div>
+                <div class="user-widget" id="user-widget">
+                    <div class="user-widget-inner">
+                        <div id="widget-avatar" class="user-widget-avatar">U</div>
+                        <div class="user-widget-info">
+                            <div id="widget-display-name" class="user-widget-name">Trader</div>
+                            <div id="widget-handle" class="user-widget-handle">@user</div>
+                        </div>
                     </div>
-                </div>
-                <div class="sp-actions">
-                    <button id="signout-btn" class="sp-action-btn">Sign Out</button>
+                    <div class="user-widget-actions">
+                        <button id="signout-btn" class="widget-btn widget-btn-ghost">Sign Out</button>
+                    </div>
                 </div>
             </div>
         </aside>
 
-        <section class="chat-main">
-            <header class="chat-header">
+        <section class="chat-panel">
+            <header class="chat-panel-head">
                 <div>
+                    <div class="hero-eyebrow">LIVE DISCUSSION</div>
                     <h2 id="room-title">Global Markets</h2>
                     <p id="room-description">Equities, bonds, and macro</p>
                 </div>
-                <div class="chat-status" id="chat-status">Connecting...</div>
+                <div class="room-pill" id="chat-status">Connecting...</div>
             </header>
             
-            <div class="chat-messages" id="chat-messages"></div>
+            <div class="chat-messages" id="chat-messages">
+                <div class="empty-state">No messages yet. Start the conversation.</div>
+            </div>
             
-            <footer class="chat-composer">
-                <form id="chat-form" class="composer-form">
-                    <input id="chat-input" type="text" class="composer-input" placeholder="Share a signal or insight..." autocomplete="off" />
-                    <button type="submit" class="composer-send" aria-label="Send message">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
-                    </button>
-                </form>
-            </footer>
+            <div class="chat-status" id="chat-status-bar"></div>
+            
+            <form id="chat-form" class="chat-form">
+                <input id="chat-input" type="text" placeholder="Share a signal or insight..." autocomplete="off" />
+                <button type="submit">Send</button>
+            </form>
         </section>
-    </main>
+    </div>
     
     <script type="module" src="chat.js"></script>
 </body>
