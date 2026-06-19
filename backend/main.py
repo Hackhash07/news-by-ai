@@ -87,30 +87,16 @@ create_database()
 def home():
     return send_from_directory(str(FRONTEND_DIR), "index.html")
 
-
-@app.route("/chat")
-def chat_page():
-    return send_from_directory(str(FRONTEND_DIR), "chat.html")
-
-
-@app.route("/admin")
-def admin():
-    return send_from_directory(str(FRONTEND_DIR), "admin.html")
-
-
-@app.route("/style.css")
-def style():
-    return send_from_directory(str(FRONTEND_DIR), "style.css")
-
-
-@app.route("/app.js")
-def script():
-    return send_from_directory(str(FRONTEND_DIR), "app.js")
-
-
-@app.route("/chat.js")
-def chat_script():
-    return send_from_directory(str(FRONTEND_DIR), "chat.js")
+@app.route("/<path:filename>")
+def serve_static(filename):
+    # If the file exists in frontend, serve it
+    if (FRONTEND_DIR / filename).exists():
+        return send_from_directory(str(FRONTEND_DIR), filename)
+    # If they hit /chat or /profile without .html
+    if (FRONTEND_DIR / f"{filename}.html").exists():
+        return send_from_directory(str(FRONTEND_DIR), f"{filename}.html")
+    # Otherwise return 404 (or index.html)
+    return "Not Found", 404
 
 
 @app.route("/market-data")
