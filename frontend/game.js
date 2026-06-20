@@ -311,12 +311,28 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
         }
 
         buildTurnOrder();
-        state.gameActive = true;
         state.currentQuestion = generateQuestion();
         state.questionStartTime = Date.now();
         state.lastFeedback = null;
         
-        await updateRoomState();
+        await updateDoc(doc(db, "rooms", state.roomId), {
+            gameActive: true,
+            ended: state.ended,
+            currentRound: state.currentRound,
+            stockWorth: state.stockWorth,
+            turnIndex: state.turnIndex,
+            totalTurnsPlayed: state.totalTurnsPlayed,
+            worthHistory: state.worthHistory,
+            roundBuys: state.roundBuys,
+            roundSells: state.roundSells,
+            teams: state.teams,
+            turnOrder: state.turnOrder,
+            turnsPerRound: state.turnsPerRound,
+            currentQuestion: state.currentQuestion,
+            questionStartTime: state.questionStartTime,
+            lastFeedback: state.lastFeedback,
+            lastUpdateTime: Date.now()
+        });
     }
 
     async function updateRoomState() {
