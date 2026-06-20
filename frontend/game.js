@@ -553,11 +553,11 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
             return `<div class="game-roster-row ${isActive ? 'game-roster-active' : ''}">
                 <span class="game-roster-name">${escapeHtml(p.name)}</span>
                 <span class="game-roster-stats">
-                    <span class="game-mono">${p.cash.toFixed(0)}</span> cash
+                    <span class="game-mono">$${p.cash.toFixed(0)}</span> cash
                     <span class="game-roster-sep">·</span>
                     <span class="game-mono">${p.stocks}</span> stk
                     <span class="game-roster-sep">·</span>
-                    <span class="game-mono">${p.worth.toFixed(1)}</span> val
+                    <span class="game-mono">$${p.worth.toFixed(1)}</span> val
                 </span>
             </div>`;
         }).join("");
@@ -605,12 +605,12 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
             return `<div class="game-roster-row" style="display:flex; flex-direction:column; align-items:flex-start; padding: 12px; gap: 8px;">
                 <div style="width: 100%; display: flex; justify-content: space-between;">
                     <span class="game-roster-name" style="font-size:16px;">${escapeHtml(p.name)}</span>
-                    <span class="game-mono" style="font-size:16px; color:${pnlColor}">${pnlSign}${pnl.toFixed(2)}</span>
+                    <span class="game-mono" style="font-size:16px; color:${pnlColor}">${pnlSign}$${Math.abs(pnl).toFixed(2)}</span>
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; width: 100%; gap: 4px; font-size: 13px; color: var(--muted);">
                     <div>Answers: <span class="game-mono" style="color:var(--text)">${p.correct}✓ ${p.wrong}✗</span></div>
                     <div>Buys/Shorts: <span class="game-mono" style="color:var(--text)">${p.buys || 0} / ${p.shorts || 0}</span></div>
-                    <div>Cash: <span class="game-mono" style="color:var(--text)">${p.cash.toFixed(1)}</span></div>
+                    <div>Cash: <span class="game-mono" style="color:var(--text)">$${p.cash.toFixed(1)}</span></div>
                     <div>Stocks: <span class="game-mono" style="color:var(--text)">${p.stocks}</span></div>
                 </div>
             </div>`;
