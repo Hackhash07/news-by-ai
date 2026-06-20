@@ -1,889 +1,706 @@
-/* Trading IQ Battle — simultaneous real-time room game
-   Works across tabs on the same browser using localStorage + BroadcastChannel.
-   Replace the sync layer with Firebase later for true internet multiplayer. */
-
-const $ = (sel, root = document) => root.querySelector(sel);
-const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
-
-const KEYS = {
-  rooms: "tiq_rooms_v6",
-  me: "tiq_me_v6",
-  activeRoom: "tiq_active_room_v6",
-  activeMode: "tiq_active_mode_v6",
-};
-
-const CHANNEL_NAME = "tiq_battle_v6";
-const bc = "BroadcastChannel" in window ? new BroadcastChannel(CHANNEL_NAME) : null;
-const me = getOrCreateMe();
-
-const state = {
-  mode: "single",
-  roomCode: "",
-  team: "A",
-  room: null,
-  phase: "lobby",
-  lastQuestionId: "",
-  botTimer: null,
-  tickTimer: null,
-};
-
-const els = {
-  modeCards: $$(".game-mode-card"),
-  lobbyStatusChip: $("#lobby-status-chip"),
-  modeLabel: $("#mode-label"),
-  lobbyStatus: $("#lobby-status"),
-  roomHelp: $("#room-help"),
-  playerName: $("#player-name"),
-  teamChoice: $("#team-choice"),
-  roomNameA: $("#room-name-a"),
-  roomNameB: $("#room-name-b"),
-  stockCount: $("#stock-count"),
-  initialPrice: $("#initial-price"),
-  questionSeconds: $("#question-seconds"),
-  matchSeconds: $("#match-seconds"),
-  roomCode: $("#room-code"),
-  createRoomBtn: $("#create-room-btn"),
-  joinRoomBtn: $("#join-room-btn"),
-  copyCodeBtn: $("#copy-code-btn"),
-
-  modeScreen: $("#mode-screen"),
-  waitingScreen: $("#waiting-screen"),
-  arenaScreen: $("#arena-screen"),
-  resultsScreen: $("#results-screen"),
-
-  waitingTitle: $("#waiting-title"),
-  waitingChip: $("#waiting-chip"),
-  waitingRoomCode: $("#waiting-room-code"),
-  waitingRoomMode: $("#waiting-room-mode"),
-  waitingNote: $("#waiting-note"),
-  waitingTeamAName: $("#waiting-team-a-name"),
-  waitingTeamBName: $("#waiting-team-b-name"),
-  waitingTeamACount: $("#waiting-team-a-count"),
-  waitingTeamBCount: $("#waiting-team-b-count"),
-  waitingTeamAList: $("#waiting-team-a-list"),
-  waitingTeamBList: $("#waiting-team-b-list"),
-  startMatchBtn: $("#start-match-btn"),
-  backLobbyBtn: $("#back-lobby-btn"),
-
-  arenaRoomCode: $("#arena-room-code"),
-  arenaMatchTimer: $("#arena-match-timer"),
-  arenaQuestionTimer: $("#arena-question-timer"),
-  arenaPrice: $("#arena-price"),
-  arenaNet: $("#arena-net"),
-  teamAName: $("#team-a-name"),
-  teamBName: $("#team-b-name"),
-  teamAWorth: $("#team-a-worth"),
-  teamBWorth: $("#team-b-worth"),
-  teamAStocks: $("#team-a-stocks"),
-  teamBStocks: $("#team-b-stocks"),
-  teamAFlow: $("#team-a-flow"),
-  teamBFlow: $("#team-b-flow"),
-  teamARoster: $("#team-a-roster"),
-  teamBRoster: $("#team-b-roster"),
-  questionText: $("#question-text"),
-  answerInput: $("#answer-input"),
-  submitAnswerBtn: $("#submit-answer-btn"),
-  marketNote: $("#market-note"),
-  feedback: $("#feedback"),
-  canvas: $("#market-chart"),
-
-  resultsTitle: $("#results-title"),
-  resultsSub: $("#results-sub"),
-  mvpName: $("#mvp-name"),
-  mvpWorth: $("#mvp-worth"),
-  winnerTeam: $("#winner-team"),
-  winnerWorth: $("#winner-worth"),
-  resTeamAName: $("#res-team-a-name"),
-  resTeamAWorth: $("#res-team-a-worth"),
-  resTeamADetail: $("#res-team-a-detail"),
-  resTeamBName: $("#res-team-b-name"),
-  resTeamBWorth: $("#res-team-b-worth"),
-  resTeamBDetail: $("#res-team-b-detail"),
-  newMatchBtn: $("#new-match-btn"),
-  returnLobbyBtn: $("#return-lobby-btn"),
-};
-
-function getOrCreateMe() {
-  let id = localStorage.getItem(KEYS.me);
-  if (!id) {
-    id = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    localStorage.setItem(KEYS.me, id);
-  }
-  return id;
-}
-
-function clone(v) {
-  return JSON.parse(JSON.stringify(v));
-}
-
-function loadRooms() {
-  try {
-    return JSON.parse(localStorage.getItem(KEYS.rooms) || "{}");
-  } catch {
-    return {};
-  }
-}
-
-function saveRooms(rooms) {
-  localStorage.setItem(KEYS.rooms, JSON.stringify(rooms));
-  if (bc) bc.postMessage({ type: "rooms-updated" });
-}
-
-function loadRoom(code) {
-  const rooms = loadRooms();
-  return rooms[code] ? clone(rooms[code]) : null;
-}
-
-function saveRoom(room) {
-  const rooms = loadRooms();
-  rooms[room.code] = room;
-  saveRooms(rooms);
-}
-
-function getActiveRoomCode() {
-  return localStorage.getItem(KEYS.activeRoom) || "";
-}
-
-function setActiveRoomCode(code) {
-  localStorage.setItem(KEYS.activeRoom, code || "");
-}
-
-function setActiveMode(mode) {
-  localStorage.setItem(KEYS.activeMode, mode);
-}
-
-function getActiveMode() {
-  return localStorage.getItem(KEYS.activeMode) || "single";
-}
-
-function uid() {
-  return (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
-}
-
-function randInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function clamp(n, min, max) {
-  return Math.max(min, Math.min(max, n));
-}
-
-function round2(n) {
-  return Math.round(n * 100) / 100;
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (m) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  })[m]);
-}
-
-function syncSettings() {
-  return {
-    playerName: (els.playerName.value || "Player 1").trim(),
-    team: els.teamChoice.value,
-    teamAName: (els.roomNameA.value || "Alpha").trim(),
-    teamBName: (els.roomNameB.value || "Beta").trim(),
-    stocksPerTeam: clamp(Number(els.stockCount.value) || 10, 1, 99),
-    initialPrice: clamp(Number(els.initialPrice.value) || 1000, 100, 999999),
-    questionSeconds: clamp(Number(els.questionSeconds.value) || 12, 5, 30),
-    matchSeconds: clamp(Number(els.matchSeconds.value) || 60, 30, 600),
-  };
-}
-
-function question() {
-  const a = randInt(100, 999);
-  const b = randInt(100, 999);
-  if (Math.random() > 0.5) {
-    return { id: uid(), text: `${a} + ${b}`, answer: a + b, createdAt: Date.now() };
-  }
-  const hi = Math.max(a, b);
-  const lo = Math.min(a, b);
-  return { id: uid(), text: `${hi} - ${lo}`, answer: hi - lo, createdAt: Date.now() };
-}
-
-function makePlayer({ id, name, team, bot = false }) {
-  return {
-    id,
-    name,
-    team,
-    bot,
-    score: 0,
-    correct: 0,
-    wrong: 0,
-    bonus: 0,
-    worth: 1000,
-    joinedAt: Date.now(),
-  };
-}
-
-function makeTeam(name, stocks) {
-  return {
-    name,
-    stocks,
-    buys: 0,
-    sells: 0,
-    score: 0,
-    members: [],
-  };
-}
-
-function createGame(settings) {
-  const q = question();
-  const now = Date.now();
-  return {
-    price: settings.initialPrice,
-    priceHistory: [settings.initialPrice],
-    startedAt: now,
-    endsAt: now + settings.matchSeconds * 1000,
-    question: q,
-    questionEndsAt: now + settings.questionSeconds * 1000,
-    questionIndex: 1,
-    submissions: {},
-    lastEvent: "Match started.",
-  };
-}
-
-function initRoom(mode, settings, code) {
-  const hostName = settings.playerName || "Player 1";
-  const hostTeam = settings.team || "A";
-  const botTeam = hostTeam === "A" ? "B" : "A";
-
-  const room = {
-    code,
-    mode,
-    hostId: me,
-    phase: mode === "single" ? "playing" : "waiting",
-    settings,
-    players: {},
-    teams: {
-      A: makeTeam(settings.teamAName, settings.stocksPerTeam),
-      B: makeTeam(settings.teamBName, settings.stocksPerTeam),
-    },
-    game: null,
-  };
-
-  addPlayer(room, {
-    id: me,
-    name: hostName,
-    team: hostTeam,
-  });
-
-  if (mode === "single") {
-    addPlayer(room, {
-      id: "bot",
-      name: "Market Bot",
-      team: botTeam,
-      bot: true,
-    });
-    room.game = createGame(settings);
-  }
-
-  return room;
-}
-
-function addPlayer(room, playerData) {
-  const existing = room.players[playerData.id];
-  const player = existing || makePlayer(playerData);
-  player.name = playerData.name;
-  player.team = playerData.team;
-  player.bot = !!playerData.bot;
-
-  room.players[player.id] = player;
-
-  ["A", "B"].forEach((key) => {
-    room.teams[key].members = room.teams[key].members.filter((id) => id !== player.id);
-  });
-  room.teams[player.team].members.push(player.id);
-
-  return player;
-}
-
-function roomReady(room) {
-  return room.mode === "single" || (room.teams.A.members.length > 0 && room.teams.B.members.length > 0);
-}
-
-function createRoomCode() {
-  const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-  return `${letters[randInt(0, letters.length - 1)]}${letters[randInt(0, letters.length - 1)]}${randInt(100, 999)}`;
-}
-
-function setScreen(phase) {
-  state.phase = phase;
-  els.modeScreen.hidden = phase !== "lobby";
-  els.waitingScreen.hidden = phase !== "waiting";
-  els.arenaScreen.hidden = phase !== "playing";
-  els.resultsScreen.hidden = phase !== "finished";
-}
-
-function setFeedback(text, kind = "") {
-  els.feedback.className = `game-feedback ${kind ? `game-feedback-${kind}` : ""}`;
-  els.feedback.textContent = text;
-}
-
-function setLobbyMode(mode) {
-  state.mode = mode;
-  setActiveMode(mode);
-  els.modeCards.forEach((card) => card.classList.toggle("active", card.dataset.mode === mode));
-  els.modeLabel.textContent = mode === "single" ? "Single Player" : "Multiplayer Room";
-  els.lobbyStatus.textContent = mode === "single" ? "Solo ready" : "Room mode";
-  els.lobbyStatusChip.textContent = mode === "single" ? "Solo" : "Room";
-  els.roomHelp.textContent =
-    mode === "single"
-      ? "Single player starts immediately against the built-in market bot."
-      : "Create a room, share the code, and wait for the second trader to join.";
-  els.joinRoomBtn.disabled = mode === "single";
-  els.roomCode.disabled = mode === "single";
-}
-
-function renderWaiting(room) {
-  els.waitingRoomCode.textContent = room.code;
-  els.waitingRoomMode.textContent = room.mode === "single" ? "Single player" : "Multiplayer room";
-  els.waitingTitle.textContent = room.mode === "single" ? "Solo match" : "Waiting for opponent";
-
-  els.waitingTeamAName.textContent = room.teams.A.name;
-  els.waitingTeamBName.textContent = room.teams.B.name;
-
-  els.waitingTeamACount.textContent = `${room.teams.A.members.length} player${room.teams.A.members.length === 1 ? "" : "s"}`;
-  els.waitingTeamBCount.textContent = `${room.teams.B.members.length} player${room.teams.B.members.length === 1 ? "" : "s"}`;
-
-  els.waitingTeamAList.innerHTML = room.teams.A.members.map((id) => rosterLine(room.players[id], false, true)).join("") || `<div class="game-empty-mini">No players yet</div>`;
-  els.waitingTeamBList.innerHTML = room.teams.B.members.map((id) => rosterLine(room.players[id], false, true)).join("") || `<div class="game-empty-mini">No players yet</div>`;
-
-  const ready = roomReady(room);
-  const host = room.hostId === me;
-
-  els.waitingChip.textContent = room.mode === "single" ? "Solo" : ready ? "Ready" : "Waiting";
-  els.waitingNote.textContent =
-    room.mode === "single"
-      ? "The match starts instantly in solo mode."
-      : ready
-        ? "Both sides are present. The host can start the match."
-        : "The host stays here until the other side joins the room.";
-
-  els.startMatchBtn.disabled = !(host && ready);
-  els.startMatchBtn.textContent = room.mode === "single" ? "Start solo match" : host ? (ready ? "Start match" : "Waiting for opponent") : "Host starts the match";
-}
-
-function rosterLine(player, active = false, compact = false) {
-  if (!player) return "";
-  return `
-    <div class="game-roster-row ${active ? "game-roster-active" : ""} ${compact ? "game-roster-compact" : ""}">
-      <span class="game-roster-name">${escapeHtml(player.name)}${player.bot ? " · Bot" : ""}</span>
-      <span class="game-roster-stats">${player.correct}✓ ${player.wrong}✕ · ${round2(player.worth).toFixed(0)}</span>
-    </div>
-  `;
-}
-
-function teamWorth(room, key) {
-  const team = room.teams[key];
-  return round2(team.stocks * room.game.price + team.score * 10);
-}
-
-function playerWorth(player) {
-  return round2(player.worth);
-}
-
-function netPressure(room) {
-  const a = room.teams.A.buys - room.teams.A.sells;
-  const b = room.teams.B.buys - room.teams.B.sells;
-  return a - b;
-}
-
-function drawChart(points) {
-  const canvas = els.canvas;
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  const rect = canvas.parentElement.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  const w = Math.max(320, Math.floor(rect.width));
-  const h = Math.max(320, Math.floor(rect.height));
-
-  canvas.width = Math.floor(w * dpr);
-  canvas.height = Math.floor(h * dpr);
-  canvas.style.width = `${w}px`;
-  canvas.style.height = `${h}px`;
-
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-
-  const pad = 24;
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const spread = Math.max(1, max - min);
-  const top = max + spread * 0.15;
-  const bottom = min - spread * 0.15;
-
-  const xFor = (i) => pad + (i * (w - pad * 2)) / Math.max(1, points.length - 1);
-  const yFor = (v) => h - pad - ((v - bottom) * (h - pad * 2)) / Math.max(1, top - bottom);
-
-  ctx.strokeStyle = "rgba(255,255,255,0.07)";
-  ctx.lineWidth = 1;
-  for (let i = 0; i < 4; i++) {
-    const y = pad + ((h - pad * 2) * i) / 3;
-    ctx.beginPath();
-    ctx.moveTo(pad, y);
-    ctx.lineTo(w - pad, y);
-    ctx.stroke();
-  }
-
-  ctx.strokeStyle = "#d8b15b";
-  ctx.lineWidth = 2.2;
-  ctx.beginPath();
-  points.forEach((p, i) => {
-    const x = xFor(i);
-    const y = yFor(p);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-
-  const x = xFor(points.length - 1);
-  const y = yFor(points[points.length - 1]);
-  ctx.fillStyle = "#d8b15b";
-  ctx.beginPath();
-  ctx.arc(x, y, 4, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function renderArena(room) {
-  const g = room.game;
-  const mePlayer = room.players[me];
-  const canAnswer = room.phase === "playing" && mePlayer && Date.now() < g.questionEndsAt && !g.submissions[mePlayer.id];
-
-  els.arenaRoomCode.textContent = room.code;
-  els.arenaMatchTimer.textContent = `${Math.max(0, (g.endsAt - Date.now()) / 1000).toFixed(1)}s`;
-  els.arenaQuestionTimer.textContent = `${Math.max(0, (g.questionEndsAt - Date.now()) / 1000).toFixed(1)}s`;
-  els.arenaPrice.textContent = round2(g.price).toFixed(2);
-  els.arenaNet.textContent = `${netPressure(room) > 0 ? "+" : ""}${netPressure(room)}`;
-
-  els.teamAName.textContent = room.teams.A.name.toUpperCase();
-  els.teamBName.textContent = room.teams.B.name.toUpperCase();
-
-  const worthA = teamWorth(room, "A");
-  const worthB = teamWorth(room, "B");
-
-  els.teamAWorth.textContent = worthA.toFixed(2);
-  els.teamBWorth.textContent = worthB.toFixed(2);
-  els.teamAStocks.textContent = room.teams.A.stocks;
-  els.teamBStocks.textContent = room.teams.B.stocks;
-  els.teamAFlow.textContent = `${room.teams.A.buys} / ${room.teams.A.sells}`;
-  els.teamBFlow.textContent = `${room.teams.B.buys} / ${room.teams.B.sells}`;
-
-  els.teamARoster.innerHTML = room.teams.A.members.map((id) => rosterLine(room.players[id])).join("") || `<div class="game-empty-mini">No players yet</div>`;
-  els.teamBRoster.innerHTML = room.teams.B.members.map((id) => rosterLine(room.players[id])).join("") || `<div class="game-empty-mini">No players yet</div>`;
-
-  els.questionText.textContent = g.question.text;
-  els.marketNote.textContent = g.lastEvent || "All players are trading now.";
-
-  if (canAnswer) {
-    els.answerInput.disabled = false;
-    els.submitAnswerBtn.disabled = false;
-  } else {
-    els.answerInput.disabled = true;
-    els.submitAnswerBtn.disabled = true;
-  }
-
-  const already = mePlayer ? g.submissions[mePlayer.id] : null;
-  if (already && room.phase === "playing") {
-    setFeedback("You already answered this question.", "correct");
-  } else if (canAnswer) {
-    setFeedback("Answer fast to push your side’s price.", "");
-  } else if (room.phase === "playing") {
-    setFeedback("Waiting for the next question window.", "");
-  }
-
-  drawChart(g.priceHistory);
-
-  if (room.mode === "single" && g.question.id !== state.lastQuestionId) {
-    state.lastQuestionId = g.question.id;
-    scheduleBot(room.code, g.question.id);
-  }
-}
-
-function renderResults(room) {
-  const g = room.game;
-  const finalA = teamWorth(room, "A");
-  const finalB = teamWorth(room, "B");
-
-  const allPlayers = Object.values(room.players);
-  const mvp = allPlayers.sort((a, b) => playerWorth(b) - playerWorth(a))[0];
-
-  els.resultsTitle.textContent = finalA === finalB ? "Draw match" : `${finalA > finalB ? room.teams.A.name : room.teams.B.name} wins`;
-  els.resultsSub.textContent = `Final price: ${round2(g.price).toFixed(2)} · Match ended after ${room.settings.matchSeconds}s`;
-  els.mvpName.textContent = mvp?.name || "—";
-  els.mvpWorth.textContent = `${playerWorth(mvp).toFixed(2)} worth`;
-  els.winnerTeam.textContent = finalA === finalB ? "Draw" : finalA > finalB ? room.teams.A.name : room.teams.B.name;
-  els.winnerWorth.textContent = finalA === finalB ? "Both sides ended equal." : `Team worth decided by live price and stock flow.`;
-
-  els.resTeamAName.textContent = room.teams.A.name;
-  els.resTeamAWorth.textContent = `${finalA.toFixed(2)} worth`;
-  els.resTeamADetail.innerHTML = teamResultBlock(room, "A");
-
-  els.resTeamBName.textContent = room.teams.B.name;
-  els.resTeamBWorth.textContent = `${finalB.toFixed(2)} worth`;
-  els.resTeamBDetail.innerHTML = teamResultBlock(room, "B");
-}
-
-function teamResultBlock(room, key) {
-  const team = room.teams[key];
-  const players = team.members.map((id) => room.players[id]).filter(Boolean);
-  return `
-    <div class="game-result-line">Stocks: ${team.stocks}</div>
-    <div class="game-result-line">Buys / Sells: ${team.buys} / ${team.sells}</div>
-    <div class="game-result-line">Players: ${players.map((p) => escapeHtml(p.name)).join(", ") || "—"}</div>
-    <div class="game-result-line">Team score: ${team.score}</div>
-  `;
-}
-
-function render(room) {
-  state.room = room ? clone(room) : null;
-  if (!room) {
-    setScreen("lobby");
-    return;
-  }
-
-  if (room.phase === "waiting") {
-    setScreen("waiting");
-    renderWaiting(room);
-  } else if (room.phase === "playing") {
-    setScreen("playing");
-    renderArena(room);
-  } else if (room.phase === "finished") {
-    setScreen("finished");
-    renderResults(room);
-  }
-}
-
-function createMatch(mode) {
-  const settings = syncSettings();
-  const code = mode === "single" ? "SOLO" : (els.roomCode.value.trim().toUpperCase() || createRoomCode());
-  const room = initRoom(mode, settings, code);
-  saveRoom(room);
-  setActiveRoomCode(code);
-  state.roomCode = code;
-  render(room);
-  if (mode === "single") {
-    startTick();
-  } else {
-    stopTick();
-    setScreen("waiting");
-    renderWaiting(room);
-  }
-}
-
-function joinMatch() {
-  const settings = syncSettings();
-  const code = els.roomCode.value.trim().toUpperCase();
-  if (!code) {
-    setFeedback("Enter a room code first.", "wrong");
-    return;
-  }
-
-  const room = loadRoom(code);
-  if (!room) {
-    setFeedback("Room not found.", "wrong");
-    return;
-  }
-
-  if (room.mode !== "multi") {
-    setFeedback("That room is a solo match.", "wrong");
-    return;
-  }
-
-  if (room.phase === "playing") {
-    setFeedback("That match already started.", "wrong");
-    return;
-  }
-
-  addPlayer(room, {
-    id: me,
-    name: settings.playerName,
-    team: settings.team,
-  });
-
-  room.settings.playerName = settings.playerName;
-  room.settings.teamAName = settings.teamAName;
-  room.settings.teamBName = settings.teamBName;
-  room.settings.stocksPerTeam = settings.stocksPerTeam;
-  room.settings.initialPrice = settings.initialPrice;
-  room.settings.questionSeconds = settings.questionSeconds;
-  room.settings.matchSeconds = settings.matchSeconds;
-  room.phase = "waiting";
-
-  saveRoom(room);
-  setActiveRoomCode(room.code);
-  state.roomCode = room.code;
-  setFeedback("Joined room. Waiting for the host.", "correct");
-  render(room);
-  startTick();
-}
-
-function startMatch() {
-  const room = loadRoom(state.roomCode || getActiveRoomCode());
-  if (!room) return;
-  if (room.hostId !== me) return;
-  if (!roomReady(room)) {
-    setFeedback("Need at least one player on both sides.", "wrong");
-    return;
-  }
-
-  room.game = createGame(room.settings);
-  room.phase = "playing";
-  room.game.lastEvent = "Match live.";
-  saveRoom(room);
-  render(room);
-  startTick();
-}
-
-function endMatch(room) {
-  room.phase = "finished";
-  saveRoom(room);
-  render(room);
-  stopTick();
-}
-
-function nextQuestion(room) {
-  const now = Date.now();
-  if (now >= room.game.endsAt) {
-    endMatch(room);
-    return;
-  }
-  room.game.question = question();
-  room.game.questionEndsAt = now + room.settings.questionSeconds * 1000;
-  room.game.questionIndex += 1;
-  room.game.submissions = {};
-  room.game.lastEvent = "New question window opened.";
-  saveRoom(room);
-  render(room);
-  if (room.mode === "single") {
-    scheduleBot(room.code, room.game.question.id);
-  }
-}
-
-function applyAnswer(room, playerId, rawAnswer) {
-  if (!room || room.phase !== "playing") return;
-  const g = room.game;
-  const player = room.players[playerId];
-  if (!player) return;
-
-  if (Date.now() >= g.endsAt) {
-    endMatch(room);
-    return;
-  }
-
-  if (g.submissions[playerId] === g.question.id) return;
-  if (Date.now() >= g.questionEndsAt) return;
-
-  const answer = Number(rawAnswer);
-  if (!Number.isFinite(answer)) return;
-
-  const correct = answer === g.question.answer;
-  const elapsed = Date.now() - g.question.createdAt;
-  const bonus = correct && elapsed <= 3000;
-  const team = room.teams[player.team];
-
-  g.submissions[playerId] = g.question.id;
-
-  if (correct) {
-    team.buys += 1 + (bonus ? 1 : 0);
-    team.stocks += 1;
-    team.score += bonus ? 3 : 1;
-
-    player.correct += 1;
-    player.score += bonus ? 3 : 1;
-    player.bonus += bonus ? 1 : 0;
-    player.worth += bonus ? 60 : 25;
-
-    g.price *= bonus ? 1.018 : 1.009;
-    g.lastEvent = `${player.name} hit ${bonus ? "bonus" : "correct"} on ${g.question.text}.`;
-    setFeedback(bonus ? "Correct — bonus move!" : "Correct — stock bought.", bonus ? "bonus" : "correct");
-  } else {
-    team.sells += 1;
-    team.stocks = Math.max(0, team.stocks - 1);
-    team.score -= 1;
-
-    player.wrong += 1;
-    player.score -= 1;
-    player.worth -= 10;
-
-    g.price *= 0.992;
-    g.lastEvent = `${player.name} missed ${g.question.text}.`;
-    setFeedback("Wrong — sell pressure added.", "wrong");
-  }
-
-  g.price = Math.max(100, round2(g.price));
-  g.priceHistory.push(g.price);
-
-  saveRoom(room);
-  render(room);
-}
-
-function scheduleBot(roomCode, questionId) {
-  clearTimeout(state.botTimer);
-  state.botTimer = setTimeout(() => {
-    const room = loadRoom(roomCode);
-    if (!room || room.phase !== "playing" || room.mode !== "single") return;
-    if (!room.game || room.game.question.id !== questionId) return;
-
-    const bot = Object.values(room.players).find((p) => p.bot);
-    if (!bot) return;
-
-    const q = room.game.question;
-    const correct = Math.random() < 0.72;
-    const answer = correct
-      ? q.answer
-      : q.answer + (Math.random() < 0.5 ? 1 : -1);
-
-    applyAnswer(room, bot.id, answer);
-  }, 600 + Math.random() * 2500);
-}
-
-function startTick() {
-  if (state.tickTimer) return;
-  state.tickTimer = setInterval(() => {
-    const code = state.roomCode || getActiveRoomCode();
-    if (!code) return;
-
-    const room = loadRoom(code);
-    if (!room) return;
-
-    if (room.phase === "playing") {
-      if (room.hostId === me && Date.now() >= room.game.endsAt) {
-        endMatch(room);
-        return;
-      }
-      if (room.hostId === me && Date.now() >= room.game.questionEndsAt) {
-        nextQuestion(room);
-        return;
-      }
-      render(room);
-    } else if (room.phase === "waiting") {
-      render(room);
-    } else if (room.phase === "finished") {
-      render(room);
+import { db } from './firebase.js';
+import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TRADING IQ BATTLE — game.js (MULTIPLAYER REFACTOR)
+   Complete game engine: firebase sync, question generation, stock market simulation,
+   dynamic canvas chart, winner calculation.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+(function () {
+    "use strict";
+
+    // ── GAME STATE ────────────────────────────────────────────────────────────
+    let state = {
+        roomId: null,
+        isHost: false,
+        myPlayerId: null,
+        
+        gameActive: false,
+        ended: false,
+        teams: [
+            { id: "a", name: "Alpha", players: [], stocks: 0, cash: 0, totalWorth: 0 },
+            { id: "b", name: "Beta",  players: [], stocks: 0, cash: 0, totalWorth: 0 }
+        ],
+        stockWorth: 100,
+        initialStocks: 5,
+        initialWorth: 100,
+        totalRounds: 10,
+        currentRound: 1,
+        turnIndex: 0,
+        turnOrder: [],
+        turnsPerRound: 0,
+        totalTurnsPlayed: 0,
+        worthHistory: [],
+        roundBuys: 0,
+        roundSells: 0,
+        currentQuestion: null,
+        questionStartTime: 0,
+        lastFeedback: null,
+    };
+
+    let timerInterval = null;
+
+    // ── DOM REFS ──────────────────────────────────────────────────────────────
+    const $ = (id) => document.getElementById(id);
+    const dom = {};
+
+    function cacheDom() {
+        dom.landing       = $("game-landing");
+        dom.setup         = $("game-setup");
+        dom.join          = $("game-join");
+        dom.waitingRoom   = $("game-waiting-room");
+        dom.arena         = $("game-arena");
+        dom.results       = $("game-results");
+
+        dom.roundDisplay  = $("game-round");
+        dom.worthDisplay  = $("game-stock-worth");
+        dom.currentPlayer = $("game-current-player");
+        dom.timerDisplay  = $("game-timer");
+
+        dom.teamADisplay  = $("team-a-display");
+        dom.teamBDisplay  = $("team-b-display");
+        dom.teamAWorth    = $("team-a-worth");
+        dom.teamBWorth    = $("team-b-worth");
+        dom.teamACash     = $("team-a-cash");
+        dom.teamBCash     = $("team-b-cash");
+        dom.teamAStocks   = $("team-a-stocks");
+        dom.teamBStocks   = $("team-b-stocks");
+        dom.teamARoster   = $("team-a-roster");
+        dom.teamBRoster   = $("team-b-roster");
+
+        dom.questionText  = $("game-question-text");
+        dom.questionTimer = $("game-question-timer");
+        dom.answerForm    = $("game-answer-form");
+        dom.answerInput   = $("game-answer-input");
+        dom.feedback      = $("game-feedback");
+
+        dom.chartCanvas   = $("game-chart-canvas");
+
+        dom.resultMvpName    = $("result-mvp-name");
+        dom.resultMvpWorth   = $("result-mvp-worth");
+        dom.resultWinnerName = $("result-winner-name");
+        dom.resultWinnerWorth = $("result-winner-worth");
+        dom.resultTeamAName  = $("result-team-a-name");
+        dom.resultTeamBName  = $("result-team-b-name");
+        dom.resultTeamAWorth = $("result-team-a-worth");
+        dom.resultTeamBWorth = $("result-team-b-worth");
+        dom.resultTeamARoster = $("result-team-a-roster");
+        dom.resultTeamBRoster = $("result-team-b-roster");
+        dom.resultChart      = $("game-result-chart-canvas");
+        dom.playAgainBtn     = $("play-again-btn");
     }
-  }, 120);
-}
 
-function stopTick() {
-  if (state.tickTimer) {
-    clearInterval(state.tickTimer);
-    state.tickTimer = null;
-  }
-}
+    // ── INITIALIZATION ────────────────────────────────────────────────────────
+    function initApp() {
+        cacheDom();
+        
+        // Navigation bindings
+        $("landing-host-btn").addEventListener("click", () => { dom.landing.hidden = true; dom.setup.hidden = false; });
+        $("landing-join-btn").addEventListener("click", () => { dom.landing.hidden = true; dom.join.hidden = false; });
+        $("host-back-btn").addEventListener("click", () => { dom.setup.hidden = true; dom.landing.hidden = false; });
+        $("join-back-btn").addEventListener("click", () => { dom.join.hidden = true; dom.landing.hidden = false; });
+        
+        $("create-room-btn").addEventListener("click", createRoom);
+        $("join-room-btn").addEventListener("click", joinRoom);
+        $("start-game-btn").addEventListener("click", startGame);
 
-function restore() {
-  const code = getActiveRoomCode();
-  const mode = getActiveMode();
-  setLobbyMode(mode);
+        dom.answerForm.addEventListener("submit", handleAnswer);
 
-  if (!code) {
-    setScreen("lobby");
-    return;
-  }
+        dom.playAgainBtn.addEventListener("click", () => {
+            window.location.reload();
+        });
 
-  const room = loadRoom(code);
-  if (!room) {
-    setActiveRoomCode("");
-    setScreen("lobby");
-    return;
-  }
-
-  state.roomCode = code;
-  render(room);
-  startTick();
-}
-
-function copyRoomCode() {
-  const code = els.roomCode.value.trim().toUpperCase() || state.roomCode || getActiveRoomCode();
-  if (!code) return;
-  navigator.clipboard?.writeText(code);
-  els.roomHelp.textContent = `Room code copied: ${code}`;
-}
-
-function backToLobby() {
-  setActiveRoomCode("");
-  state.roomCode = "";
-  state.lastQuestionId = "";
-  state.room = null;
-  stopTick();
-  clearTimeout(state.botTimer);
-  setScreen("lobby");
-}
-
-function bindEvents() {
-  els.modeCards.forEach((card) => {
-    card.addEventListener("click", () => setLobbyMode(card.dataset.mode));
-  });
-
-  [
-    els.playerName,
-    els.roomNameA,
-    els.roomNameB,
-    els.stockCount,
-    els.initialPrice,
-    els.questionSeconds,
-    els.matchSeconds,
-    els.teamChoice,
-  ].forEach((el) => el.addEventListener("input", syncSettings));
-
-  els.createRoomBtn.addEventListener("click", () => {
-    const mode = state.mode;
-    createMatch(mode);
-  });
-
-  els.joinRoomBtn.addEventListener("click", joinMatch);
-  els.copyCodeBtn.addEventListener("click", copyRoomCode);
-  els.startMatchBtn.addEventListener("click", startMatch);
-
-  els.backLobbyBtn.addEventListener("click", backToLobby);
-  els.newMatchBtn.addEventListener("click", backToLobby);
-  els.returnLobbyBtn.addEventListener("click", backToLobby);
-
-  els.submitAnswerBtn.addEventListener("click", () => {
-    const room = loadRoom(state.roomCode || getActiveRoomCode());
-    if (!room || room.phase !== "playing") return;
-    const player = room.players[me];
-    if (!player) return;
-    if (room.game.submissions[player.id] === room.game.question.id) return;
-
-    applyAnswer(room, player.id, els.answerInput.value);
-    els.answerInput.value = "";
-    els.answerInput.focus();
-  });
-
-  els.answerInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      els.submitAnswerBtn.click();
+        window.addEventListener("resize", () => {
+            if (!dom.arena.hidden) drawChart(dom.chartCanvas);
+            if (!dom.results.hidden) drawChart(dom.resultChart);
+        });
     }
-  });
 
-  window.addEventListener("resize", () => {
-    if (state.room && state.room.phase === "playing") render(state.room);
-  });
-
-  window.addEventListener("storage", (e) => {
-    if (e.key === KEYS.rooms || e.key === KEYS.activeRoom) {
-      restore();
+    function generateRoomCode() {
+        return Math.random().toString(36).substring(2, 8).toUpperCase();
     }
-  });
 
-  if (bc) {
-    bc.onmessage = () => restore();
-  }
-}
+    async function createRoom() {
+        const code = generateRoomCode();
+        state.roomId = code;
+        state.isHost = true;
+        state.myPlayerId = Date.now().toString() + Math.random().toString(36).substring(2, 5);
+        
+        const initialStocks = clamp(parseInt($("initial-stocks").value) || 5, 1, 50);
+        const initialWorth = clamp(parseInt($("initial-worth").value) || 100, 10, 1000);
+        const totalRounds = clamp(parseInt($("total-rounds").value) || 10, 3, 30);
+        
+        const playerName = $("host-player-name").value.trim() || "Host";
+        const teamId = $("host-team").value;
+        
+        const playerObj = createPlayerObject(playerName, state.myPlayerId, initialStocks, initialWorth);
+        
+        state.initialStocks = initialStocks;
+        state.initialWorth = initialWorth;
+        state.totalRounds = totalRounds;
+        state.stockWorth = initialWorth;
+        state.worthHistory = [initialWorth];
+        
+        if (teamId === 'a') state.teams[0].players.push(playerObj);
+        else state.teams[1].players.push(playerObj);
+        
+        recalcTeamWorths();
+        
+        await setDoc(doc(db, "rooms", code), {
+            gameActive: false,
+            ended: false,
+            currentRound: 1,
+            totalRounds,
+            stockWorth: initialWorth,
+            initialStocks,
+            initialWorth,
+            turnIndex: 0,
+            totalTurnsPlayed: 0,
+            worthHistory: [initialWorth],
+            roundBuys: 0,
+            roundSells: 0,
+            teams: state.teams,
+            turnOrder: [],
+            turnsPerRound: 0,
+            currentQuestion: null,
+            questionStartTime: 0,
+            lastFeedback: null,
+            lastUpdateTime: Date.now()
+        });
+        
+        listenToRoom(code);
+        
+        dom.setup.hidden = true;
+        dom.waitingRoom.hidden = false;
+        $("waiting-room-code-display").innerHTML = `Room Code: <strong>${code}</strong>`;
+        $("start-game-btn").hidden = false;
+    }
 
-function init() {
-  setLobbyMode(getActiveMode());
-  bindEvents();
-  syncSettings();
-  restore();
-}
+    async function joinRoom() {
+        const code = $("join-room-code").value.toUpperCase().trim();
+        if (!code) return;
+        
+        const docRef = doc(db, "rooms", code);
+        const snap = await getDoc(docRef);
+        if (!snap.exists()) {
+            $("join-error").textContent = "Room not found!";
+            return;
+        }
+        
+        const roomData = snap.data();
+        if (roomData.gameActive || roomData.ended) {
+            $("join-error").textContent = "Game already started or ended!";
+            return;
+        }
+        
+        state.roomId = code;
+        state.isHost = false;
+        state.myPlayerId = Date.now().toString() + Math.random().toString(36).substring(2, 5);
+        
+        const playerName = $("join-player-name").value.trim() || "Player";
+        const teamId = $("join-team").value;
+        
+        const playerObj = createPlayerObject(playerName, state.myPlayerId, roomData.initialStocks, roomData.initialWorth);
+        
+        const updatedTeams = roomData.teams;
+        if (teamId === 'a') updatedTeams[0].players.push(playerObj);
+        else updatedTeams[1].players.push(playerObj);
+        
+        await updateDoc(docRef, { teams: updatedTeams, lastUpdateTime: Date.now() });
+        
+        listenToRoom(code);
+        
+        dom.join.hidden = true;
+        dom.waitingRoom.hidden = false;
+        $("waiting-room-code-display").innerHTML = `Room Code: <strong>${code}</strong>`;
+    }
 
-init();
+    function createPlayerObject(name, id, initialStocks, initialWorth) {
+        const initialCash = initialWorth * 2;
+        return {
+            id,
+            name,
+            cash: initialCash,
+            stocks: initialStocks,
+            worth: initialCash + (initialStocks * initialWorth),
+            score: 0,
+            correct: 0,
+            wrong: 0,
+            trades: 0,
+            buys: 0,
+            shorts: 0,
+            initialWorth: initialCash + (initialStocks * initialWorth)
+        };
+    }
+
+    function listenToRoom(code) {
+        onSnapshot(doc(db, "rooms", code), (docSnapshot) => {
+            if (docSnapshot.exists()) {
+                const data = docSnapshot.data();
+                const wasActive = state.gameActive;
+                
+                Object.assign(state, data);
+                recalcTeamWorths();
+                
+                if (!wasActive && state.gameActive) {
+                    dom.waitingRoom.hidden = true;
+                    dom.arena.hidden = false;
+                    startLocalTimer();
+                }
+                
+                if (state.ended) {
+                    endGameLocal();
+                    return;
+                }
+                
+                if (!dom.waitingRoom.hidden) {
+                    renderWaitingRoom();
+                    if (state.isHost) {
+                        const ready = state.teams[0].players.length > 0 && state.teams[1].players.length > 0;
+                        const btn = $("start-game-btn");
+                        btn.disabled = !ready;
+                        btn.style.opacity = ready ? "1" : "0.5";
+                        btn.style.cursor = ready ? "pointer" : "not-allowed";
+                        $("waiting-message").textContent = ready ? "Ready to start!" : "Waiting for players to join both teams...";
+                    } else {
+                        $("waiting-message").textContent = "Waiting for host to start...";
+                    }
+                } else if (!dom.arena.hidden) {
+                    renderArena();
+                    
+                    if (state.lastFeedback) {
+                        dom.feedback.textContent = state.lastFeedback.text;
+                        dom.feedback.className = state.lastFeedback.className;
+                    }
+
+                    if (state.currentQuestion) {
+                        dom.questionText.textContent = state.currentQuestion.text;
+                        const turn = getCurrentTurn();
+                        const isMyTurn = turn && state.teams[turn.teamIdx].players[turn.playerIdx].id === state.myPlayerId;
+                        
+                        dom.answerInput.disabled = !isMyTurn;
+                        if (isMyTurn) {
+                            dom.answerInput.placeholder = "e.g. 150 b (buy) or 150 s (short)";
+                            if (document.activeElement !== dom.answerInput) {
+                                setTimeout(() => dom.answerInput.focus(), 50);
+                            }
+                        } else {
+                            const pName = state.teams[turn.teamIdx].players[turn.playerIdx].name;
+                            dom.answerInput.placeholder = `Waiting for ${pName}...`;
+                            dom.answerInput.value = "";
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderWaitingRoom() {
+        const teamA = $("lobby-team-a");
+        const teamB = $("lobby-team-b");
+        teamA.innerHTML = state.teams[0].players.map(p => `<div class="game-roster-row"><span class="game-roster-name">${escapeHtml(p.name)}</span></div>`).join("");
+        teamB.innerHTML = state.teams[1].players.map(p => `<div class="game-roster-row"><span class="game-roster-name">${escapeHtml(p.name)}</span></div>`).join("");
+    }
+
+    async function startGame() {
+        if (!state.isHost) return;
+        if (state.teams[0].players.length === 0 || state.teams[1].players.length === 0) {
+            alert("Both teams need at least 1 player to start!");
+            return;
+        }
+
+        buildTurnOrder();
+        state.gameActive = true;
+        state.currentQuestion = generateQuestion();
+        state.questionStartTime = Date.now();
+        state.lastFeedback = null;
+        
+        await updateRoomState();
+    }
+
+    async function updateRoomState() {
+        await updateDoc(doc(db, "rooms", state.roomId), {
+            gameActive: state.gameActive,
+            ended: state.ended,
+            currentRound: state.currentRound,
+            stockWorth: state.stockWorth,
+            turnIndex: state.turnIndex,
+            totalTurnsPlayed: state.totalTurnsPlayed,
+            worthHistory: state.worthHistory,
+            roundBuys: state.roundBuys,
+            roundSells: state.roundSells,
+            teams: state.teams,
+            turnOrder: state.turnOrder,
+            turnsPerRound: state.turnsPerRound,
+            currentQuestion: state.currentQuestion,
+            questionStartTime: state.questionStartTime,
+            lastFeedback: state.lastFeedback,
+            lastUpdateTime: Date.now()
+        });
+    }
+
+    // ── GAMEPLAY LOGIC ────────────────────────────────────────────────────────
+    function buildTurnOrder() {
+        const maxLen = Math.max(state.teams[0].players.length, state.teams[1].players.length);
+        const order = [];
+        for (let i = 0; i < maxLen; i++) {
+            if (i < state.teams[0].players.length) order.push({ teamIdx: 0, playerIdx: i });
+            if (i < state.teams[1].players.length) order.push({ teamIdx: 1, playerIdx: i });
+        }
+        state.turnOrder = order;
+        state.turnsPerRound = order.length;
+    }
+
+    function getCurrentTurn() {
+        if (!state.turnOrder || state.turnOrder.length === 0) return null;
+        const idx = state.turnIndex % state.turnOrder.length;
+        return state.turnOrder[idx];
+    }
+
+    function generateQuestion() {
+        const ops = ["+", "-"];
+        const op = ops[Math.floor(Math.random() * ops.length)];
+        let a, b, answer;
+
+        if (op === "+") {
+            a = randInt(100, 999);
+            b = randInt(100, 999);
+            answer = a + b;
+        } else {
+            a = randInt(200, 999);
+            b = randInt(100, a - 1);
+            answer = a - b;
+        }
+
+        return { text: `${a} ${op} ${b}`, answer: answer };
+    }
+
+    function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+    function updateStockWorth() {
+        const volatility = 2 + Math.random() * 3;
+        const netPressure = state.roundBuys - state.roundSells;
+        state.stockWorth += netPressure * volatility;
+        state.stockWorth += (Math.random() - 0.5) * 2; // drift
+        if (state.stockWorth < 1) state.stockWorth = 1;
+        state.stockWorth = Math.round(state.stockWorth * 100) / 100;
+        state.worthHistory.push(state.stockWorth);
+    }
+
+    function recalcTeamWorths() {
+        state.teams.forEach((team) => {
+            let tStocks = 0, tCash = 0, tWorth = 0;
+            team.players.forEach((p) => {
+                p.worth = Math.round((p.cash + (p.stocks * state.stockWorth)) * 100) / 100;
+                tStocks += p.stocks;
+                tCash += p.cash;
+                tWorth += p.worth;
+            });
+            team.stocks = tStocks;
+            team.cash = tCash;
+            team.totalWorth = Math.round(tWorth * 100) / 100;
+        });
+    }
+
+    async function handleAnswer(e) {
+        e.preventDefault();
+        if (!state.gameActive || !state.currentQuestion) return;
+
+        const turn = getCurrentTurn();
+        const currentPlayer = state.teams[turn.teamIdx].players[turn.playerIdx];
+        if (currentPlayer.id !== state.myPlayerId) return; // Only active player processes
+
+        const inputStr = dom.answerInput.value.trim().toLowerCase();
+        dom.answerInput.disabled = true;
+        
+        const regex = /^([+-]?\d+)(?:\s*([bs\+\-]))?$/i;
+        const match = inputStr.match(regex);
+        
+        let userAnswer = null;
+        let action = null;
+        
+        if (match) {
+            userAnswer = parseInt(match[1]);
+            action = match[2];
+        } else {
+            // fallback if weird format, treat as wrong
+            userAnswer = NaN;
+        }
+
+        const correctAnswer = state.currentQuestion.answer;
+        const isCorrect = userAnswer === correctAnswer;
+        const elapsed = (Date.now() - state.questionStartTime) / 1000;
+
+        let feedbackText = "";
+        let feedbackClass = "";
+
+        if (isCorrect) {
+            currentPlayer.correct += 1;
+            currentPlayer.score += 1;
+            
+            if (action === 'b' || action === '+') {
+                if (currentPlayer.cash >= state.stockWorth) {
+                    currentPlayer.cash -= state.stockWorth;
+                    currentPlayer.stocks += 1;
+                    currentPlayer.trades += 1;
+                    currentPlayer.buys += 1;
+                    state.roundBuys += 1;
+                    feedbackText = `✓ CORRECT — BOUGHT 1 STOCK`;
+                    feedbackClass = "game-feedback game-feedback-correct";
+                } else {
+                    feedbackText = `✓ CORRECT — (FAILED TO BUY: NOT ENOUGH CASH)`;
+                    feedbackClass = "game-feedback game-feedback-bonus";
+                }
+            } else if (action === 's' || action === '-') {
+                currentPlayer.cash += state.stockWorth;
+                currentPlayer.stocks -= 1;
+                currentPlayer.trades += 1;
+                currentPlayer.shorts += 1;
+                state.roundSells += 1;
+                feedbackText = `✓ CORRECT — SHORTED/SOLD 1 STOCK`;
+                feedbackClass = "game-feedback game-feedback-correct";
+            } else {
+                feedbackText = `✓ CORRECT — (NO TRADE EXECUTED)`;
+                feedbackClass = "game-feedback game-feedback-correct";
+            }
+        } else {
+            currentPlayer.wrong += 1;
+            const penalty = Math.round(state.initialWorth * 0.1) || 10;
+            currentPlayer.cash -= penalty;
+            feedbackText = `✗ WRONG — Penalty: -${penalty} Cash. Answer was ${correctAnswer}`;
+            feedbackClass = "game-feedback game-feedback-wrong";
+        }
+
+        state.lastFeedback = { text: feedbackText, className: feedbackClass };
+        
+        updateStockWorth();
+        state.roundBuys = 0;
+        state.roundSells = 0;
+
+        state.turnIndex++;
+        state.totalTurnsPlayed++;
+
+        if (state.totalTurnsPlayed > 0 && state.totalTurnsPlayed % state.turnsPerRound === 0) {
+            state.currentRound++;
+        }
+
+        if (state.currentRound > state.totalRounds) {
+            state.ended = true;
+            state.gameActive = false;
+        }
+
+        recalcTeamWorths();
+        
+        // Wait brief moment before next question to allow reading feedback
+        setTimeout(async () => {
+            if (state.gameActive && !state.ended) {
+                state.currentQuestion = generateQuestion();
+                state.questionStartTime = Date.now();
+                state.lastFeedback = null;
+            }
+            await updateRoomState();
+        }, 1500);
+        
+        // Push intermediate state so everyone sees the feedback immediately
+        await updateRoomState();
+    }
+
+    // ── RENDERING ─────────────────────────────────────────────────────────────
+    function startLocalTimer() {
+        clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+            if (state.questionStartTime > 0 && !state.ended) {
+                const elapsed = ((Date.now() - state.questionStartTime) / 1000).toFixed(1);
+                dom.timerDisplay.textContent = `${elapsed}s`;
+                if (dom.questionTimer) dom.questionTimer.textContent = `${elapsed}s`;
+            }
+        }, 100);
+    }
+
+    function renderArena() {
+        dom.roundDisplay.textContent = `${state.currentRound} / ${state.totalRounds}`;
+        dom.worthDisplay.textContent = state.stockWorth.toFixed(2);
+
+        const turn = getCurrentTurn();
+        if (turn) {
+            const player = state.teams[turn.teamIdx].players[turn.playerIdx];
+            const teamName = state.teams[turn.teamIdx].name;
+            dom.currentPlayer.textContent = `${player.name} (${teamName})`;
+            dom.currentPlayer.className = `game-status-value ${turn.teamIdx === 0 ? "game-color-a" : "game-color-b"}`;
+        }
+
+        dom.teamADisplay.textContent = state.teams[0].name.toUpperCase();
+        dom.teamBDisplay.textContent = state.teams[1].name.toUpperCase();
+        
+        dom.teamAWorth.textContent = state.teams[0].totalWorth.toFixed(2);
+        dom.teamBWorth.textContent = state.teams[1].totalWorth.toFixed(2);
+        dom.teamAStocks.textContent = state.teams[0].stocks;
+        dom.teamBStocks.textContent = state.teams[1].stocks;
+        dom.teamACash.textContent = state.teams[0].cash.toFixed(1);
+        dom.teamBCash.textContent = state.teams[1].cash.toFixed(1);
+
+        renderRoster(dom.teamARoster, state.teams[0].players, 0);
+        renderRoster(dom.teamBRoster, state.teams[1].players, 1);
+
+        drawChart(dom.chartCanvas);
+    }
+
+    function renderRoster(container, players, teamIdx) {
+        const turn = getCurrentTurn();
+        container.innerHTML = players.map((p, i) => {
+            const isActive = state.gameActive && turn && turn.teamIdx === teamIdx && turn.playerIdx === i;
+            return `<div class="game-roster-row ${isActive ? 'game-roster-active' : ''}">
+                <span class="game-roster-name">${escapeHtml(p.name)}</span>
+                <span class="game-roster-stats">
+                    <span class="game-mono">${p.cash.toFixed(0)}</span> cash
+                    <span class="game-roster-sep">·</span>
+                    <span class="game-mono">${p.stocks}</span> stk
+                    <span class="game-roster-sep">·</span>
+                    <span class="game-mono">${p.worth.toFixed(1)}</span> val
+                </span>
+            </div>`;
+        }).join("");
+    }
+
+    function endGameLocal() {
+        clearInterval(timerInterval);
+        recalcTeamWorths();
+
+        let mvp = null;
+        let mvpWorth = -Infinity;
+        state.teams.forEach((team) => {
+            team.players.forEach((p) => {
+                if (p.worth > mvpWorth) { mvpWorth = p.worth; mvp = p; }
+            });
+        });
+
+        const winner = state.teams[0].totalWorth >= state.teams[1].totalWorth ? state.teams[0] : state.teams[1];
+        const isTie = state.teams[0].totalWorth === state.teams[1].totalWorth;
+
+        dom.arena.hidden = true;
+        dom.results.hidden = false;
+
+        dom.resultMvpName.textContent = mvp ? mvp.name : "—";
+        dom.resultMvpWorth.textContent = mvp ? `Worth: ${mvp.worth.toFixed(2)}` : "";
+        dom.resultWinnerName.textContent = isTie ? "TIE" : winner.name.toUpperCase();
+        dom.resultWinnerWorth.textContent = isTie ? `Both: ${state.teams[0].totalWorth.toFixed(2)}` : `Worth: ${winner.totalWorth.toFixed(2)}`;
+
+        dom.resultTeamAName.textContent = state.teams[0].name.toUpperCase();
+        dom.resultTeamBName.textContent = state.teams[1].name.toUpperCase();
+        dom.resultTeamAWorth.textContent = state.teams[0].totalWorth.toFixed(2);
+        dom.resultTeamBWorth.textContent = state.teams[1].totalWorth.toFixed(2);
+
+        renderResultRoster(dom.resultTeamARoster, state.teams[0].players);
+        renderResultRoster(dom.resultTeamBRoster, state.teams[1].players);
+
+        drawChart(dom.resultChart);
+    }
+
+    function renderResultRoster(container, players) {
+        container.innerHTML = players.map(p => {
+            const pnl = p.worth - p.initialWorth;
+            const pnlColor = pnl >= 0 ? 'var(--success)' : 'var(--danger)';
+            const pnlSign = pnl >= 0 ? '+' : '';
+            return `<div class="game-roster-row" style="display:flex; flex-direction:column; align-items:flex-start; padding: 12px; gap: 8px;">
+                <div style="width: 100%; display: flex; justify-content: space-between;">
+                    <span class="game-roster-name" style="font-size:16px;">${escapeHtml(p.name)}</span>
+                    <span class="game-mono" style="font-size:16px; color:${pnlColor}">${pnlSign}${pnl.toFixed(2)}</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; width: 100%; gap: 4px; font-size: 13px; color: var(--muted);">
+                    <div>Answers: <span class="game-mono" style="color:var(--text)">${p.correct}✓ ${p.wrong}✗</span></div>
+                    <div>Buys/Shorts: <span class="game-mono" style="color:var(--text)">${p.buys || 0} / ${p.shorts || 0}</span></div>
+                    <div>Cash: <span class="game-mono" style="color:var(--text)">${p.cash.toFixed(1)}</span></div>
+                    <div>Stocks: <span class="game-mono" style="color:var(--text)">${p.stocks}</span></div>
+                </div>
+            </div>`;
+        }).join("");
+    }
+
+    function drawChart(canvas) {
+        if (!canvas) return;
+        const parent = canvas.parentElement;
+        const dpr = window.devicePixelRatio || 1;
+        const w = parent.clientWidth;
+        const h = parent.clientHeight || w;
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        canvas.style.width = w + "px";
+        canvas.style.height = h + "px";
+        const ctx = canvas.getContext("2d");
+        ctx.scale(dpr, dpr);
+        const data = state.worthHistory;
+        if (!data || data.length < 2) {
+            ctx.fillStyle = "#94a3b8";
+            ctx.font = "12px 'JetBrains Mono', monospace";
+            ctx.textAlign = "center";
+            ctx.fillText("Awaiting data...", w / 2, h / 2);
+            return;
+        }
+        const pad = { top: 24, right: 16, bottom: 32, left: 52 };
+        const cw = w - pad.left - pad.right;
+        const ch = h - pad.top - pad.bottom;
+        const minVal = Math.min(...data) * 0.95;
+        const maxVal = Math.max(...data) * 1.05;
+        const range = maxVal - minVal || 1;
+        ctx.clearRect(0, 0, w, h);
+        const gridLines = 5;
+        ctx.strokeStyle = "rgba(255,255,255,0.06)";
+        ctx.lineWidth = 1;
+        ctx.font = "10px 'JetBrains Mono', monospace";
+        ctx.fillStyle = "#64748b";
+        ctx.textAlign = "right";
+        for (let i = 0; i <= gridLines; i++) {
+            const y = pad.top + (ch / gridLines) * i;
+            const val = maxVal - (range / gridLines) * i;
+            ctx.beginPath();
+            ctx.moveTo(pad.left, y);
+            ctx.lineTo(w - pad.right, y);
+            ctx.stroke();
+            ctx.fillText(val.toFixed(1), pad.left - 6, y + 3);
+        }
+        ctx.textAlign = "center";
+        const xStep = Math.max(1, Math.floor(data.length / 8));
+        for (let i = 0; i < data.length; i += xStep) {
+            const x = pad.left + (i / (data.length - 1)) * cw;
+            ctx.fillText(String(i), x, h - pad.bottom + 16);
+        }
+        ctx.beginPath();
+        ctx.strokeStyle = "#d8b15b";
+        ctx.lineWidth = 2;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        for (let i = 0; i < data.length; i++) {
+            const x = pad.left + (i / (data.length - 1)) * cw;
+            const y = pad.top + ch - ((data[i] - minVal) / range) * ch;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + ch);
+        gradient.addColorStop(0, "rgba(216,177,91,0.15)");
+        gradient.addColorStop(1, "rgba(216,177,91,0)");
+        ctx.lineTo(pad.left + cw, pad.top + ch);
+        ctx.lineTo(pad.left, pad.top + ch);
+        ctx.closePath();
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        const lastX = pad.left + cw;
+        const lastY = pad.top + ch - ((data[data.length - 1] - minVal) / range) * ch;
+        ctx.beginPath();
+        ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
+        ctx.fillStyle = "#d8b15b";
+        ctx.fill();
+        ctx.strokeStyle = "#0b1020";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    function escapeHtml(str) {
+        if (!str) return "";
+        return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+    function clamp(val, min, max) { return Math.max(min, Math.min(max, val)); }
+
+    document.addEventListener("DOMContentLoaded", initApp);
+})();

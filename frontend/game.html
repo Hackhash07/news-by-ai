@@ -1,391 +1,409 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Trade Trends — Trading IQ Battle</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trade Trends — Trading IQ Battle</title>
+    <meta name="description" content="A competitive 2-sided trading IQ battle game. Answer math questions to trade stocks and outsmart the opposition." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
 </head>
-<body class="game-page">
-  <nav class="topnav" role="navigation" aria-label="Main navigation">
-    <div class="nav-inner">
-      <a href="index.html" class="brand" aria-label="Trade Trends home">
-        <div class="brand-mark" aria-hidden="true">TT</div>
-        <div class="brand-text">
-          <span class="brand-name">TRADE TRENDS</span>
-          <span class="brand-sub">Market Intelligence</span>
-        </div>
-      </a>
+<body>
 
-      <div class="nav-links" role="list">
-        <a href="index.html" class="nav-link" role="listitem">Intelligence</a>
-        <a href="chat.html" class="nav-link" role="listitem">Live Desk</a>
-        <a href="profile.html#watchlists" class="nav-link" role="listitem">Watchlist</a>
-        <a href="profile.html#saved" class="nav-link" role="listitem">Saved</a>
-      </div>
-
-      <div class="nav-right">
-        <a class="chat-icon-btn game-nav-icon active" href="game.html" title="Trading IQ Battle" aria-label="Trading IQ Battle">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-          </svg>
-        </a>
-        <a class="chat-icon-btn" href="chat.html" title="Open chat" aria-label="Open chat">💬</a>
-        <a href="profile.html" class="nav-avatar-link">
-          <div class="nav-avatar" id="nav-avatar">?</div>
-        </a>
-      </div>
-    </div>
-  </nav>
-
-  <main class="shell game-shell" role="main">
-    <section class="game-rules-panel">
-      <div class="game-rules-head">
-        <div>
-          <div class="game-kicker">Trading IQ Battle</div>
-          <h1 class="game-title">Real-time team market battle. Everyone plays at once.</h1>
-        </div>
-        <div class="game-pill">Rulebook</div>
-      </div>
-
-      <div class="game-rules-grid">
-        <div class="game-rule">
-          <span class="game-rule-num">01</span>
-          <p>All players on both sides answer the same live question window at the same time.</p>
-        </div>
-        <div class="game-rule">
-          <span class="game-rule-num">02</span>
-          <p>Correct answers create buy pressure. Wrong answers create sell pressure.</p>
-        </div>
-        <div class="game-rule">
-          <span class="game-rule-num">03</span>
-          <p>Answer within 3 seconds for a bonus move and stronger market impact.</p>
-        </div>
-        <div class="game-rule">
-          <span class="game-rule-num">04</span>
-          <p>Highest final team worth wins. Highest player worth becomes MVP.</p>
-        </div>
-      </div>
-    </section>
-
-    <section id="mode-screen" class="game-panel game-lobby-panel">
-      <div class="game-panel-head">
-        <div>
-          <div class="game-section-kicker">Start match</div>
-          <h2>Choose your mode</h2>
-        </div>
-        <div class="game-status-chip" id="lobby-status-chip">Ready</div>
-      </div>
-
-      <div class="game-mode-grid">
-        <button class="game-mode-card active" type="button" data-mode="single">
-          <div class="game-mode-top">
-            <span class="game-mode-label">Single Player</span>
-            <span class="game-mode-badge">Solo</span>
-          </div>
-          <p>Start instantly against the built-in market bot.</p>
-        </button>
-
-        <button class="game-mode-card" type="button" data-mode="multi">
-          <div class="game-mode-top">
-            <span class="game-mode-label">Multiplayer Room</span>
-            <span class="game-mode-badge">Live room</span>
-          </div>
-          <p>Create a room, share the code, and wait for the other trader to join.</p>
-        </button>
-      </div>
-
-      <div class="game-lobby-grid">
-        <div class="game-card">
-          <div class="game-card-head">
-            <span class="game-card-title">Match setup</span>
-            <span class="game-card-sub">Clean lobby</span>
-          </div>
-
-          <div class="game-field">
-            <label class="game-label" for="player-name">Your name</label>
-            <input id="player-name" class="game-input" type="text" value="Player 1" />
-          </div>
-
-          <div class="game-field">
-            <label class="game-label" for="team-choice">Your side</label>
-            <select id="team-choice" class="game-input">
-              <option value="A">Team A</option>
-              <option value="B">Team B</option>
-            </select>
-          </div>
-
-          <div class="game-settings-row">
-            <div class="game-field">
-              <label class="game-label" for="room-name-a">Team A name</label>
-              <input id="room-name-a" class="game-input" type="text" value="Alpha" />
+    <!-- ── TOP NAV ────────────────────────────────────────── -->
+    <nav class="topnav" role="navigation" aria-label="Main navigation">
+        <div class="nav-inner">
+            <a href="index.html" class="brand" aria-label="Trade Trends home">
+                <div class="brand-mark" aria-hidden="true">TT</div>
+                <div class="brand-text">
+                    <span class="brand-name">TRADE TRENDS</span>
+                    <span class="brand-sub">Market Intelligence</span>
+                </div>
+            </a>
+            <div class="nav-links" role="list">
+                <a href="index.html" class="nav-link" role="listitem">Intelligence</a>
+                <a href="chat.html" class="nav-link" role="listitem">Live Desk</a>
+                <a href="profile.html#watchlists" class="nav-link" role="listitem">Watchlist</a>
+                <a href="profile.html#saved" class="nav-link" role="listitem">Saved</a>
             </div>
-            <div class="game-field">
-              <label class="game-label" for="room-name-b">Team B name</label>
-              <input id="room-name-b" class="game-input" type="text" value="Beta" />
+            <div class="nav-right">
+                <a class="chat-icon-btn game-nav-icon active" href="game.html" title="Trading IQ Battle" aria-label="Trading IQ Battle">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                    </svg>
+                </a>
+                <a class="chat-icon-btn" href="chat.html" title="Open chat" aria-label="Open chat">💬</a>
+                <a href="profile.html" class="nav-avatar-link">
+                    <div class="nav-avatar" id="nav-avatar">?</div>
+                </a>
             </div>
-            <div class="game-field">
-              <label class="game-label" for="stock-count">Stocks per team</label>
-              <input id="stock-count" class="game-input" type="number" min="1" max="99" value="10" />
-            </div>
-            <div class="game-field">
-              <label class="game-label" for="initial-price">Initial stock worth</label>
-              <input id="initial-price" class="game-input" type="number" min="100" value="1000" />
-            </div>
-            <div class="game-field">
-              <label class="game-label" for="question-seconds">Question window</label>
-              <input id="question-seconds" class="game-input" type="number" min="5" max="30" value="12" />
-            </div>
-            <div class="game-field">
-              <label class="game-label" for="match-seconds">Match length</label>
-              <input id="match-seconds" class="game-input" type="number" min="30" max="600" value="60" />
-            </div>
-          </div>
         </div>
+    </nav>
 
-        <div class="game-card">
-          <div class="game-card-head">
-            <span class="game-card-title">Room control</span>
-            <span class="game-card-sub">Create / join</span>
-          </div>
+    <!-- ── GAME CONTAINER ─────────────────────────────────── -->
+    <main class="shell" role="main">
 
-          <div class="game-field">
-            <label class="game-label" for="room-code">Room code</label>
-            <input id="room-code" class="game-input" type="text" placeholder="e.g. TRD102" maxlength="12" />
-          </div>
-
-          <div class="game-room-actions">
-            <button id="create-room-btn" class="game-btn game-btn-primary" type="button">Create room</button>
-            <button id="join-room-btn" class="game-btn game-btn-secondary" type="button">Join room</button>
-            <button id="copy-code-btn" class="game-btn game-btn-secondary" type="button">Copy code</button>
-          </div>
-
-          <div class="game-note" id="room-help">
-            Single player starts immediately. Multiplayer creates a room first and waits for the second player.
-          </div>
-
-          <div class="game-mini-stats">
-            <div class="game-mini-stat">
-              <span>Mode</span>
-              <strong id="mode-label">Single Player</strong>
+        <!-- ═══ LANDING SCREEN ═══ -->
+        <section id="game-landing" class="game-setup">
+            <div class="game-setup-header">
+                <div class="game-setup-icon">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="game-setup-title">TRADING IQ BATTLE</h1>
+                    <p class="game-setup-sub">Multiplayer trading competition</p>
+                </div>
             </div>
-            <div class="game-mini-stat">
-              <span>Status</span>
-              <strong id="lobby-status">Idle</strong>
+            <div class="game-setup-grid" style="grid-template-columns: 1fr 1fr;">
+                <div class="game-setup-card" style="text-align: center; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px;" id="landing-host-btn">
+                    <h3 style="margin: 0; font-size: 20px;">Host a Match</h3>
+                    <p style="color:var(--muted); font-size:14px; margin-top:12px;">Create a new room and configure rules</p>
+                </div>
+                <div class="game-setup-card" style="text-align: center; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px;" id="landing-join-btn">
+                    <h3 style="margin: 0; font-size: 20px;">Join a Match</h3>
+                    <p style="color:var(--muted); font-size:14px; margin-top:12px;">Enter a room code to play</p>
+                </div>
             </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="waiting-screen" class="game-panel game-waiting-panel" hidden>
-      <div class="game-panel-head">
-        <div>
-          <div class="game-section-kicker">Room lobby</div>
-          <h2 id="waiting-title">Waiting for opponent</h2>
-        </div>
-        <div class="game-status-chip" id="waiting-chip">Waiting</div>
-      </div>
-
-      <div class="game-waiting-grid">
-        <div class="game-card game-room-summary">
-          <div class="game-room-code-label">Room code</div>
-          <div class="game-room-code" id="waiting-room-code">—</div>
-          <div class="game-room-sub" id="waiting-room-mode">Multiplayer room</div>
-        </div>
-
-        <div class="game-card">
-          <div class="game-card-head">
-            <span class="game-card-title">Connected sides</span>
-            <span class="game-card-sub">Live room state</span>
-          </div>
-
-          <div class="game-side-list">
-            <div class="game-side-panel">
-              <div class="game-side-head">
-                <strong id="waiting-team-a-name">Team A</strong>
-                <span id="waiting-team-a-count">0 players</span>
-              </div>
-              <div id="waiting-team-a-list" class="game-roster"></div>
-            </div>
-
-            <div class="game-side-panel">
-              <div class="game-side-head">
-                <strong id="waiting-team-b-name">Team B</strong>
-                <span id="waiting-team-b-count">0 players</span>
-              </div>
-              <div id="waiting-team-b-list" class="game-roster"></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="game-card">
-          <div class="game-card-head">
-            <span class="game-card-title">Room status</span>
-            <span class="game-card-sub">Start control</span>
-          </div>
-
-          <div class="game-note" id="waiting-note">
-            The host stays here until at least one trader joins the other side.
-          </div>
-
-          <div class="game-room-actions">
-            <button id="start-match-btn" class="game-btn game-btn-primary" type="button" disabled>Start match</button>
-            <button id="back-lobby-btn" class="game-btn game-btn-secondary" type="button">Back to lobby</button>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="arena-screen" class="game-arena" hidden>
-      <div class="game-status-bar">
-        <div class="game-status-item">
-          <span class="game-status-label">Room</span>
-          <span class="game-status-value" id="arena-room-code">—</span>
-        </div>
-        <div class="game-status-item">
-          <span class="game-status-label">Match time</span>
-          <span class="game-status-value" id="arena-match-timer">60.0s</span>
-        </div>
-        <div class="game-status-item">
-          <span class="game-status-label">Question time</span>
-          <span class="game-status-value" id="arena-question-timer">12.0s</span>
-        </div>
-        <div class="game-status-item">
-          <span class="game-status-label">Market price</span>
-          <span class="game-status-value" id="arena-price">1000.00</span>
-        </div>
-        <div class="game-status-item">
-          <span class="game-status-label">Net pressure</span>
-          <span class="game-status-value" id="arena-net">0</span>
-        </div>
-      </div>
-
-      <div class="game-arena-grid">
-        <aside class="game-team-panel game-team-a-panel">
-          <div class="game-panel-head">
-            <div class="game-panel-team-name" id="team-a-name">ALPHA</div>
-            <div class="game-team-tag">TEAM A</div>
-          </div>
-
-          <div class="game-panel-stat">
-            <span class="game-panel-stat-label">Worth</span>
-            <strong class="game-panel-stat-value" id="team-a-worth">0.00</strong>
-          </div>
-          <div class="game-panel-stat">
-            <span class="game-panel-stat-label">Stocks</span>
-            <strong class="game-panel-stat-value" id="team-a-stocks">0</strong>
-          </div>
-          <div class="game-panel-stat">
-            <span class="game-panel-stat-label">Buys / Sells</span>
-            <strong class="game-panel-stat-value" id="team-a-flow">0 / 0</strong>
-          </div>
-
-          <div class="game-panel-divider"></div>
-          <div class="game-player-head">Players</div>
-          <div class="game-roster" id="team-a-roster"></div>
-        </aside>
-
-        <section class="game-center-col">
-          <div class="game-question-box">
-            <div class="game-question-header">
-              <span class="game-question-tag">Live question</span>
-              <span class="game-question-timer" id="market-note">All players are trading now.</span>
-            </div>
-            <div class="game-question-text" id="question-text">—</div>
-            <div class="game-answer-row">
-              <input id="answer-input" class="game-input game-answer-input" type="number" placeholder="Answer" autocomplete="off" />
-              <button id="submit-answer-btn" class="game-submit-btn" type="button">Submit</button>
-            </div>
-            <div id="feedback" class="game-feedback"></div>
-          </div>
-
-          <div class="game-chart-panel">
-            <div class="game-chart-header">
-              <div>
-                <div class="game-section-kicker">Stock worth</div>
-                <h3>Live market curve</h3>
-              </div>
-            </div>
-            <div class="game-chart-wrap">
-              <canvas id="market-chart"></canvas>
-            </div>
-          </div>
         </section>
 
-        <aside class="game-team-panel game-team-b-panel">
-          <div class="game-panel-head">
-            <div class="game-panel-team-name" id="team-b-name">BETA</div>
-            <div class="game-team-tag">TEAM B</div>
-          </div>
+        <!-- ═══ HOST SETUP SCREEN ═══ -->
+        <section id="game-setup" class="game-setup" hidden>
+            <div class="game-setup-header">
+                <div class="game-setup-icon">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="game-setup-title">HOST MATCH</h1>
+                    <p class="game-setup-sub">Configure match rules</p>
+                </div>
+            </div>
 
-          <div class="game-panel-stat">
-            <span class="game-panel-stat-label">Worth</span>
-            <strong class="game-panel-stat-value" id="team-b-worth">0.00</strong>
-          </div>
-          <div class="game-panel-stat">
-            <span class="game-panel-stat-label">Stocks</span>
-            <strong class="game-panel-stat-value" id="team-b-stocks">0</strong>
-          </div>
-          <div class="game-panel-stat">
-            <span class="game-panel-stat-label">Buys / Sells</span>
-            <strong class="game-panel-stat-value" id="team-b-flow">0 / 0</strong>
-          </div>
+            <div class="game-setup-grid">
+                <!-- Host Player Config -->
+                <div class="game-setup-card game-setup-card-wide">
+                    <div class="game-setup-card-head">
+                        <span class="game-team-label">YOUR DETAILS</span>
+                    </div>
+                    <div class="game-settings-row">
+                        <div class="game-field">
+                            <label class="game-label" for="host-player-name">Player Name</label>
+                            <input id="host-player-name" type="text" class="game-input game-input-sm" value="HostPlayer" maxlength="16" />
+                        </div>
+                        <div class="game-field">
+                            <label class="game-label" for="host-team">Select Team</label>
+                            <select id="host-team" class="game-input game-input-sm">
+                                <option value="a">Alpha</option>
+                                <option value="b">Beta</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
 
-          <div class="game-panel-divider"></div>
-          <div class="game-player-head">Players</div>
-          <div class="game-roster" id="team-b-roster"></div>
-        </aside>
-      </div>
-    </section>
+                <!-- Match Config -->
+                <div class="game-setup-card game-setup-card-wide">
+                    <div class="game-setup-card-head">
+                        <span class="game-team-label" style="background:rgba(255,255,255,0.08);color:var(--muted);">MATCH SETTINGS</span>
+                    </div>
+                    <div class="game-settings-row">
+                        <div class="game-field">
+                            <label class="game-label" for="initial-stocks">Initial Stocks/Player</label>
+                            <input id="initial-stocks" type="number" class="game-input game-input-sm" value="5" min="1" max="50" />
+                        </div>
+                        <div class="game-field">
+                            <label class="game-label" for="initial-worth">Initial Stock Price</label>
+                            <input id="initial-worth" type="number" class="game-input game-input-sm" value="100" min="10" max="1000" />
+                        </div>
+                        <div class="game-field">
+                            <label class="game-label" for="total-rounds">Total Rounds</label>
+                            <input id="total-rounds" type="number" class="game-input game-input-sm" value="10" min="3" max="30" />
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-    <section id="results-screen" class="game-results" hidden>
-      <div class="game-results-header">
-        <div class="game-section-kicker">Match complete</div>
-        <h2 class="game-results-title" id="results-title">Final result</h2>
-        <p class="game-results-sub" id="results-sub">—</p>
-      </div>
+            <button id="create-room-btn" type="button" class="game-start-btn">
+                CREATE ROOM
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+            <button id="host-back-btn" type="button" class="game-start-btn" style="background: transparent; border: 1px solid var(--border); margin-top: 12px; color: var(--text);">
+                BACK
+            </button>
+        </section>
 
-      <div class="game-results-grid">
-        <div class="game-result-card game-result-mvp">
-          <span class="game-result-card-label">MVP</span>
-          <strong class="game-result-card-value" id="mvp-name">—</strong>
-          <span class="game-result-card-sub" id="mvp-worth">—</span>
+        <!-- ═══ JOIN SCREEN ═══ -->
+        <section id="game-join" class="game-setup" hidden>
+            <div class="game-setup-header">
+                <div class="game-setup-icon">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="game-setup-title">JOIN MATCH</h1>
+                    <p class="game-setup-sub">Enter room details</p>
+                </div>
+            </div>
+
+            <div class="game-setup-grid">
+                <div class="game-setup-card game-setup-card-wide">
+                    <div class="game-setup-card-head">
+                        <span class="game-team-label">ROOM DETAILS</span>
+                    </div>
+                    <div class="game-settings-row">
+                        <div class="game-field">
+                            <label class="game-label" for="join-room-code">Room Code</label>
+                            <input id="join-room-code" type="text" class="game-input game-input-sm" placeholder="e.g. ABC123" maxlength="6" style="text-transform: uppercase;" />
+                        </div>
+                        <div class="game-field">
+                            <label class="game-label" for="join-player-name">Player Name</label>
+                            <input id="join-player-name" type="text" class="game-input game-input-sm" value="Player" maxlength="16" />
+                        </div>
+                        <div class="game-field">
+                            <label class="game-label" for="join-team">Select Team</label>
+                            <select id="join-team" class="game-input game-input-sm">
+                                <option value="a">Alpha</option>
+                                <option value="b">Beta</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button id="join-room-btn" type="button" class="game-start-btn">
+                JOIN ROOM
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+            <button id="join-back-btn" type="button" class="game-start-btn" style="background: transparent; border: 1px solid var(--border); margin-top: 12px; color: var(--text);">
+                BACK
+            </button>
+            <div id="join-error" style="color: #f87171; text-align: center; margin-top: 12px; font-size: 14px;"></div>
+        </section>
+
+        <!-- ═══ WAITING ROOM SCREEN ═══ -->
+        <section id="game-waiting-room" class="game-setup" hidden>
+            <div class="game-setup-header">
+                <div class="game-setup-icon">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="game-setup-title">WAITING ROOM</h1>
+                    <p class="game-setup-sub" id="waiting-room-code-display">Room Code: <strong>---</strong></p>
+                </div>
+            </div>
+
+            <div class="game-setup-grid">
+                <!-- Team A Lobby -->
+                <div class="game-setup-card">
+                    <div class="game-setup-card-head">
+                        <span class="game-team-label game-team-a-label">TEAM ALPHA</span>
+                    </div>
+                    <div id="lobby-team-a" class="game-roster" style="min-height: 100px;"></div>
+                </div>
+
+                <!-- Team B Lobby -->
+                <div class="game-setup-card">
+                    <div class="game-setup-card-head">
+                        <span class="game-team-label game-team-b-label">TEAM BETA</span>
+                    </div>
+                    <div id="lobby-team-b" class="game-roster" style="min-height: 100px;"></div>
+                </div>
+            </div>
+
+            <button id="start-game-btn" type="button" class="game-start-btn" hidden>
+                START MATCH
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+            <div id="waiting-message" style="text-align: center; color: var(--muted); margin-top: 16px;">Waiting for host to start...</div>
+        </section>
+
+        <!-- ═══ GAME ARENA ═══ -->
+        <section id="game-arena" class="game-arena" hidden>
+            <!-- Top Status Bar -->
+            <div class="game-status-bar">
+                <div class="game-status-item">
+                    <span class="game-status-label">ROUND</span>
+                    <span id="game-round" class="game-status-value">1 / 10</span>
+                </div>
+                <div class="game-status-item">
+                    <span class="game-status-label">STOCK WORTH</span>
+                    <span id="game-stock-worth" class="game-status-value game-mono">100</span>
+                </div>
+                <div class="game-status-item">
+                    <span class="game-status-label">CURRENT PLAYER</span>
+                    <span id="game-current-player" class="game-status-value">—</span>
+                </div>
+                <div class="game-status-item">
+                    <span class="game-status-label">TIMER</span>
+                    <span id="game-timer" class="game-status-value game-mono">—</span>
+                </div>
+            </div>
+
+            <!-- Main Arena Grid -->
+            <div class="game-arena-grid">
+                <!-- Team A Panel -->
+                <div class="game-team-panel game-team-a-panel">
+                    <div class="game-panel-head">
+                        <span id="team-a-display" class="game-panel-team-name">ALPHA</span>
+                        <span class="game-team-label game-team-a-label" style="font-size:9px;">TEAM A</span>
+                    </div>
+                    <div class="game-panel-stat">
+                        <span class="game-panel-stat-label">TEAM WORTH</span>
+                        <span id="team-a-worth" class="game-panel-stat-value game-mono">0</span>
+                    </div>
+                    <div class="game-panel-stat">
+                        <span class="game-panel-stat-label">CASH</span>
+                        <span id="team-a-cash" class="game-panel-stat-value game-mono">0</span>
+                    </div>
+                    <div class="game-panel-stat">
+                        <span class="game-panel-stat-label">STOCKS</span>
+                        <span id="team-a-stocks" class="game-panel-stat-value game-mono">10</span>
+                    </div>
+                    <div class="game-panel-divider"></div>
+                    <div id="team-a-roster" class="game-roster"></div>
+                </div>
+
+                <!-- Center: Question + Chart -->
+                <div class="game-center-col">
+                    <!-- Question Box -->
+                    <div class="game-question-box">
+                        <div class="game-question-header">
+                            <span class="game-question-tag">QUESTION</span>
+                            <span id="game-question-timer" class="game-question-timer"></span>
+                        </div>
+                        <div id="game-question-text" class="game-question-text">Press START to begin</div>
+                        <form id="game-answer-form" class="game-answer-row">
+                            <input id="game-answer-input" type="text" class="game-input game-answer-input" placeholder="e.g. 150 b (buy) or 150 s (short)" autocomplete="off" />
+                            <button type="submit" class="game-submit-btn">SUBMIT</button>
+                        </form>
+                        <div id="game-feedback" class="game-feedback"></div>
+                    </div>
+
+                    <!-- Chart Panel -->
+                    <div class="game-chart-panel">
+                        <div class="game-chart-header">
+                            <span class="game-question-tag">STOCK WORTH — LIVE</span>
+                        </div>
+                        <div class="game-chart-wrap">
+                            <canvas id="game-chart-canvas"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Team B Panel -->
+                <div class="game-team-panel game-team-b-panel">
+                    <div class="game-panel-head">
+                        <span id="team-b-display" class="game-panel-team-name">BETA</span>
+                        <span class="game-team-label game-team-b-label" style="font-size:9px;">TEAM B</span>
+                    </div>
+                    <div class="game-panel-stat">
+                        <span class="game-panel-stat-label">TEAM WORTH</span>
+                        <span id="team-b-worth" class="game-panel-stat-value game-mono">0</span>
+                    </div>
+                    <div class="game-panel-stat">
+                        <span class="game-panel-stat-label">CASH</span>
+                        <span id="team-b-cash" class="game-panel-stat-value game-mono">0</span>
+                    </div>
+                    <div class="game-panel-stat">
+                        <span class="game-panel-stat-label">STOCKS</span>
+                        <span id="team-b-stocks" class="game-panel-stat-value game-mono">10</span>
+                    </div>
+                    <div class="game-panel-divider"></div>
+                    <div id="team-b-roster" class="game-roster"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══ RESULTS SCREEN ═══ -->
+        <section id="game-results" class="game-results" hidden>
+            <div class="game-results-header">
+                <h1 class="game-results-title">MATCH COMPLETE</h1>
+                <p class="game-results-sub">Final standings</p>
+            </div>
+
+            <div class="game-results-grid">
+                <div class="game-result-card game-result-mvp">
+                    <span class="game-result-card-label">MVP</span>
+                    <span id="result-mvp-name" class="game-result-card-value">—</span>
+                    <span id="result-mvp-worth" class="game-result-card-sub game-mono">0</span>
+                </div>
+                <div class="game-result-card game-result-winner">
+                    <span class="game-result-card-label">WINNING TEAM</span>
+                    <span id="result-winner-name" class="game-result-card-value">—</span>
+                    <span id="result-winner-worth" class="game-result-card-sub game-mono">0</span>
+                </div>
+            </div>
+
+            <div class="game-results-teams">
+                <div class="game-result-team">
+                    <div class="game-result-team-head">
+                        <span id="result-team-a-name" class="game-panel-team-name">ALPHA</span>
+                        <span id="result-team-a-worth" class="game-mono" style="color:var(--accent);">0</span>
+                    </div>
+                    <div id="result-team-a-roster" class="game-roster"></div>
+                </div>
+                <div class="game-result-team">
+                    <div class="game-result-team-head">
+                        <span id="result-team-b-name" class="game-panel-team-name">BETA</span>
+                        <span id="result-team-b-worth" class="game-mono" style="color:var(--accent);">0</span>
+                    </div>
+                    <div id="result-team-b-roster" class="game-roster"></div>
+                </div>
+            </div>
+
+            <div class="game-chart-panel" style="margin-top:18px;">
+                <div class="game-chart-header">
+                    <span class="game-question-tag">STOCK WORTH — FINAL CHART</span>
+                </div>
+                <div class="game-chart-wrap">
+                    <canvas id="game-result-chart-canvas"></canvas>
+                </div>
+            </div>
+
+            <button id="play-again-btn" type="button" class="game-start-btn" style="margin-top:24px;">
+                NEW MATCH
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+            </button>
+        </section>
+
+    </main>
+
+    <!-- ── FOOTER ────────────────────────────────────────── -->
+    <footer class="site-footer" role="contentinfo">
+        <div class="footer-inner">
+            <div class="footer-top">
+                <div class="footer-brand">
+                    <div class="brand-mark sm" aria-hidden="true">TT</div>
+                    <span class="footer-brand-name">Trade Trends</span>
+                </div>
+                <nav class="footer-links" aria-label="Footer navigation">
+                    <a href="#">About</a>
+                    <a href="#">API</a>
+                    <a href="#">Privacy</a>
+                    <a href="#">Terms</a>
+                    <a href="#">Contact</a>
+                </nav>
+            </div>
+            <div class="footer-divider" aria-hidden="true"></div>
+            <p class="footer-disclaimer">
+                <strong>Disclaimer:</strong> All content is for informational purposes only and does not constitute financial or investment advice.
+                AI-generated analysis may contain errors. Always consult a qualified financial professional before making investment decisions.
+                Market data shown is indicative and may be delayed.
+            </p>
+            <div class="footer-bottom">
+                <span>© 2026 Trade Trends Intelligence Ltd. All rights reserved.</span>
+                <span class="footer-powered">Powered by <span class="footer-ai-tag">AI</span></span>
+            </div>
         </div>
-        <div class="game-result-card game-result-winner">
-          <span class="game-result-card-label">Winning team</span>
-          <strong class="game-result-card-value" id="winner-team">—</strong>
-          <span class="game-result-card-sub" id="winner-worth">—</span>
-        </div>
-      </div>
+    </footer>
 
-      <div class="game-results-teams">
-        <div class="game-result-team">
-          <div class="game-result-team-head">
-            <strong id="res-team-a-name">Team A</strong>
-            <span id="res-team-a-worth">—</span>
-          </div>
-          <div id="res-team-a-detail"></div>
-        </div>
-        <div class="game-result-team">
-          <div class="game-result-team-head">
-            <strong id="res-team-b-name">Team B</strong>
-            <span id="res-team-b-worth">—</span>
-          </div>
-          <div id="res-team-b-detail"></div>
-        </div>
-      </div>
-
-      <div class="game-room-actions game-results-actions">
-        <button id="new-match-btn" class="game-btn game-btn-primary" type="button">New match</button>
-        <button id="return-lobby-btn" class="game-btn game-btn-secondary" type="button">Return to lobby</button>
-      </div>
-    </section>
-  </main>
-
-  <script src="game.js"></script>
+    <script type="module" src="game.js"></script>
 </body>
 </html>
