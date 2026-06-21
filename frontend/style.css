@@ -836,9 +836,11 @@ button, input { font: inherit; }
   border: 1px solid rgba(255,255,255,0.07);
   border-radius: 18px;
   padding: 20px;
-  display: grid;
-  grid-template-rows: auto 1fr auto auto;
-  min-height: 720px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 140px);
+  min-height: 500px;
+  max-height: 800px;
 }
 
 .chat-panel-head {
@@ -868,13 +870,12 @@ button, input { font: inherit; }
 /* ── MESSAGES ────────────────────────────────────────────── */
 
 .chat-messages {
-  min-height: 380px;
-  max-height: 520px;
+  flex: 1;
   overflow-y: auto;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   padding-right: 4px;
-  align-content: start;
 }
 
 .chat-messages::-webkit-scrollbar { width: 4px; }

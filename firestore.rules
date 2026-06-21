@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Allow users to manage their own profile
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Allow users to manage their own bookmarks
+    match /users/{userId}/bookmarks/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Allow users to manage their own watchlists
+    match /users/{userId}/watchlists/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Rooms logic (for Game and Chat)
+    match /rooms/{roomId} {
+      allow read, write: if true;
+      
+      // Allow read/write for chat messages in a room
+      match /messages/{messageId} {
+        allow read, write: if true;
+      }
+    }
+  }
+}

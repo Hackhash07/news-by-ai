@@ -279,7 +279,9 @@ function renderMessages() {
         </article>`;
     }).join("");
 
-    refs.chatMessages.scrollTop = refs.chatMessages.scrollHeight;
+    setTimeout(() => {
+        refs.chatMessages.scrollTop = refs.chatMessages.scrollHeight;
+    }, 50);
 }
 
 // ── UTILITIES ─────────────────────────────────────────────────────────
