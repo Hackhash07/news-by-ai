@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="style.css" />
+    <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.18.2.js"></script>
 </head>
 <body>
 
@@ -243,6 +244,10 @@
                 <div class="game-status-item">
                     <span class="game-status-label">TIMER</span>
                     <span id="game-timer" class="game-status-value game-mono">—</span>
+                </div>
+                <div class="game-status-item">
+                    <span class="game-status-label">VOICE</span>
+                    <button id="voice-mute-btn" class="game-status-value" style="background:transparent; border:1px solid rgba(255,255,255,0.2); border-radius:4px; padding:2px 8px; cursor:pointer; color:inherit;">UNMUTED</button>
                 </div>
             </div>
 

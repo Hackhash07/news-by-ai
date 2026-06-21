@@ -1,5 +1,6 @@
 import { db } from './firebase.js';
 import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { joinTeamVoice, toggleMute } from "./voice.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    TRADING IQ BATTLE — game.js (MULTIPLAYER REFACTOR)
@@ -27,10 +28,8 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
         initialWorth: 100,
         totalRounds: 10,
         currentRound: 1,
-        turnIndex: 0,
-        turnOrder: [],
-        turnsPerRound: 0,
-        totalTurnsPlayed: 0,
+        roundPhase: "answering",
+        roundAnswers: {},
         worthHistory: [],
         roundBuys: 0,
         roundSells: 0,
@@ -98,6 +97,14 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
         // Navigation bindings
         $("landing-host-btn").addEventListener("click", () => { dom.landing.hidden = true; dom.setup.hidden = false; });
         $("landing-join-btn").addEventListener("click", () => { dom.landing.hidden = true; dom.join.hidden = false; });
+        
+        let voiceMuted = false;
+        $("voice-mute-btn").addEventListener("click", (e) => {
+            voiceMuted = !voiceMuted;
+            toggleMute(voiceMuted);
+            e.target.textContent = voiceMuted ? "MUTED" : "UNMUTED";
+            e.target.style.color = voiceMuted ? "var(--red)" : "inherit";
+        });
         $("host-back-btn").addEventListener("click", () => { dom.setup.hidden = true; dom.landing.hidden = false; });
         $("join-back-btn").addEventListener("click", () => { dom.join.hidden = true; dom.landing.hidden = false; });
         
@@ -155,14 +162,12 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
             stockWorth: initialWorth,
             initialStocks,
             initialWorth,
-            turnIndex: 0,
-            totalTurnsPlayed: 0,
             worthHistory: [initialWorth],
             roundBuys: 0,
             roundSells: 0,
             teams: state.teams,
-            turnOrder: [],
-            turnsPerRound: 0,
+            roundPhase: "answering",
+            roundAnswers: {},
             currentQuestion: null,
             questionStartTime: 0,
             lastFeedback: null,
@@ -178,39 +183,70 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
     }
 
     async function joinRoom() {
+        const btn = $("join-room-btn");
+        if (btn.disabled) return;
+
         const code = $("join-room-code").value.toUpperCase().trim();
         if (!code) return;
         
-        const docRef = doc(db, "rooms", code);
-        const snap = await getDoc(docRef);
-        if (!snap.exists()) {
-            $("join-error").textContent = "Room not found!";
-            return;
+        btn.disabled = true;
+        const originalText = btn.textContent;
+        btn.textContent = "Joining...";
+
+        try {
+            const docRef = doc(db, "rooms", code);
+            const snap = await getDoc(docRef);
+            if (!snap.exists()) {
+                $("join-error").textContent = "Room not found!";
+                btn.disabled = false;
+                btn.textContent = originalText;
+                return;
+            }
+            
+            const roomData = snap.data();
+            if (roomData.gameActive || roomData.ended) {
+                $("join-error").textContent = "Game already started or ended!";
+                btn.disabled = false;
+                btn.textContent = originalText;
+                return;
+            }
+            
+            state.roomId = code;
+            state.isHost = false;
+            if (!state.myPlayerId) {
+                state.myPlayerId = Date.now().toString() + Math.random().toString(36).substring(2, 5);
+            }
+
+            const isAlreadyInTeamA = roomData.teams[0].players.some(p => p.id === state.myPlayerId);
+            const isAlreadyInTeamB = roomData.teams[1].players.some(p => p.id === state.myPlayerId);
+            
+            if (isAlreadyInTeamA || isAlreadyInTeamB) {
+                finalizeJoinUI(code);
+                return;
+            }
+            
+            const playerName = $("join-player-name").value.trim() || "Player";
+            const teamId = $("join-team").value;
+            
+            const playerObj = createPlayerObject(playerName, state.myPlayerId, roomData.initialStocks, roomData.initialWorth);
+            
+            const updatedTeams = roomData.teams;
+            if (teamId === 'a') updatedTeams[0].players.push(playerObj);
+            else updatedTeams[1].players.push(playerObj);
+            
+            await updateDoc(docRef, { teams: updatedTeams, lastUpdateTime: Date.now() });
+            
+            listenToRoom(code);
+            finalizeJoinUI(code);
+        } catch (err) {
+            console.error("Join error:", err);
+            $("join-error").textContent = "Failed to join.";
+            btn.disabled = false;
+            btn.textContent = originalText;
         }
-        
-        const roomData = snap.data();
-        if (roomData.gameActive || roomData.ended) {
-            $("join-error").textContent = "Game already started or ended!";
-            return;
-        }
-        
-        state.roomId = code;
-        state.isHost = false;
-        state.myPlayerId = Date.now().toString() + Math.random().toString(36).substring(2, 5);
-        
-        const playerName = $("join-player-name").value.trim() || "Player";
-        const teamId = $("join-team").value;
-        
-        const playerObj = createPlayerObject(playerName, state.myPlayerId, roomData.initialStocks, roomData.initialWorth);
-        
-        const updatedTeams = roomData.teams;
-        if (teamId === 'a') updatedTeams[0].players.push(playerObj);
-        else updatedTeams[1].players.push(playerObj);
-        
-        await updateDoc(docRef, { teams: updatedTeams, lastUpdateTime: Date.now() });
-        
-        listenToRoom(code);
-        
+    }
+
+    function finalizeJoinUI(code) {
         dom.join.hidden = true;
         dom.waitingRoom.hidden = false;
         $("waiting-room-code-display").innerHTML = `Room Code: <strong>${code}</strong>`;
@@ -247,6 +283,8 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
                     dom.waitingRoom.hidden = true;
                     dom.arena.hidden = false;
                     startLocalTimer();
+                    const myTeamId = state.teams[0].players.some(p => p.id === state.myPlayerId) ? "a" : "b";
+                    joinTeamVoice(state.roomId, myTeamId, state.myPlayerId);
                 }
                 
                 if (state.ended) {
@@ -276,19 +314,17 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
 
                     if (state.currentQuestion) {
                         dom.questionText.textContent = state.currentQuestion.text;
-                        const turn = getCurrentTurn();
-                        const isMyTurn = turn && state.teams[turn.teamIdx].players[turn.playerIdx].id === state.myPlayerId;
+                        const hasAnswered = state.roundAnswers && state.roundAnswers[state.myPlayerId];
                         
-                        dom.answerInput.disabled = !isMyTurn;
-                        if (isMyTurn) {
+                        dom.answerInput.disabled = hasAnswered || state.roundPhase !== "answering";
+                        if (!hasAnswered && state.roundPhase === "answering") {
                             dom.answerInput.placeholder = "e.g. 150 b (buy) or 150 s (short)";
                             if (document.activeElement !== dom.answerInput) {
                                 setTimeout(() => dom.answerInput.focus(), 50);
                             }
                         } else {
-                            const pName = state.teams[turn.teamIdx].players[turn.playerIdx].name;
-                            dom.answerInput.placeholder = `Waiting for ${pName}...`;
-                            dom.answerInput.value = "";
+                            dom.answerInput.placeholder = hasAnswered ? "Answer locked in!" : "Resolving round...";
+                            if (hasAnswered) dom.answerInput.value = "";
                         }
                     }
                 }
@@ -310,9 +346,10 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
             return;
         }
 
-        buildTurnOrder();
         state.currentQuestion = generateQuestion();
         state.questionStartTime = Date.now();
+        state.roundPhase = "answering";
+        state.roundAnswers = {};
         state.lastFeedback = null;
         
         await updateDoc(doc(db, "rooms", state.roomId), {
@@ -320,14 +357,12 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
             ended: state.ended,
             currentRound: state.currentRound,
             stockWorth: state.stockWorth,
-            turnIndex: state.turnIndex,
-            totalTurnsPlayed: state.totalTurnsPlayed,
+            roundPhase: state.roundPhase,
+            roundAnswers: state.roundAnswers,
             worthHistory: state.worthHistory,
             roundBuys: state.roundBuys,
             roundSells: state.roundSells,
             teams: state.teams,
-            turnOrder: state.turnOrder,
-            turnsPerRound: state.turnsPerRound,
             currentQuestion: state.currentQuestion,
             questionStartTime: state.questionStartTime,
             lastFeedback: state.lastFeedback,
@@ -341,14 +376,12 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
             ended: state.ended,
             currentRound: state.currentRound,
             stockWorth: state.stockWorth,
-            turnIndex: state.turnIndex,
-            totalTurnsPlayed: state.totalTurnsPlayed,
+            roundPhase: state.roundPhase || "answering",
+            roundAnswers: state.roundAnswers || {},
             worthHistory: state.worthHistory,
             roundBuys: state.roundBuys,
             roundSells: state.roundSells,
             teams: state.teams,
-            turnOrder: state.turnOrder,
-            turnsPerRound: state.turnsPerRound,
             currentQuestion: state.currentQuestion,
             questionStartTime: state.questionStartTime,
             lastFeedback: state.lastFeedback,
@@ -357,21 +390,16 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
     }
 
     // ── GAMEPLAY LOGIC ────────────────────────────────────────────────────────
-    function buildTurnOrder() {
-        const maxLen = Math.max(state.teams[0].players.length, state.teams[1].players.length);
-        const order = [];
-        for (let i = 0; i < maxLen; i++) {
-            if (i < state.teams[0].players.length) order.push({ teamIdx: 0, playerIdx: i });
-            if (i < state.teams[1].players.length) order.push({ teamIdx: 1, playerIdx: i });
+    function checkRoundEnd() {
+        if (!state.isHost || !state.gameActive || state.roundPhase !== "answering") return;
+        
+        const elapsed = Date.now() - state.questionStartTime;
+        const totalPlayers = state.teams[0].players.length + state.teams[1].players.length;
+        const answersCount = state.roundAnswers ? Object.keys(state.roundAnswers).length : 0;
+        
+        if (elapsed >= 10000 || answersCount === totalPlayers) {
+            resolveRound();
         }
-        state.turnOrder = order;
-        state.turnsPerRound = order.length;
-    }
-
-    function getCurrentTurn() {
-        if (!state.turnOrder || state.turnOrder.length === 0) return null;
-        const idx = state.turnIndex % state.turnOrder.length;
-        return state.turnOrder[idx];
     }
 
     function generateQuestion() {
@@ -421,11 +449,8 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
 
     async function handleAnswer(e) {
         e.preventDefault();
-        if (!state.gameActive || !state.currentQuestion) return;
-
-        const turn = getCurrentTurn();
-        const currentPlayer = state.teams[turn.teamIdx].players[turn.playerIdx];
-        if (currentPlayer.id !== state.myPlayerId) return; // Only active player processes
+        if (!state.gameActive || !state.currentQuestion || state.roundPhase !== "answering") return;
+        if (state.roundAnswers && state.roundAnswers[state.myPlayerId]) return;
 
         const inputStr = dom.answerInput.value.trim().toLowerCase();
         dom.answerInput.disabled = true;
@@ -433,93 +458,93 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
         const regex = /^([+-]?\d+)(?:\s*([bs\+\-]))?$/i;
         const match = inputStr.match(regex);
         
-        let userAnswer = null;
-        let action = null;
+        const payload = {
+            answer: match ? parseInt(match[1]) : NaN,
+            action: match ? match[2] : null,
+            timestamp: Date.now()
+        };
+
+        await updateDoc(doc(db, "rooms", state.roomId), {
+            [`roundAnswers.${state.myPlayerId}`]: payload
+        });
         
-        if (match) {
-            userAnswer = parseInt(match[1]);
-            action = match[2];
-        } else {
-            // fallback if weird format, treat as wrong
-            userAnswer = NaN;
-        }
+        dom.feedback.textContent = "Answer Locked In. Waiting for others...";
+        dom.feedback.className = "game-feedback game-feedback-bonus";
+    }
 
-        const correctAnswer = state.currentQuestion.answer;
-        const isCorrect = userAnswer === correctAnswer;
-        const elapsed = (Date.now() - state.questionStartTime) / 1000;
+    async function resolveRound() {
+        state.roundPhase = "resolving";
+        
+        const answers = Object.entries(state.roundAnswers || {})
+            .map(([id, data]) => ({ id, ...data }))
+            .sort((a, b) => a.timestamp - b.timestamp);
 
-        let feedbackText = "";
-        let feedbackClass = "";
-
-        if (isCorrect) {
-            currentPlayer.correct += 1;
-            currentPlayer.score += 1;
+        let correctAnswer = state.currentQuestion.answer;
+        let correctCount = 0;
+        
+        answers.forEach((ans) => {
+            let player = null;
+            state.teams.forEach(t => {
+                const p = t.players.find(x => x.id === ans.id);
+                if (p) player = p;
+            });
+            if (!player) return;
             
-            if (action === 'b' || action === '+') {
-                if (currentPlayer.cash >= state.stockWorth) {
-                    currentPlayer.cash -= state.stockWorth;
-                    currentPlayer.stocks += 1;
-                    currentPlayer.trades += 1;
-                    currentPlayer.buys += 1;
-                    state.roundBuys += 1;
-                    feedbackText = `✓ CORRECT — BOUGHT 1 STOCK`;
-                    feedbackClass = "game-feedback game-feedback-correct";
-                } else {
-                    feedbackText = `✓ CORRECT — (FAILED TO BUY: NOT ENOUGH CASH)`;
-                    feedbackClass = "game-feedback game-feedback-bonus";
+            const isCorrect = ans.answer === correctAnswer;
+            
+            if (isCorrect) {
+                correctCount++;
+                const speedMultiplier = correctCount === 1 ? 2 : correctCount === 2 ? 1.5 : 1;
+                player.correct += 1;
+                player.score += 1;
+                
+                if (ans.action === 'b' || ans.action === '+') {
+                    if (player.cash >= state.stockWorth) {
+                        player.cash -= state.stockWorth;
+                        player.stocks += (1 * speedMultiplier);
+                        player.trades += 1;
+                        player.buys += 1;
+                        state.roundBuys += 1;
+                    }
+                } else if (ans.action === 's' || ans.action === '-') {
+                    player.cash += state.stockWorth;
+                    player.stocks -= (1 * speedMultiplier);
+                    player.trades += 1;
+                    player.shorts += 1;
+                    state.roundSells += 1;
                 }
-            } else if (action === 's' || action === '-') {
-                currentPlayer.cash += state.stockWorth;
-                currentPlayer.stocks -= 1;
-                currentPlayer.trades += 1;
-                currentPlayer.shorts += 1;
-                state.roundSells += 1;
-                feedbackText = `✓ CORRECT — SHORTED/SOLD 1 STOCK`;
-                feedbackClass = "game-feedback game-feedback-correct";
             } else {
-                feedbackText = `✓ CORRECT — (NO TRADE EXECUTED)`;
-                feedbackClass = "game-feedback game-feedback-correct";
+                player.wrong += 1;
+                const penalty = Math.round(state.initialWorth * 0.1) || 10;
+                player.cash -= penalty;
             }
-        } else {
-            currentPlayer.wrong += 1;
-            const penalty = Math.round(state.initialWorth * 0.1) || 10;
-            currentPlayer.cash -= penalty;
-            feedbackText = `✗ WRONG — Penalty: -${penalty} Cash. Answer was ${correctAnswer}`;
-            feedbackClass = "game-feedback game-feedback-wrong";
-        }
+        });
 
-        state.lastFeedback = { text: feedbackText, className: feedbackClass };
-        
         updateStockWorth();
         state.roundBuys = 0;
         state.roundSells = 0;
-
-        state.turnIndex++;
-        state.totalTurnsPlayed++;
-
-        if (state.totalTurnsPlayed > 0 && state.totalTurnsPlayed % state.turnsPerRound === 0) {
-            state.currentRound++;
-        }
+        state.currentRound++;
+        
+        recalcTeamWorths();
 
         if (state.currentRound > state.totalRounds) {
             state.ended = true;
             state.gameActive = false;
         }
 
-        recalcTeamWorths();
+        state.lastFeedback = { text: `Round resolved! Correct answer: ${correctAnswer}.`, className: "game-feedback game-feedback-correct" };
+        await updateRoomState();
         
-        // Wait brief moment before next question to allow reading feedback
         setTimeout(async () => {
             if (state.gameActive && !state.ended) {
+                state.roundAnswers = {};
                 state.currentQuestion = generateQuestion();
                 state.questionStartTime = Date.now();
                 state.lastFeedback = null;
+                state.roundPhase = "answering";
+                await updateRoomState();
             }
-            await updateRoomState();
-        }, 1500);
-        
-        // Push intermediate state so everyone sees the feedback immediately
-        await updateRoomState();
+        }, 3000);
     }
 
     // ── RENDERING ─────────────────────────────────────────────────────────────
@@ -527,9 +552,11 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
         clearInterval(timerInterval);
         timerInterval = setInterval(() => {
             if (state.questionStartTime > 0 && !state.ended) {
-                const elapsed = ((Date.now() - state.questionStartTime) / 1000).toFixed(1);
-                dom.timerDisplay.textContent = `${elapsed}s`;
-                if (dom.questionTimer) dom.questionTimer.textContent = `${elapsed}s`;
+                const elapsed = ((Date.now() - state.questionStartTime) / 1000);
+                const remaining = Math.max(0, 10 - elapsed).toFixed(1);
+                dom.timerDisplay.textContent = `${remaining}s`;
+                if (dom.questionTimer) dom.questionTimer.textContent = `${remaining}s`;
+                checkRoundEnd();
             }
         }, 100);
     }
@@ -538,13 +565,8 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
         dom.roundDisplay.textContent = `${state.currentRound} / ${state.totalRounds}`;
         dom.worthDisplay.textContent = state.stockWorth.toFixed(2);
 
-        const turn = getCurrentTurn();
-        if (turn) {
-            const player = state.teams[turn.teamIdx].players[turn.playerIdx];
-            const teamName = state.teams[turn.teamIdx].name;
-            dom.currentPlayer.textContent = `${player.name} (${teamName})`;
-            dom.currentPlayer.className = `game-status-value ${turn.teamIdx === 0 ? "game-color-a" : "game-color-b"}`;
-        }
+        dom.currentPlayer.textContent = "SIMULTANEOUS";
+        dom.currentPlayer.className = `game-status-value`;
 
         dom.teamADisplay.textContent = state.teams[0].name.toUpperCase();
         dom.teamBDisplay.textContent = state.teams[1].name.toUpperCase();
