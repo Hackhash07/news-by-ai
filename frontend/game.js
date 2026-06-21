@@ -3,9 +3,9 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
 import { joinTeamVoice, toggleMute } from "./voice.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   TRADING IQ BATTLE — game.js (MULTIPLAYER REFACTOR)
-   Complete game engine: firebase sync, question generation, stock market simulation,
-   dynamic canvas chart, winner calculation.
+   TRADING IQ BATTLE — game.js (CONTINUOUS MARKET REFACTOR)
+   Event-driven trading simulation: per-player question streams, immediate
+   trade execution, time-based match duration, real-time stock price updates.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 (function () {
@@ -16,7 +16,7 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         roomId: null,
         isHost: false,
         myPlayerId: null,
-        
+
         gameActive: false,
         ended: false,
         teams: [
@@ -26,19 +26,20 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         stockWorth: 100,
         initialStocks: 5,
         initialWorth: 100,
-        totalRounds: 10,
-        currentRound: 1,
-        roundPhase: "answering",
-        roundAnswers: {},
+
+        // ── Time-based match ──
+        matchDuration: 300,     // seconds (default 5 min)
+        gameStartTime: 0,       // timestamp when game started
+
+        // ── Market pressure tracking ──
+        totalBuys: 0,
+        totalSells: 0,
+
         worthHistory: [],
-        roundBuys: 0,
-        roundSells: 0,
-        currentQuestion: null,
-        questionStartTime: 0,
-        lastFeedback: null,
     };
 
-    let timerInterval = null;
+    let countdownInterval = null;
+    let isSubmitting = false; // prevents double-submit race
 
     // ── DOM REFS ──────────────────────────────────────────────────────────────
     const $ = (id) => document.getElementById(id);
@@ -52,10 +53,10 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         dom.arena         = $("game-arena");
         dom.results       = $("game-results");
 
-        dom.roundDisplay  = $("game-round");
+        dom.tradesDisplay = $("game-trades-count");
         dom.worthDisplay  = $("game-stock-worth");
-        dom.currentPlayer = $("game-current-player");
-        dom.timerDisplay  = $("game-timer");
+        dom.marketStatus  = $("game-market-status");
+        dom.countdownDisplay = $("game-countdown");
 
         dom.teamADisplay  = $("team-a-display");
         dom.teamBDisplay  = $("team-b-display");
@@ -69,7 +70,6 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         dom.teamBRoster   = $("team-b-roster");
 
         dom.questionText  = $("game-question-text");
-        dom.questionTimer = $("game-question-timer");
         dom.answerForm    = $("game-answer-form");
         dom.answerInput   = $("game-answer-input");
         dom.feedback      = $("game-feedback");
@@ -93,11 +93,11 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
     // ── INITIALIZATION ────────────────────────────────────────────────────────
     function initApp() {
         cacheDom();
-        
+
         // Navigation bindings
         $("landing-host-btn").addEventListener("click", () => { dom.landing.hidden = true; dom.setup.hidden = false; });
         $("landing-join-btn").addEventListener("click", () => { dom.landing.hidden = true; dom.join.hidden = false; });
-        
+
         let voiceMuted = false;
         $("voice-mute-btn").addEventListener("click", (e) => {
             voiceMuted = !voiceMuted;
@@ -107,7 +107,7 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         });
         $("host-back-btn").addEventListener("click", () => { dom.setup.hidden = true; dom.landing.hidden = false; });
         $("join-back-btn").addEventListener("click", () => { dom.join.hidden = true; dom.landing.hidden = false; });
-        
+
         $("create-room-btn").addEventListener("click", createRoom);
         $("join-room-btn").addEventListener("click", joinRoom);
         $("start-game-btn").addEventListener("click", startGame);
@@ -133,49 +133,45 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         state.roomId = code;
         state.isHost = true;
         state.myPlayerId = Date.now().toString() + Math.random().toString(36).substring(2, 5);
-        
+
         const initialStocks = clamp(parseInt($("initial-stocks").value) || 5, 1, 50);
         const initialWorth = clamp(parseInt($("initial-worth").value) || 100, 10, 1000);
-        const totalRounds = clamp(parseInt($("total-rounds").value) || 10, 3, 30);
-        
+        const matchDurationMin = clamp(parseInt($("match-duration").value) || 5, 1, 30);
+        const matchDuration = matchDurationMin * 60; // convert to seconds
+
         const playerName = $("host-player-name").value.trim() || "Host";
         const teamId = $("host-team").value;
-        
+
         const playerObj = createPlayerObject(playerName, state.myPlayerId, initialStocks, initialWorth);
-        
+
         state.initialStocks = initialStocks;
         state.initialWorth = initialWorth;
-        state.totalRounds = totalRounds;
+        state.matchDuration = matchDuration;
         state.stockWorth = initialWorth;
         state.worthHistory = [initialWorth];
-        
+
         if (teamId === 'a') state.teams[0].players.push(playerObj);
         else state.teams[1].players.push(playerObj);
-        
+
         recalcTeamWorths();
-        
+
         await setDoc(doc(db, "rooms", code), {
             gameActive: false,
             ended: false,
-            currentRound: 1,
-            totalRounds,
             stockWorth: initialWorth,
             initialStocks,
             initialWorth,
+            matchDuration,
+            gameStartTime: 0,
             worthHistory: [initialWorth],
-            roundBuys: 0,
-            roundSells: 0,
+            totalBuys: 0,
+            totalSells: 0,
             teams: state.teams,
-            roundPhase: "answering",
-            roundAnswers: {},
-            currentQuestion: null,
-            questionStartTime: 0,
-            lastFeedback: null,
             lastUpdateTime: Date.now()
         });
-        
+
         listenToRoom(code);
-        
+
         dom.setup.hidden = true;
         dom.waitingRoom.hidden = false;
         $("waiting-room-code-display").innerHTML = `Room Code: <strong>${code}</strong>`;
@@ -188,7 +184,7 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
 
         const code = $("join-room-code").value.toUpperCase().trim();
         if (!code) return;
-        
+
         btn.disabled = true;
         const originalText = btn.textContent;
         btn.textContent = "Joining...";
@@ -202,7 +198,7 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
                 btn.textContent = originalText;
                 return;
             }
-            
+
             const roomData = snap.data();
             if (roomData.gameActive || roomData.ended) {
                 $("join-error").textContent = "Game already started or ended!";
@@ -210,7 +206,7 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
                 btn.textContent = originalText;
                 return;
             }
-            
+
             state.roomId = code;
             state.isHost = false;
             if (!state.myPlayerId) {
@@ -219,23 +215,23 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
 
             const isAlreadyInTeamA = roomData.teams[0].players.some(p => p.id === state.myPlayerId);
             const isAlreadyInTeamB = roomData.teams[1].players.some(p => p.id === state.myPlayerId);
-            
+
             if (isAlreadyInTeamA || isAlreadyInTeamB) {
                 finalizeJoinUI(code);
                 return;
             }
-            
+
             const playerName = $("join-player-name").value.trim() || "Player";
             const teamId = $("join-team").value;
-            
+
             const playerObj = createPlayerObject(playerName, state.myPlayerId, roomData.initialStocks, roomData.initialWorth);
-            
+
             const updatedTeams = roomData.teams;
             if (teamId === 'a') updatedTeams[0].players.push(playerObj);
             else updatedTeams[1].players.push(playerObj);
-            
+
             await updateDoc(docRef, { teams: updatedTeams, lastUpdateTime: Date.now() });
-            
+
             listenToRoom(code);
             finalizeJoinUI(code);
         } catch (err) {
@@ -266,32 +262,41 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
             trades: 0,
             buys: 0,
             shorts: 0,
-            initialWorth: initialCash + (initialStocks * initialWorth)
+            initialWorth: initialCash + (initialStocks * initialWorth),
+            // ── Per-player question stream ──
+            currentQuestion: null,
+            questionNumber: 0,
+            lastFeedback: null,
         };
     }
 
+    // ── FIREBASE LISTENER ─────────────────────────────────────────────────────
     function listenToRoom(code) {
         onSnapshot(doc(db, "rooms", code), (docSnapshot) => {
             if (docSnapshot.exists()) {
                 const data = docSnapshot.data();
                 const wasActive = state.gameActive;
-                
+
+                // Merge remote state into local
                 Object.assign(state, data);
                 recalcTeamWorths();
-                
+
+                // ── Transition: game just started ──
                 if (!wasActive && state.gameActive) {
                     dom.waitingRoom.hidden = true;
                     dom.arena.hidden = false;
-                    startLocalTimer();
+                    startCountdown();
                     const myTeamId = state.teams[0].players.some(p => p.id === state.myPlayerId) ? "a" : "b";
                     joinTeamVoice(state.roomId, myTeamId, state.myPlayerId);
                 }
-                
+
+                // ── Game ended ──
                 if (state.ended) {
                     endGameLocal();
                     return;
                 }
-                
+
+                // ── Update UI ──
                 if (!dom.waitingRoom.hidden) {
                     renderWaitingRoom();
                     if (state.isHost) {
@@ -306,27 +311,6 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
                     }
                 } else if (!dom.arena.hidden) {
                     renderArena();
-                    
-                    if (state.lastFeedback) {
-                        dom.feedback.textContent = state.lastFeedback.text;
-                        dom.feedback.className = state.lastFeedback.className;
-                    }
-
-                    if (state.currentQuestion) {
-                        dom.questionText.textContent = state.currentQuestion.text;
-                        const hasAnswered = state.roundAnswers && state.roundAnswers[state.myPlayerId];
-                        
-                        dom.answerInput.disabled = hasAnswered || state.roundPhase !== "answering";
-                        if (!hasAnswered && state.roundPhase === "answering") {
-                            dom.answerInput.placeholder = "e.g. 150 b (buy) or 150 s (short)";
-                            if (document.activeElement !== dom.answerInput) {
-                                setTimeout(() => dom.answerInput.focus(), 50);
-                            }
-                        } else {
-                            dom.answerInput.placeholder = hasAnswered ? "Answer locked in!" : "Resolving round...";
-                            if (hasAnswered) dom.answerInput.value = "";
-                        }
-                    }
                 }
             }
         });
@@ -339,6 +323,7 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         teamB.innerHTML = state.teams[1].players.map(p => `<div class="game-roster-row"><span class="game-roster-name">${escapeHtml(p.name)}</span></div>`).join("");
     }
 
+    // ── GAME START ────────────────────────────────────────────────────────────
     async function startGame() {
         if (!state.isHost) return;
         if (state.teams[0].players.length === 0 || state.teams[1].players.length === 0) {
@@ -346,26 +331,26 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
             return;
         }
 
-        state.currentQuestion = generateQuestion();
-        state.questionStartTime = Date.now();
-        state.roundPhase = "answering";
-        state.roundAnswers = {};
-        state.lastFeedback = null;
-        
+        // Generate a unique question for EACH player
+        state.teams.forEach(team => {
+            team.players.forEach(player => {
+                player.currentQuestion = generateQuestion();
+                player.questionNumber = 1;
+                player.lastFeedback = null;
+            });
+        });
+
+        state.gameStartTime = Date.now();
+
         await updateDoc(doc(db, "rooms", state.roomId), {
             gameActive: true,
-            ended: state.ended,
-            currentRound: state.currentRound,
+            ended: false,
             stockWorth: state.stockWorth,
-            roundPhase: state.roundPhase,
-            roundAnswers: state.roundAnswers,
             worthHistory: state.worthHistory,
-            roundBuys: state.roundBuys,
-            roundSells: state.roundSells,
+            totalBuys: 0,
+            totalSells: 0,
             teams: state.teams,
-            currentQuestion: state.currentQuestion,
-            questionStartTime: state.questionStartTime,
-            lastFeedback: state.lastFeedback,
+            gameStartTime: state.gameStartTime,
             lastUpdateTime: Date.now()
         });
     }
@@ -374,33 +359,17 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         await updateDoc(doc(db, "rooms", state.roomId), {
             gameActive: state.gameActive,
             ended: state.ended,
-            currentRound: state.currentRound,
             stockWorth: state.stockWorth,
-            roundPhase: state.roundPhase || "answering",
-            roundAnswers: state.roundAnswers || {},
             worthHistory: state.worthHistory,
-            roundBuys: state.roundBuys,
-            roundSells: state.roundSells,
+            totalBuys: state.totalBuys,
+            totalSells: state.totalSells,
             teams: state.teams,
-            currentQuestion: state.currentQuestion,
-            questionStartTime: state.questionStartTime,
-            lastFeedback: state.lastFeedback,
+            gameStartTime: state.gameStartTime,
             lastUpdateTime: Date.now()
         });
     }
 
-    // ── GAMEPLAY LOGIC ────────────────────────────────────────────────────────
-    function checkRoundEnd() {
-        if (!state.isHost || !state.gameActive || state.roundPhase !== "answering") return;
-        
-        const elapsed = Date.now() - state.questionStartTime;
-        const totalPlayers = state.teams[0].players.length + state.teams[1].players.length;
-        const answersCount = state.roundAnswers ? Object.keys(state.roundAnswers).length : 0;
-        
-        if (elapsed >= 10000 || answersCount === totalPlayers) {
-            resolveRound();
-        }
-    }
+    // ── GAMEPLAY — CONTINUOUS TRADING ─────────────────────────────────────────
 
     function generateQuestion() {
         const ops = ["+", "-"];
@@ -422,11 +391,122 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
 
     function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 
-    function updateStockWorth() {
-        const volatility = 2 + Math.random() * 3;
-        const netPressure = state.roundBuys - state.roundSells;
-        state.stockWorth += netPressure * volatility;
-        state.stockWorth += (Math.random() - 0.5) * 2; // drift
+    /**
+     * Core trade execution — runs on the submitting client.
+     * 1. Validate answer against player's own question
+     * 2. Execute buy/sell/hold trade immediately
+     * 3. Update stock price based on single trade pressure
+     * 4. Recalculate all worths
+     * 5. Generate next question for this player
+     * 6. Write everything to Firestore
+     */
+    async function handleAnswer(e) {
+        e.preventDefault();
+        if (!state.gameActive || state.ended || isSubmitting) return;
+
+        // Find my player object
+        const myPlayer = findMyPlayer();
+        if (!myPlayer || !myPlayer.currentQuestion) return;
+
+        // Prevent double-submit
+        isSubmitting = true;
+        dom.answerInput.disabled = true;
+
+        const inputStr = dom.answerInput.value.trim().toLowerCase();
+        const regex = /^([+-]?\d+)(?:\s*([bs\+\-]))?$/i;
+        const match = inputStr.match(regex);
+
+        const submittedAnswer = match ? parseInt(match[1]) : NaN;
+        const tradeAction = match ? match[2] : null;
+        const correctAnswer = myPlayer.currentQuestion.answer;
+        const isCorrect = submittedAnswer === correctAnswer;
+
+        // ── Execute trade immediately ──
+        if (isCorrect) {
+            myPlayer.correct += 1;
+            myPlayer.score += 1;
+
+            if (tradeAction === 'b' || tradeAction === '+') {
+                // BUY
+                if (myPlayer.cash >= state.stockWorth) {
+                    myPlayer.cash -= state.stockWorth;
+                    myPlayer.stocks += 1;
+                    myPlayer.trades += 1;
+                    myPlayer.buys += 1;
+                    state.totalBuys += 1;
+                    // Buy pressure raises price
+                    applyTradePressure(1);
+                }
+                myPlayer.lastFeedback = {
+                    text: `✓ Correct! Bought 1 stock at $${state.stockWorth.toFixed(2)}`,
+                    className: "game-feedback game-feedback-correct"
+                };
+            } else if (tradeAction === 's' || tradeAction === '-') {
+                // SELL / SHORT
+                myPlayer.cash += state.stockWorth;
+                myPlayer.stocks -= 1;
+                myPlayer.trades += 1;
+                myPlayer.shorts += 1;
+                state.totalSells += 1;
+                // Sell pressure lowers price
+                applyTradePressure(-1);
+                myPlayer.lastFeedback = {
+                    text: `✓ Correct! Sold 1 stock at $${state.stockWorth.toFixed(2)}`,
+                    className: "game-feedback game-feedback-correct"
+                };
+            } else {
+                // HOLD — correct answer but no trade action
+                myPlayer.lastFeedback = {
+                    text: `✓ Correct! Holding position.`,
+                    className: "game-feedback game-feedback-correct"
+                };
+            }
+        } else {
+            // Wrong answer — penalty
+            myPlayer.wrong += 1;
+            const penalty = Math.round(state.initialWorth * 0.1) || 10;
+            myPlayer.cash -= penalty;
+            myPlayer.lastFeedback = {
+                text: `✗ Wrong! Answer was ${correctAnswer}. Penalty: -$${penalty}`,
+                className: "game-feedback game-feedback-wrong"
+            };
+        }
+
+        // ── Generate next question for this player ──
+        myPlayer.questionNumber += 1;
+        myPlayer.currentQuestion = generateQuestion();
+
+        // ── Recalculate all worths ──
+        recalcTeamWorths();
+
+        // ── Check if game time expired ──
+        checkTimeExpired();
+
+        // ── Write updated state to Firestore ──
+        try {
+            await updateRoomState();
+        } catch (err) {
+            console.error("Failed to update room state:", err);
+        }
+
+        // ── Reset input for next question ──
+        dom.answerInput.value = "";
+        dom.answerInput.disabled = false;
+        isSubmitting = false;
+
+        if (!state.ended) {
+            setTimeout(() => dom.answerInput.focus(), 50);
+        }
+    }
+
+    /**
+     * Apply single-trade price pressure to the stock.
+     * direction: +1 for buy, -1 for sell
+     */
+    function applyTradePressure(direction) {
+        const volatility = 1.5 + Math.random() * 2.5;
+        state.stockWorth += direction * volatility;
+        state.stockWorth += (Math.random() - 0.5) * 1.5; // small drift
         if (state.stockWorth < 1) state.stockWorth = 1;
         state.stockWorth = Math.round(state.stockWorth * 100) / 100;
         state.worthHistory.push(state.stockWorth);
@@ -447,130 +527,90 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         });
     }
 
-    async function handleAnswer(e) {
-        e.preventDefault();
-        if (!state.gameActive || !state.currentQuestion || state.roundPhase !== "answering") return;
-        if (state.roundAnswers && state.roundAnswers[state.myPlayerId]) return;
-
-        const inputStr = dom.answerInput.value.trim().toLowerCase();
-        dom.answerInput.disabled = true;
-        
-        const regex = /^([+-]?\d+)(?:\s*([bs\+\-]))?$/i;
-        const match = inputStr.match(regex);
-        
-        const payload = {
-            answer: match ? parseInt(match[1]) : NaN,
-            action: match ? match[2] : null,
-            timestamp: Date.now()
-        };
-
-        await updateDoc(doc(db, "rooms", state.roomId), {
-            [`roundAnswers.${state.myPlayerId}`]: payload
-        });
-        
-        dom.feedback.textContent = "Answer Locked In. Waiting for others...";
-        dom.feedback.className = "game-feedback game-feedback-bonus";
+    function findMyPlayer() {
+        for (const team of state.teams) {
+            const player = team.players.find(p => p.id === state.myPlayerId);
+            if (player) return player;
+        }
+        return null;
     }
 
-    async function resolveRound() {
-        state.roundPhase = "resolving";
-        
-        const answers = Object.entries(state.roundAnswers || {})
-            .map(([id, data]) => ({ id, ...data }))
-            .sort((a, b) => a.timestamp - b.timestamp);
+    // ── TIME-BASED GAME END ───────────────────────────────────────────────────
 
-        let correctAnswer = state.currentQuestion.answer;
-        let correctCount = 0;
-        
-        answers.forEach((ans) => {
-            let player = null;
-            state.teams.forEach(t => {
-                const p = t.players.find(x => x.id === ans.id);
-                if (p) player = p;
-            });
-            if (!player) return;
-            
-            const isCorrect = ans.answer === correctAnswer;
-            
-            if (isCorrect) {
-                correctCount++;
-                const speedMultiplier = correctCount === 1 ? 2 : correctCount === 2 ? 1.5 : 1;
-                player.correct += 1;
-                player.score += 1;
-                
-                if (ans.action === 'b' || ans.action === '+') {
-                    if (player.cash >= state.stockWorth) {
-                        player.cash -= state.stockWorth;
-                        player.stocks += (1 * speedMultiplier);
-                        player.trades += 1;
-                        player.buys += 1;
-                        state.roundBuys += 1;
-                    }
-                } else if (ans.action === 's' || ans.action === '-') {
-                    player.cash += state.stockWorth;
-                    player.stocks -= (1 * speedMultiplier);
-                    player.trades += 1;
-                    player.shorts += 1;
-                    state.roundSells += 1;
-                }
-            } else {
-                player.wrong += 1;
-                const penalty = Math.round(state.initialWorth * 0.1) || 10;
-                player.cash -= penalty;
+    function startCountdown() {
+        clearInterval(countdownInterval);
+        countdownInterval = setInterval(() => {
+            if (!state.gameActive || state.ended) {
+                clearInterval(countdownInterval);
+                return;
             }
-        });
+            const remaining = getRemainingTime();
+            if (dom.countdownDisplay) {
+                dom.countdownDisplay.textContent = formatTime(remaining);
+            }
+            if (remaining <= 0 && state.isHost) {
+                endGameByTime();
+            }
+        }, 250);
+    }
 
-        updateStockWorth();
-        state.roundBuys = 0;
-        state.roundSells = 0;
-        state.currentRound++;
-        
-        recalcTeamWorths();
+    function getRemainingTime() {
+        if (!state.gameStartTime || !state.matchDuration) return 0;
+        const elapsed = (Date.now() - state.gameStartTime) / 1000;
+        return Math.max(0, state.matchDuration - elapsed);
+    }
 
-        if (state.currentRound > state.totalRounds) {
+    function formatTime(seconds) {
+        const m = Math.floor(seconds / 60);
+        const s = Math.floor(seconds % 60);
+        return `${m}:${s.toString().padStart(2, '0')}`;
+    }
+
+    function checkTimeExpired() {
+        if (getRemainingTime() <= 0) {
             state.ended = true;
             state.gameActive = false;
         }
+    }
 
-        state.lastFeedback = { text: `Round resolved! Correct answer: ${correctAnswer}.`, className: "game-feedback game-feedback-correct" };
-        await updateRoomState();
-        
-        setTimeout(async () => {
-            if (state.gameActive && !state.ended) {
-                state.roundAnswers = {};
-                state.currentQuestion = generateQuestion();
-                state.questionStartTime = Date.now();
-                state.lastFeedback = null;
-                state.roundPhase = "answering";
-                await updateRoomState();
-            }
-        }, 3000);
+    async function endGameByTime() {
+        state.ended = true;
+        state.gameActive = false;
+        recalcTeamWorths();
+        try {
+            await updateRoomState();
+        } catch (err) {
+            console.error("Failed to end game:", err);
+        }
     }
 
     // ── RENDERING ─────────────────────────────────────────────────────────────
-    function startLocalTimer() {
-        clearInterval(timerInterval);
-        timerInterval = setInterval(() => {
-            if (state.questionStartTime > 0 && !state.ended) {
-                const elapsed = ((Date.now() - state.questionStartTime) / 1000);
-                const remaining = Math.max(0, 10 - elapsed).toFixed(1);
-                dom.timerDisplay.textContent = `${remaining}s`;
-                if (dom.questionTimer) dom.questionTimer.textContent = `${remaining}s`;
-                checkRoundEnd();
-            }
-        }, 100);
-    }
 
     function renderArena() {
-        dom.roundDisplay.textContent = `${state.currentRound} / ${state.totalRounds}`;
+        const myPlayer = findMyPlayer();
+
+        // Trades count
+        if (dom.tradesDisplay) {
+            dom.tradesDisplay.textContent = myPlayer ? `${myPlayer.trades}` : "0";
+        }
+
+        // Stock worth
         dom.worthDisplay.textContent = state.stockWorth.toFixed(2);
 
-        dom.currentPlayer.textContent = "SIMULTANEOUS";
-        dom.currentPlayer.className = `game-status-value`;
+        // Market status
+        if (dom.marketStatus) {
+            dom.marketStatus.innerHTML = `<span class="market-live-dot"></span> LIVE`;
+        }
 
+        // Countdown
+        if (dom.countdownDisplay) {
+            dom.countdownDisplay.textContent = formatTime(getRemainingTime());
+        }
+
+        // Team panels
         dom.teamADisplay.textContent = state.teams[0].name.toUpperCase();
         dom.teamBDisplay.textContent = state.teams[1].name.toUpperCase();
-        
+
         dom.teamAWorth.textContent = state.teams[0].totalWorth.toFixed(2);
         dom.teamBWorth.textContent = state.teams[1].totalWorth.toFixed(2);
         dom.teamAStocks.textContent = state.teams[0].stocks;
@@ -578,31 +618,54 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         dom.teamACash.textContent = state.teams[0].cash.toFixed(1);
         dom.teamBCash.textContent = state.teams[1].cash.toFixed(1);
 
-        renderRoster(dom.teamARoster, state.teams[0].players, 0);
-        renderRoster(dom.teamBRoster, state.teams[1].players, 1);
+        renderRoster(dom.teamARoster, state.teams[0].players);
+        renderRoster(dom.teamBRoster, state.teams[1].players);
+
+        // ── Per-player question rendering ──
+        if (myPlayer && myPlayer.currentQuestion) {
+            dom.questionText.textContent = myPlayer.currentQuestion.text;
+            dom.answerInput.disabled = false;
+            dom.answerInput.placeholder = "e.g. 7 b (buy) or 7 s (sell)";
+            if (document.activeElement !== dom.answerInput && !isSubmitting) {
+                // Don't steal focus if user is typing
+            }
+        } else {
+            dom.questionText.textContent = "Waiting for game to start...";
+            dom.answerInput.disabled = true;
+        }
+
+        // ── Per-player feedback ──
+        if (myPlayer && myPlayer.lastFeedback) {
+            dom.feedback.textContent = myPlayer.lastFeedback.text;
+            dom.feedback.className = myPlayer.lastFeedback.className;
+        } else {
+            dom.feedback.textContent = "";
+            dom.feedback.className = "game-feedback";
+        }
 
         drawChart(dom.chartCanvas);
     }
 
-    function renderRoster(container, players, teamIdx) {
-        const turn = getCurrentTurn();
-        container.innerHTML = players.map((p, i) => {
-            const isActive = state.gameActive && turn && turn.teamIdx === teamIdx && turn.playerIdx === i;
-            return `<div class="game-roster-row ${isActive ? 'game-roster-active' : ''}">
-                <span class="game-roster-name">${escapeHtml(p.name)}</span>
+    function renderRoster(container, players) {
+        container.innerHTML = players.map((p) => {
+            const isMe = p.id === state.myPlayerId;
+            return `<div class="game-roster-row ${isMe ? 'game-roster-active' : ''}">
+                <span class="game-roster-name">${escapeHtml(p.name)}${isMe ? ' (you)' : ''}</span>
                 <span class="game-roster-stats">
                     <span class="game-mono">$${p.cash.toFixed(0)}</span> cash
                     <span class="game-roster-sep">·</span>
                     <span class="game-mono">${p.stocks}</span> stk
                     <span class="game-roster-sep">·</span>
                     <span class="game-mono">$${p.worth.toFixed(1)}</span> val
+                    <span class="game-roster-sep">·</span>
+                    <span class="game-mono">${p.trades}</span> trades
                 </span>
             </div>`;
         }).join("");
     }
 
     function endGameLocal() {
-        clearInterval(timerInterval);
+        clearInterval(countdownInterval);
         recalcTeamWorths();
 
         let mvp = null;
@@ -650,11 +713,13 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
                     <div>Buys/Shorts: <span class="game-mono" style="color:var(--text)">${p.buys || 0} / ${p.shorts || 0}</span></div>
                     <div>Cash: <span class="game-mono" style="color:var(--text)">$${p.cash.toFixed(1)}</span></div>
                     <div>Stocks: <span class="game-mono" style="color:var(--text)">${p.stocks}</span></div>
+                    <div>Total Trades: <span class="game-mono" style="color:var(--text)">${p.trades}</span></div>
                 </div>
             </div>`;
         }).join("");
     }
 
+    // ── CHART ─────────────────────────────────────────────────────────────────
     function drawChart(canvas) {
         if (!canvas) return;
         const parent = canvas.parentElement;
@@ -734,6 +799,7 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         ctx.stroke();
     }
 
+    // ── UTILITIES ─────────────────────────────────────────────────────────────
     function escapeHtml(str) {
         if (!str) return "";
         return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

@@ -121,8 +121,8 @@
                             <input id="initial-worth" type="number" class="game-input game-input-sm" value="100" min="10" max="1000" />
                         </div>
                         <div class="game-field">
-                            <label class="game-label" for="total-rounds">Total Rounds</label>
-                            <input id="total-rounds" type="number" class="game-input game-input-sm" value="10" min="3" max="30" />
+                            <label class="game-label" for="match-duration">Match Duration (min)</label>
+                            <input id="match-duration" type="number" class="game-input game-input-sm" value="5" min="1" max="30" />
                         </div>
                     </div>
                 </div>
@@ -230,20 +230,20 @@
             <!-- Top Status Bar -->
             <div class="game-status-bar">
                 <div class="game-status-item">
-                    <span class="game-status-label">ROUND</span>
-                    <span id="game-round" class="game-status-value">1 / 10</span>
+                    <span class="game-status-label">YOUR TRADES</span>
+                    <span id="game-trades-count" class="game-status-value game-mono">0</span>
                 </div>
                 <div class="game-status-item">
                     <span class="game-status-label">STOCK WORTH</span>
                     <span id="game-stock-worth" class="game-status-value game-mono">100</span>
                 </div>
                 <div class="game-status-item">
-                    <span class="game-status-label">CURRENT PLAYER</span>
-                    <span id="game-current-player" class="game-status-value">—</span>
+                    <span class="game-status-label">MARKET</span>
+                    <span id="game-market-status" class="game-status-value"><span class="market-live-dot"></span> LIVE</span>
                 </div>
                 <div class="game-status-item">
-                    <span class="game-status-label">TIMER</span>
-                    <span id="game-timer" class="game-status-value game-mono">—</span>
+                    <span class="game-status-label">TIME LEFT</span>
+                    <span id="game-countdown" class="game-status-value game-mono">5:00</span>
                 </div>
                 <div class="game-status-item">
                     <span class="game-status-label">VOICE</span>
@@ -280,8 +280,7 @@
                     <!-- Question Box -->
                     <div class="game-question-box">
                         <div class="game-question-header">
-                            <span class="game-question-tag">QUESTION</span>
-                            <span id="game-question-timer" class="game-question-timer"></span>
+                            <span class="game-question-tag">YOUR QUESTION</span>
                         </div>
                         <div id="game-question-text" class="game-question-text">Press START to begin</div>
                         <form id="game-answer-form" class="game-answer-row">

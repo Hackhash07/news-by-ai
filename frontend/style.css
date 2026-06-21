@@ -1980,6 +1980,24 @@ button, input { font: inherit; }
 .game-feedback-bonus   { color: #fbbf24; }
 .game-feedback-wrong   { color: var(--red); }
 
+/* ── Live Market Indicator ─────────────────────────── */
+.market-live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  margin-right: 4px;
+  vertical-align: middle;
+  animation: market-pulse 1.4s ease-in-out infinite;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
+}
+
+@keyframes market-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
 /* Chart Panel */
 .game-chart-panel {
   background: var(--panel);
