@@ -2,16 +2,22 @@ import { db } from './firebase.js';
 import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { joinTeamVoice, toggleMute } from "./voice.js";
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   TRADING IQ BATTLE — game.js (MULTIPLAYER REFACTOR)
-   Complete game engine: firebase sync, question generation, stock market simulation,
-   dynamic canvas chart, winner calculation.
-   ═══════════════════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════════════════════
+   TRADING IQ BATTLE — game.js (CRITICAL BUG FIXES)
+   Complete game engine with fixed state synchronization, question generation,
+   simultaneous answer processing, and proper round progression.
+   ════════════════════════════════════════════════════════════════════════════════ */
 
 (function () {
     "use strict";
 
-    // ── GAME STATE ────────────────────────────────────────────────────────────
+    // ── DEBUG LOGGING ─────────────────────────────────────────────────────────────
+    const DEBUG = true;
+    function logDebug(label, data) {
+        if (DEBUG) console.log(`[${new Date().toISOString()}] ${label}:`, data);
+    }
+
+    // ── GAME STATE ─────────────────────────────────────────────────────────────────
     let state = {
         roomId: null,
         isHost: false,
@@ -28,7 +34,7 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         initialWorth: 100,
         totalRounds: 10,
         currentRound: 1,
-        roundPhase: "answering",
+        roundPhase: "waiting", // waiting | answering | resolving
         roundAnswers: {},
         worthHistory: [],
         roundBuys: 0,
@@ -39,8 +45,9 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
     };
 
     let timerInterval = null;
+    let isResolvingRound = false; // Prevent answer submissions during resolution
 
-    // ── DOM REFS ──────────────────────────────────────────────────────────────
+    // ── DOM REFS ─────────────────────────────────────────────────────────────────
     const $ = (id) => document.getElementById(id);
     const dom = {};
 
@@ -90,7 +97,7 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         dom.playAgainBtn     = $("play-again-btn");
     }
 
-    // ── INITIALIZATION ────────────────────────────────────────────────────────
+    // ── INITIALIZATION ───────────────────────────────────────────────────────────
     function initApp() {
         cacheDom();
         
@@ -148,11 +155,16 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         state.totalRounds = totalRounds;
         state.stockWorth = initialWorth;
         state.worthHistory = [initialWorth];
+        state.currentRound = 1;
+        state.roundPhase = "waiting";
+        state.gameActive = false;
         
         if (teamId === 'a') state.teams[0].players.push(playerObj);
         else state.teams[1].players.push(playerObj);
         
         recalcTeamWorths();
+        
+        logDebug("createRoom", { roomId: code, host: state.myPlayerId, config: { initialStocks, initialWorth, totalRounds } });
         
         await setDoc(doc(db, "rooms", code), {
             gameActive: false,
@@ -166,7 +178,7 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
             roundBuys: 0,
             roundSells: 0,
             teams: state.teams,
-            roundPhase: "answering",
+            roundPhase: "waiting",
             roundAnswers: {},
             currentQuestion: null,
             questionStartTime: 0,
@@ -221,6 +233,7 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
             const isAlreadyInTeamB = roomData.teams[1].players.some(p => p.id === state.myPlayerId);
             
             if (isAlreadyInTeamA || isAlreadyInTeamB) {
+                logDebug("joinRoom", { code, playerId: state.myPlayerId, status: "already_in_room" });
                 finalizeJoinUI(code);
                 return;
             }
@@ -230,9 +243,11 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
             
             const playerObj = createPlayerObject(playerName, state.myPlayerId, roomData.initialStocks, roomData.initialWorth);
             
-            const updatedTeams = roomData.teams;
+            const updatedTeams = JSON.parse(JSON.stringify(roomData.teams)); // Deep copy
             if (teamId === 'a') updatedTeams[0].players.push(playerObj);
             else updatedTeams[1].players.push(playerObj);
+            
+            logDebug("joinRoom", { code, playerId: state.myPlayerId, teamId, playerName });
             
             await updateDoc(docRef, { teams: updatedTeams, lastUpdateTime: Date.now() });
             
@@ -272,61 +287,97 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
 
     function listenToRoom(code) {
         onSnapshot(doc(db, "rooms", code), (docSnapshot) => {
-            if (docSnapshot.exists()) {
-                const data = docSnapshot.data();
-                const wasActive = state.gameActive;
-                
-                Object.assign(state, data);
-                recalcTeamWorths();
-                
-                if (!wasActive && state.gameActive) {
-                    dom.waitingRoom.hidden = true;
-                    dom.arena.hidden = false;
-                    startLocalTimer();
-                    const myTeamId = state.teams[0].players.some(p => p.id === state.myPlayerId) ? "a" : "b";
-                    joinTeamVoice(state.roomId, myTeamId, state.myPlayerId);
+            if (!docSnapshot.exists()) return;
+            
+            const data = docSnapshot.data();
+            const wasActive = state.gameActive;
+            
+            logDebug("firebaseUpdate", {
+                gameActive: data.gameActive,
+                currentRound: data.currentRound,
+                roundPhase: data.roundPhase,
+                hasQuestion: !!data.currentQuestion,
+                questionStartTime: data.questionStartTime,
+                answerCount: Object.keys(data.roundAnswers || {}).length
+            });
+            
+            // Deep merge teams to prevent loss of nested data
+            if (data.teams) {
+                state.teams = JSON.parse(JSON.stringify(data.teams));
+            }
+            
+            // Update scalar fields
+            state.gameActive = data.gameActive;
+            state.ended = data.ended;
+            state.currentRound = data.currentRound || 1;
+            state.totalRounds = data.totalRounds || 10;
+            state.stockWorth = data.stockWorth;
+            state.roundPhase = data.roundPhase || "waiting";
+            state.roundAnswers = data.roundAnswers || {};
+            state.worthHistory = data.worthHistory || [];
+            state.roundBuys = data.roundBuys || 0;
+            state.roundSells = data.roundSells || 0;
+            state.currentQuestion = data.currentQuestion || null;
+            state.questionStartTime = data.questionStartTime || 0;
+            state.lastFeedback = data.lastFeedback || null;
+            state.initialStocks = data.initialStocks || 5;
+            state.initialWorth = data.initialWorth || 100;
+            
+            recalcTeamWorths();
+            
+            // Transition from lobby to game arena
+            if (!wasActive && state.gameActive) {
+                logDebug("gameStarted", { round: state.currentRound, question: state.currentQuestion });
+                dom.waitingRoom.hidden = true;
+                dom.arena.hidden = false;
+                startLocalTimer();
+                const myTeamId = state.teams[0].players.some(p => p.id === state.myPlayerId) ? "a" : "b";
+                joinTeamVoice(state.roomId, myTeamId, state.myPlayerId);
+            }
+            
+            if (state.ended) {
+                endGameLocal();
+                return;
+            }
+            
+            if (!dom.waitingRoom.hidden) {
+                renderWaitingRoom();
+                if (state.isHost) {
+                    const ready = state.teams[0].players.length > 0 && state.teams[1].players.length > 0;
+                    const btn = $("start-game-btn");
+                    btn.disabled = !ready;
+                    btn.style.opacity = ready ? "1" : "0.5";
+                    btn.style.cursor = ready ? "pointer" : "not-allowed";
+                    $("waiting-message").textContent = ready ? "Ready to start!" : "Waiting for players to join both teams...";
+                } else {
+                    $("waiting-message").textContent = "Waiting for host to start...";
                 }
+            } else if (!dom.arena.hidden) {
+                renderArena();
                 
-                if (state.ended) {
-                    endGameLocal();
-                    return;
+                if (state.lastFeedback) {
+                    dom.feedback.textContent = state.lastFeedback.text;
+                    dom.feedback.className = state.lastFeedback.className;
                 }
-                
-                if (!dom.waitingRoom.hidden) {
-                    renderWaitingRoom();
-                    if (state.isHost) {
-                        const ready = state.teams[0].players.length > 0 && state.teams[1].players.length > 0;
-                        const btn = $("start-game-btn");
-                        btn.disabled = !ready;
-                        btn.style.opacity = ready ? "1" : "0.5";
-                        btn.style.cursor = ready ? "pointer" : "not-allowed";
-                        $("waiting-message").textContent = ready ? "Ready to start!" : "Waiting for players to join both teams...";
-                    } else {
-                        $("waiting-message").textContent = "Waiting for host to start...";
-                    }
-                } else if (!dom.arena.hidden) {
-                    renderArena();
-                    
-                    if (state.lastFeedback) {
-                        dom.feedback.textContent = state.lastFeedback.text;
-                        dom.feedback.className = state.lastFeedback.className;
-                    }
 
-                    if (state.currentQuestion) {
-                        dom.questionText.textContent = state.currentQuestion.text;
-                        const hasAnswered = state.roundAnswers && state.roundAnswers[state.myPlayerId];
-                        
-                        dom.answerInput.disabled = hasAnswered || state.roundPhase !== "answering";
-                        if (!hasAnswered && state.roundPhase === "answering") {
-                            dom.answerInput.placeholder = "e.g. 150 b (buy) or 150 s (short)";
-                            if (document.activeElement !== dom.answerInput) {
-                                setTimeout(() => dom.answerInput.focus(), 50);
-                            }
-                        } else {
-                            dom.answerInput.placeholder = hasAnswered ? "Answer locked in!" : "Resolving round...";
-                            if (hasAnswered) dom.answerInput.value = "";
+                if (state.currentQuestion) {
+                    dom.questionText.textContent = state.currentQuestion.text;
+                    const hasAnswered = state.roundAnswers && state.roundAnswers[state.myPlayerId];
+                    
+                    dom.answerInput.disabled = hasAnswered || state.roundPhase !== "answering" || isResolvingRound;
+                    if (!hasAnswered && state.roundPhase === "answering" && !isResolvingRound) {
+                        dom.answerInput.placeholder = "e.g. 150 b (buy) or 150 s (short)";
+                        if (document.activeElement !== dom.answerInput) {
+                            setTimeout(() => dom.answerInput.focus(), 50);
                         }
+                    } else {
+                        dom.answerInput.placeholder = hasAnswered ? "Answer locked in!" : (isResolvingRound ? "Resolving round..." : "Waiting for question...");
+                        if (hasAnswered) dom.answerInput.value = "";
                     }
+                } else {
+                    dom.questionText.textContent = "Waiting for question...";
+                    dom.answerInput.disabled = true;
+                    dom.answerInput.placeholder = "Waiting for question...";
                 }
             }
         });
@@ -346,28 +397,45 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
             return;
         }
 
-        state.currentQuestion = generateQuestion();
-        state.questionStartTime = Date.now();
-        state.roundPhase = "answering";
-        state.roundAnswers = {};
-        state.lastFeedback = null;
+        // Generate FIRST question BEFORE setting gameActive
+        const firstQuestion = generateQuestion();
+        const questionStartTime = Date.now();
         
+        logDebug("startGame", { 
+            round: 1, 
+            question: firstQuestion.text, 
+            answer: firstQuestion.answer,
+            questionStartTime 
+        });
+
+        // Write all state at once to prevent race conditions
         await updateDoc(doc(db, "rooms", state.roomId), {
             gameActive: true,
-            ended: state.ended,
-            currentRound: state.currentRound,
+            ended: false,
+            currentRound: 1,
+            roundPhase: "answering",
             stockWorth: state.stockWorth,
-            roundPhase: state.roundPhase,
-            roundAnswers: state.roundAnswers,
             worthHistory: state.worthHistory,
-            roundBuys: state.roundBuys,
-            roundSells: state.roundSells,
+            roundBuys: 0,
+            roundSells: 0,
+            roundAnswers: {},
+            currentQuestion: firstQuestion,
+            questionStartTime: questionStartTime,
+            lastFeedback: null,
             teams: state.teams,
-            currentQuestion: state.currentQuestion,
-            questionStartTime: state.questionStartTime,
-            lastFeedback: state.lastFeedback,
             lastUpdateTime: Date.now()
         });
+
+        // Update local state to match Firebase
+        state.gameActive = true;
+        state.currentRound = 1;
+        state.roundPhase = "answering";
+        state.roundAnswers = {};
+        state.currentQuestion = firstQuestion;
+        state.questionStartTime = questionStartTime;
+        state.roundBuys = 0;
+        state.roundSells = 0;
+        state.lastFeedback = null;
     }
 
     async function updateRoomState() {
@@ -389,13 +457,15 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         });
     }
 
-    // ── GAMEPLAY LOGIC ────────────────────────────────────────────────────────
+    // ── GAMEPLAY LOGIC ───────────────────────────────────────────────────────────
     function checkRoundEnd() {
-        if (!state.isHost || !state.gameActive || state.roundPhase !== "answering") return;
+        if (!state.isHost || !state.gameActive || state.roundPhase !== "answering" || isResolvingRound) return;
         
         const elapsed = Date.now() - state.questionStartTime;
         const totalPlayers = state.teams[0].players.length + state.teams[1].players.length;
         const answersCount = state.roundAnswers ? Object.keys(state.roundAnswers).length : 0;
+        
+        logDebug("checkRoundEnd", { elapsed, totalPlayers, answersCount, shouldResolve: elapsed >= 10000 || answersCount === totalPlayers });
         
         if (elapsed >= 10000 || answersCount === totalPlayers) {
             resolveRound();
@@ -449,11 +519,16 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
 
     async function handleAnswer(e) {
         e.preventDefault();
-        if (!state.gameActive || !state.currentQuestion || state.roundPhase !== "answering") return;
-        if (state.roundAnswers && state.roundAnswers[state.myPlayerId]) return;
+        if (!state.gameActive || !state.currentQuestion || state.roundPhase !== "answering" || isResolvingRound) {
+            logDebug("handleAnswer.rejected", { gameActive: state.gameActive, hasQuestion: !!state.currentQuestion, roundPhase: state.roundPhase, isResolving: isResolvingRound });
+            return;
+        }
+        if (state.roundAnswers && state.roundAnswers[state.myPlayerId]) {
+            logDebug("handleAnswer.rejected", { reason: "already_answered" });
+            return;
+        }
 
         const inputStr = dom.answerInput.value.trim().toLowerCase();
-        dom.answerInput.disabled = true;
         
         const regex = /^([+-]?\d+)(?:\s*([bs\+\-]))?$/i;
         const match = inputStr.match(regex);
@@ -464,23 +539,45 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
             timestamp: Date.now()
         };
 
-        await updateDoc(doc(db, "rooms", state.roomId), {
-            [`roundAnswers.${state.myPlayerId}`]: payload
-        });
-        
+        logDebug("handleAnswer.submit", { playerId: state.myPlayerId, answer: payload.answer, action: payload.action });
+
+        // Disable input IMMEDIATELY before Firebase call
+        dom.answerInput.disabled = true;
         dom.feedback.textContent = "Answer Locked In. Waiting for others...";
         dom.feedback.className = "game-feedback game-feedback-bonus";
+        dom.answerInput.value = ""; // Clear input
+
+        try {
+            await updateDoc(doc(db, "rooms", state.roomId), {
+                [`roundAnswers.${state.myPlayerId}`]: payload
+            });
+        } catch (err) {
+            console.error("Failed to submit answer:", err);
+            dom.feedback.textContent = "Failed to submit answer. Please try again.";
+            dom.feedback.className = "game-feedback game-feedback-danger";
+            dom.answerInput.disabled = false; // Re-enable on error
+        }
     }
 
     async function resolveRound() {
+        if (isResolvingRound) return; // Prevent duplicate resolutions
+        isResolvingRound = true;
         state.roundPhase = "resolving";
+        
+        logDebug("resolveRound.start", { round: state.currentRound, totalAnswers: Object.keys(state.roundAnswers || {}).length });
         
         const answers = Object.entries(state.roundAnswers || {})
             .map(([id, data]) => ({ id, ...data }))
             .sort((a, b) => a.timestamp - b.timestamp);
 
-        let correctAnswer = state.currentQuestion.answer;
+        let correctAnswer = state.currentQuestion ? state.currentQuestion.answer : null;
         let correctCount = 0;
+        
+        if (!correctAnswer) {
+            console.error("CRITICAL: No correct answer for round", state.currentRound);
+            isResolvingRound = false;
+            return;
+        }
         
         answers.forEach((ans) => {
             let player = null;
@@ -491,6 +588,8 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
             if (!player) return;
             
             const isCorrect = ans.answer === correctAnswer;
+            
+            logDebug("resolveRound.answer", { playerId: ans.id, submitted: ans.answer, correct: correctAnswer, isCorrect });
             
             if (isCorrect) {
                 correctCount++;
@@ -535,23 +634,33 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         state.lastFeedback = { text: `Round resolved! Correct answer: ${correctAnswer}.`, className: "game-feedback game-feedback-correct" };
         await updateRoomState();
         
-        setTimeout(async () => {
-            if (state.gameActive && !state.ended) {
-                state.roundAnswers = {};
-                state.currentQuestion = generateQuestion();
-                state.questionStartTime = Date.now();
-                state.lastFeedback = null;
-                state.roundPhase = "answering";
-                await updateRoomState();
-            }
-        }, 3000);
+        logDebug("resolveRound.waitForNext", { delay: 3000 });
+        
+        // Wait 3 seconds before generating next question
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        if (state.gameActive && !state.ended && state.isHost) {
+            // Generate next question while still on server (if still active)
+            const nextQuestion = generateQuestion();
+            state.roundAnswers = {};
+            state.currentQuestion = nextQuestion;
+            state.questionStartTime = Date.now();
+            state.lastFeedback = null;
+            state.roundPhase = "answering";
+            
+            logDebug("resolveRound.nextRound", { round: state.currentRound, question: nextQuestion.text });
+            
+            await updateRoomState();
+        }
+        
+        isResolvingRound = false;
     }
 
     // ── RENDERING ─────────────────────────────────────────────────────────────
     function startLocalTimer() {
         clearInterval(timerInterval);
         timerInterval = setInterval(() => {
-            if (state.questionStartTime > 0 && !state.ended) {
+            if (state.questionStartTime > 0 && !state.ended && state.gameActive) {
                 const elapsed = ((Date.now() - state.questionStartTime) / 1000);
                 const remaining = Math.max(0, 10 - elapsed).toFixed(1);
                 dom.timerDisplay.textContent = `${remaining}s`;
@@ -585,10 +694,8 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
     }
 
     function renderRoster(container, players, teamIdx) {
-        const turn = getCurrentTurn();
         container.innerHTML = players.map((p, i) => {
-            const isActive = state.gameActive && turn && turn.teamIdx === teamIdx && turn.playerIdx === i;
-            return `<div class="game-roster-row ${isActive ? 'game-roster-active' : ''}">
+            return `<div class="game-roster-row">
                 <span class="game-roster-name">${escapeHtml(p.name)}</span>
                 <span class="game-roster-stats">
                     <span class="game-mono">$${p.cash.toFixed(0)}</span> cash
@@ -633,6 +740,8 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         renderResultRoster(dom.resultTeamBRoster, state.teams[1].players);
 
         drawChart(dom.resultChart);
+        
+        logDebug("gameEnded", { winner: winner.name, mvp: mvp ? mvp.name : null });
     }
 
     function renderResultRoster(container, players) {
