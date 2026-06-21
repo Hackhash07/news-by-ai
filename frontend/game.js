@@ -380,12 +380,12 @@ import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.
         let a, b, answer;
 
         if (op === "+") {
-            a = randInt(100, 999);
-            b = randInt(100, 999);
+            a = randInt(1, 9);
+            b = randInt(1, 9);
             answer = a + b;
         } else {
-            a = randInt(200, 999);
-            b = randInt(100, a - 1);
+            a = randInt(2, 9);
+            b = randInt(1, a - 1);
             answer = a - b;
         }
 
