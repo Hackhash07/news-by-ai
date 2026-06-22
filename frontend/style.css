@@ -39,9 +39,6 @@ button, input { font: inherit; }
   padding: 9px 16px;
   border-bottom: 1px solid rgba(255,255,255,0.06);
   background: #0f1424;
-  position: sticky;
-  top: 0;
-  z-index: 50;
   overflow: hidden;
 }
 
@@ -99,9 +96,6 @@ button, input { font: inherit; }
   padding: 14px 24px;
   border-bottom: 1px solid rgba(255,255,255,0.06);
   background: rgba(10,14,26,0.94);
-  position: sticky;
-  top: 40px;
-  z-index: 40;
   backdrop-filter: blur(16px);
 }
 
