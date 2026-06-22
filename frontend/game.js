@@ -16,7 +16,10 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         roomId: null,
         isHost: false,
         myPlayerId: null,
+        voiceJoined: false,
 
+        // ── Room lifecycle phase: "lobby" | "active" | "results" ──
+        phase: "lobby",
         gameActive: false,
         ended: false,
         teams: [
@@ -91,6 +94,9 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         dom.resultTeamBRoster = $("result-team-b-roster");
         dom.resultChart      = $("game-result-chart-canvas");
         dom.playAgainBtn     = $("play-again-btn");
+        dom.resultBackLobbyBtn = $("result-back-lobby-btn");
+        dom.resultLeaveBtn   = $("result-leave-btn");
+        dom.resultWaitingMsg = $("result-waiting-msg");
     }
 
     // ── INITIALIZATION ────────────────────────────────────────────────────────
@@ -122,9 +128,9 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
 
         dom.answerForm.addEventListener("submit", handleAnswer);
 
-        dom.playAgainBtn.addEventListener("click", () => {
-            window.location.reload();
-        });
+        dom.playAgainBtn.addEventListener("click", playAgain);
+        if (dom.resultBackLobbyBtn) dom.resultBackLobbyBtn.addEventListener("click", backToLobby);
+        if (dom.resultLeaveBtn) dom.resultLeaveBtn.addEventListener("click", leaveRoom);
 
         window.addEventListener("resize", () => {
             if (!dom.arena.hidden) drawChart(dom.chartCanvas);
@@ -185,6 +191,7 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         state.roomId = code;
         state.isHost = true;
         state.myPlayerId = getMyPlayerId();
+        state.phase = "lobby";
 
         const initialStocks = clamp(parseInt($("initial-stocks").value) || 5, 1, 50);
         const initialWorth = clamp(parseInt($("initial-worth").value) || 100, 10, 1000);
@@ -209,6 +216,7 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
 
         await setDoc(docRef, {
             hostId: state.myPlayerId,
+            phase: "lobby",
             gameActive: false,
             ended: false,
             stockWorth: initialWorth,
@@ -341,62 +349,114 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
     // ── FIREBASE LISTENER ─────────────────────────────────────────────────────
     function listenToRoom(code) {
         state.unsubscribeRoom = onSnapshot(doc(db, "rooms", code), (docSnapshot) => {
+            // Room document removed → host disbanded the room.
             if (!docSnapshot.exists()) {
-                const wasActive = state.gameActive;
-                cleanupLocalStateAndUI(wasActive ? "Host left. Match has ended." : "Host left. Room has been closed.");
+                cleanupLocalStateAndUI("Host left. Room has been closed.");
                 return;
             }
 
             const data = docSnapshot.data();
             if (data.invalidBecauseHostLeft) {
-                const wasActive = state.gameActive;
-                cleanupLocalStateAndUI(wasActive ? "Host left. Match has ended." : "Host left. Room has been closed.");
+                cleanupLocalStateAndUI("Host left. Room has been closed.");
                 return;
             }
 
-            const wasActive = state.gameActive;
+            const prevPhase = state.phase;
 
             // Merge remote state into local
             Object.assign(state, data);
-            recalcTeamWorths();
 
-            // Toggle switch team button visibility
-            if (dom.switchTeamBtn) {
-                dom.switchTeamBtn.hidden = state.gameActive;
+            // Derive phase for rooms created before the phase field existed.
+            if (!state.phase) {
+                state.phase = state.ended ? "results" : (state.gameActive ? "active" : "lobby");
             }
 
-            // ── Transition: game just started ──
-            if (!wasActive && state.gameActive) {
-                dom.waitingRoom.hidden = true;
+            recalcTeamWorths();
+            renderPhase(prevPhase);
+        });
+    }
+
+    // ── PHASE-DRIVEN NAVIGATION ───────────────────────────────────────────────
+    function hideAllSections() {
+        dom.landing.hidden = true;
+        dom.setup.hidden = true;
+        dom.join.hidden = true;
+        dom.waitingRoom.hidden = true;
+        dom.arena.hidden = true;
+        dom.results.hidden = true;
+    }
+
+    function renderPhase(prevPhase) {
+        const phase = state.phase;
+        const entering = phase !== prevPhase;
+
+        if (phase === "active") {
+            if (entering) {
+                hideAllSections();
                 dom.arena.hidden = false;
                 startCountdown();
-                const myTeamId = state.teams[0].players.some(p => p.id === state.myPlayerId) ? "a" : "b";
-                joinTeamVoice(state.roomId, myTeamId, state.myPlayerId);
+                ensureVoiceJoined();
             }
+            renderArena();
+        } else if (phase === "results") {
+            if (entering) {
+                hideAllSections();
+                clearInterval(countdownInterval);
+            }
+            endGameLocal();
+            updateResultsControls();
+        } else { // "lobby" — pre-match or post-match waiting room
+            if (entering) {
+                hideAllSections();
+                dom.waitingRoom.hidden = false;
+                clearInterval(countdownInterval);
+            }
+            renderWaitingRoom();
+            updateLobbyControls();
+        }
 
-            // ── Game ended ──
-            if (state.ended) {
-                endGameLocal();
-                return;
-            }
+        // Switching teams is only allowed while in the lobby.
+        if (dom.switchTeamBtn) {
+            dom.switchTeamBtn.hidden = phase !== "lobby";
+        }
+    }
 
-            // ── Update UI ──
-            if (!dom.waitingRoom.hidden) {
-                renderWaitingRoom();
-                if (state.isHost) {
-                    const ready = state.teams[0].players.length > 0 && state.teams[1].players.length > 0;
-                    const btn = $("start-game-btn");
-                    btn.disabled = !ready;
-                    btn.style.opacity = ready ? "1" : "0.5";
-                    btn.style.cursor = ready ? "pointer" : "not-allowed";
-                    $("waiting-message").textContent = ready ? "Ready to start!" : "Waiting for players to join both teams...";
-                } else {
-                    $("waiting-message").textContent = "Waiting for host to start...";
-                }
-            } else if (!dom.arena.hidden) {
-                renderArena();
+    function ensureVoiceJoined() {
+        if (state.voiceJoined) return;
+        const myTeamId = state.teams[0].players.some(p => p.id === state.myPlayerId) ? "a" : "b";
+        joinTeamVoice(state.roomId, myTeamId, state.myPlayerId);
+        state.voiceJoined = true;
+    }
+
+    function updateLobbyControls() {
+        const startBtn = $("start-game-btn");
+        const waitMsg = $("waiting-message");
+        if (state.isHost) {
+            if (startBtn) {
+                startBtn.hidden = false;
+                const ready = state.teams[0].players.length > 0 && state.teams[1].players.length > 0;
+                startBtn.disabled = !ready;
+                startBtn.style.opacity = ready ? "1" : "0.5";
+                startBtn.style.cursor = ready ? "pointer" : "not-allowed";
+                if (waitMsg) waitMsg.textContent = ready ? "Ready to start!" : "Waiting for players to join both teams...";
             }
-        });
+        } else {
+            if (startBtn) startBtn.hidden = true;
+            if (waitMsg) waitMsg.textContent = "Waiting for host to start next match...";
+        }
+    }
+
+    function updateResultsControls() {
+        if (state.isHost) {
+            if (dom.playAgainBtn) dom.playAgainBtn.hidden = false;
+            if (dom.resultBackLobbyBtn) dom.resultBackLobbyBtn.hidden = false;
+            if (dom.resultWaitingMsg) dom.resultWaitingMsg.hidden = true;
+        } else {
+            if (dom.playAgainBtn) dom.playAgainBtn.hidden = true;
+            if (dom.resultBackLobbyBtn) dom.resultBackLobbyBtn.hidden = true;
+            if (dom.resultWaitingMsg) dom.resultWaitingMsg.hidden = false;
+        }
+        if (dom.resultLeaveBtn) dom.resultLeaveBtn.hidden = false;
     }
 
     async function switchTeam() {
@@ -449,6 +509,13 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         const btn = dom.leaveRoomBtn;
         if (btn) btn.disabled = true;
 
+        // Stop listening first so we don't react to our own departure
+        // (e.g. the host's room deletion firing a "host left" alert on themselves).
+        if (state.unsubscribeRoom) {
+            state.unsubscribeRoom();
+            state.unsubscribeRoom = null;
+        }
+
         try {
             const docRef = doc(db, "rooms", state.roomId);
             if (state.isHost) {
@@ -484,7 +551,10 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         state.isHost = false;
         state.gameActive = false;
         state.ended = false;
-        
+        state.phase = "lobby";
+        state.voiceJoined = false;
+        clearInterval(countdownInterval);
+
         dom.waitingRoom.hidden = true;
         dom.arena.hidden = true;
         dom.results.hidden = true;
@@ -528,8 +598,17 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
             alert("Both teams need at least 1 player to start!");
             return;
         }
+        await startNewMatch();
+    }
 
-        // Generate a unique question for EACH player
+    /**
+     * Begin a fresh match in the existing room. Generates a new question stream
+     * for every connected player and flips the room into the "active" phase.
+     * Membership (room id, host, teams, players) is left untouched.
+     */
+    async function startNewMatch() {
+        if (!state.isHost) return;
+
         state.teams.forEach(team => {
             team.players.forEach(player => {
                 player.currentQuestion = generateQuestion();
@@ -538,9 +617,14 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
             });
         });
 
+        state.totalBuys = 0;
+        state.totalSells = 0;
         state.gameStartTime = Date.now();
+        state.gameActive = true;
+        state.ended = false;
 
         await updateDoc(doc(db, "rooms", state.roomId), {
+            phase: "active",
             gameActive: true,
             ended: false,
             stockWorth: state.stockWorth,
@@ -553,8 +637,90 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         });
     }
 
+    /**
+     * Reset all match-specific data while preserving room membership.
+     * Resets: stock worth, worth history (chart), trade pressure, per-player
+     * cash/stocks/worth/score/answer counters and question streams.
+     * Preserves: room id, host, team rosters, player ids/names, voice state.
+     */
+    function resetMatchStateLocal() {
+        state.stockWorth = state.initialWorth;
+        state.worthHistory = [state.initialWorth];
+        state.totalBuys = 0;
+        state.totalSells = 0;
+        state.gameStartTime = 0;
+
+        const initialCash = state.initialWorth * 2;
+        const baseWorth = initialCash + (state.initialStocks * state.initialWorth);
+        state.teams.forEach(team => {
+            team.players.forEach(p => {
+                p.cash = initialCash;
+                p.stocks = state.initialStocks;
+                p.worth = baseWorth;
+                p.initialWorth = baseWorth;
+                p.score = 0;
+                p.correct = 0;
+                p.wrong = 0;
+                p.trades = 0;
+                p.buys = 0;
+                p.shorts = 0;
+                p.currentQuestion = null;
+                p.questionNumber = 0;
+                p.lastFeedback = null;
+            });
+        });
+        recalcTeamWorths();
+    }
+
+    // ── HOST: PLAY AGAIN — reset match state and immediately start a new match.
+    async function playAgain() {
+        if (!state.isHost) return;
+        const btn = dom.playAgainBtn;
+        if (btn) btn.disabled = true;
+        try {
+            resetMatchStateLocal();
+            await startNewMatch();
+        } catch (err) {
+            console.error("Play again failed:", err);
+            alert("Could not start a new match. Please try again.");
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    // ── HOST: BACK TO LOBBY — reset match state and reopen the waiting room.
+    async function backToLobby() {
+        if (!state.isHost) return;
+        const btn = dom.resultBackLobbyBtn;
+        if (btn) btn.disabled = true;
+        try {
+            resetMatchStateLocal();
+            state.gameActive = false;
+            state.ended = false;
+            await updateDoc(doc(db, "rooms", state.roomId), {
+                phase: "lobby",
+                gameActive: false,
+                ended: false,
+                stockWorth: state.stockWorth,
+                worthHistory: state.worthHistory,
+                totalBuys: 0,
+                totalSells: 0,
+                teams: state.teams,
+                gameStartTime: 0,
+                lastUpdateTime: Date.now()
+            });
+        } catch (err) {
+            console.error("Back to lobby failed:", err);
+            alert("Could not return to lobby. Please try again.");
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
     async function updateRoomState() {
+        const phase = state.ended ? "results" : (state.gameActive ? "active" : "lobby");
         await updateDoc(doc(db, "rooms", state.roomId), {
+            phase,
             gameActive: state.gameActive,
             ended: state.ended,
             stockWorth: state.stockWorth,
