@@ -1,45 +1,75 @@
 import { db } from './firebase.js';
-import { doc, setDoc, onSnapshot, updateDoc, getDoc, runTransaction, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { joinTeamVoice, toggleMute } from "./voice.js";
+import { doc, onSnapshot, updateDoc, getDoc, runTransaction, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   TRADING IQ BATTLE — game.js (CONTINUOUS MARKET REFACTOR)
+   TRADING IQ BATTLE — game.js (STABILIZED BUILD)
+   
    Event-driven trading simulation: per-player question streams, immediate
    trade execution, time-based match duration, real-time stock price updates.
+   
+   Architecture:
+   - Room config (host, teams, settings) persists across matches
+   - Match state (playerStates, stockWorth, etc.) resets between matches
+   - Phase enum: "waiting" → "playing" → "results" → "waiting"
+   - All mutations use Firestore transactions for consistency
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 (function () {
     "use strict";
+
+    // ── CONSTANTS ────────────────────────────────────────────────────────────
+    const MAX_TEAM_SIZE = 10;
+    const SESSION_KEYS = {
+        PLAYER_ID: "tt_player_id",
+        ROOM_ID: "tt_room_id",
+        IS_HOST: "tt_is_host",
+        PLAYER_NAME: "tt_player_name"
+    };
 
     // ── GAME STATE ────────────────────────────────────────────────────────────
     let state = {
         roomId: null,
         isHost: false,
         myPlayerId: null,
+        myPlayerName: null,
 
-        gameActive: false,
-        ended: false,
-        teams: [
-            { id: "a", name: "Alpha", players: [], stocks: 0, cash: 0, totalWorth: 0 },
-            { id: "b", name: "Beta",  players: [], stocks: 0, cash: 0, totalWorth: 0 }
-        ],
-        stockWorth: 100,
+        // Room config (persistent across matches)
+        hostId: null,
         initialStocks: 5,
         initialWorth: 100,
+        matchDuration: 300,
+        maxTeamSize: MAX_TEAM_SIZE,
 
-        // ── Time-based match ──
-        matchDuration: 300,     // seconds (default 5 min)
-        gameStartTime: 0,       // timestamp when game started
+        // Room lifecycle
+        phase: "waiting", // "waiting" | "playing" | "results"
 
-        // ── Market pressure tracking ──
-        totalBuys: 0,
-        totalSells: 0,
+        // Teams (persistent — just id + name per player)
+        teams: [
+            { id: "a", name: "Alpha", players: [] },
+            { id: "b", name: "Beta",  players: [] }
+        ],
 
-        worthHistory: [],
+        // Match state (reset between matches)
+        match: {
+            gameStartTime: 0,
+            stockWorth: 100,
+            worthHistory: [100],
+            totalBuys: 0,
+            totalSells: 0,
+            playerStates: {}
+        },
+
+        matchNumber: 0,
+
+        // Listener cleanup
+        unsubscribeRoom: null,
     };
 
     let countdownInterval = null;
-    let isSubmitting = false; // prevents double-submit race
+    let isSubmitting = false;      // prevents double-submit race
+    let isCreatingRoom = false;    // prevents double-create
+    let isJoiningRoom = false;     // prevents double-join
 
     // ── DOM REFS ──────────────────────────────────────────────────────────────
     const $ = (id) => document.getElementById(id);
@@ -122,31 +152,150 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
 
         dom.answerForm.addEventListener("submit", handleAnswer);
 
-        dom.playAgainBtn.addEventListener("click", () => {
-            window.location.reload();
-        });
+        // Play Again — return to waiting room, NOT reload
+        dom.playAgainBtn.addEventListener("click", resetForNextMatch);
 
         window.addEventListener("resize", () => {
             if (!dom.arena.hidden) drawChart(dom.chartCanvas);
             if (!dom.results.hidden) drawChart(dom.resultChart);
         });
+
+        // ── Auto-rejoin on page load ──
+        tryAutoRejoin();
     }
+
+    // ── PLAYER IDENTITY ──────────────────────────────────────────────────────
+
+    function getMyPlayerId() {
+        let id = sessionStorage.getItem(SESSION_KEYS.PLAYER_ID);
+        if (!id) {
+            id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
+            sessionStorage.setItem(SESSION_KEYS.PLAYER_ID, id);
+        }
+        return id;
+    }
+
+    function persistSession() {
+        if (state.roomId) sessionStorage.setItem(SESSION_KEYS.ROOM_ID, state.roomId);
+        if (state.isHost) sessionStorage.setItem(SESSION_KEYS.IS_HOST, "true");
+        if (state.myPlayerName) sessionStorage.setItem(SESSION_KEYS.PLAYER_NAME, state.myPlayerName);
+    }
+
+    function clearSession() {
+        sessionStorage.removeItem(SESSION_KEYS.ROOM_ID);
+        sessionStorage.removeItem(SESSION_KEYS.IS_HOST);
+        sessionStorage.removeItem(SESSION_KEYS.PLAYER_NAME);
+    }
+
+    /**
+     * Auto-rejoin: If the user refreshed, try to reconnect to their room.
+     */
+    async function tryAutoRejoin() {
+        const savedRoomId = sessionStorage.getItem(SESSION_KEYS.ROOM_ID);
+        const savedPlayerId = sessionStorage.getItem(SESSION_KEYS.PLAYER_ID);
+        const savedIsHost = sessionStorage.getItem(SESSION_KEYS.IS_HOST) === "true";
+
+        if (!savedRoomId || !savedPlayerId) return;
+
+        try {
+            const docRef = doc(db, "rooms", savedRoomId);
+            const snap = await getDoc(docRef);
+            if (!snap.exists()) {
+                clearSession();
+                return;
+            }
+
+            const roomData = snap.data();
+
+            // Check if player is still in the room
+            const isInRoom = roomData.teams.some(t => t.players.some(p => p.id === savedPlayerId));
+            if (!isInRoom) {
+                clearSession();
+                return;
+            }
+
+            // Rejoin
+            state.roomId = savedRoomId;
+            state.myPlayerId = savedPlayerId;
+            state.isHost = savedIsHost && roomData.hostId === savedPlayerId;
+            state.myPlayerName = sessionStorage.getItem(SESSION_KEYS.PLAYER_NAME) || "Player";
+
+            listenToRoom(savedRoomId);
+
+            // Show appropriate screen based on phase
+            dom.landing.hidden = true;
+            dom.setup.hidden = true;
+            dom.join.hidden = true;
+
+            if (roomData.phase === "playing") {
+                dom.waitingRoom.hidden = true;
+                dom.arena.hidden = false;
+                dom.results.hidden = true;
+                startCountdown();
+                // Rejoin voice
+                const myTeamId = roomData.teams[0].players.some(p => p.id === state.myPlayerId) ? "a" : "b";
+                joinTeamVoice(state.roomId, myTeamId, state.myPlayerId);
+            } else if (roomData.phase === "results") {
+                dom.waitingRoom.hidden = true;
+                dom.arena.hidden = true;
+                dom.results.hidden = false;
+            } else {
+                // waiting
+                dom.waitingRoom.hidden = false;
+                dom.arena.hidden = true;
+                dom.results.hidden = true;
+            }
+
+            $("waiting-room-code-display").innerHTML = `Room Code: <strong>${savedRoomId}</strong>`;
+            if (state.isHost) {
+                $("start-game-btn").hidden = false;
+            }
+            if (dom.switchTeamBtn && !state.isHost) dom.switchTeamBtn.hidden = false;
+
+            console.log(`[Game] Auto-rejoined room ${savedRoomId}`);
+        } catch (err) {
+            console.error("[Game] Auto-rejoin failed:", err);
+            clearSession();
+        }
+    }
+
+    // ── ROOM CODE GENERATION ─────────────────────────────────────────────────
 
     function generateRoomCode() {
         return Math.random().toString(36).substring(2, 8).toUpperCase();
     }
 
-    function getMyPlayerId() {
-        let id = sessionStorage.getItem("tt_player_id");
-        if (!id) {
-            id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
-            sessionStorage.setItem("tt_player_id", id);
+    // ── VALIDATION UTILITIES ─────────────────────────────────────────────────
+
+    /**
+     * Ensure a player only appears in one team. Strips from all teams first,
+     * then adds to the target team index.
+     * 
+     * @param {Array} teams - The teams array
+     * @param {string} playerId - Player ID to ensure
+     * @param {Object|null} playerObj - Player object to add (null = just remove)
+     * @param {number} targetTeamIdx - Target team index (0 or 1), -1 = just remove
+     * @returns {Array} Modified teams
+     */
+    function ensurePlayerInOneTeam(teams, playerId, playerObj, targetTeamIdx) {
+        // Strip player from ALL teams
+        for (let i = 0; i < teams.length; i++) {
+            teams[i].players = teams[i].players.filter(p => p.id !== playerId);
         }
-        return id;
+
+        // Add to target team if provided
+        if (playerObj && targetTeamIdx >= 0 && targetTeamIdx < teams.length) {
+            teams[targetTeamIdx].players.push(playerObj);
+        }
+
+        return teams;
     }
 
-    function validateRoomState(roomData, isHostLeaving = false) {
-        if (isHostLeaving || !roomData) return roomData;
+    /**
+     * Validate room state: deduplicate players across teams, verify host exists.
+     */
+    function validateRoomState(roomData) {
+        if (!roomData) return roomData;
 
         const seenIds = new Set();
         let hostExists = false;
@@ -172,100 +321,151 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         return roomData;
     }
 
+    // ── CREATE ROOM ──────────────────────────────────────────────────────────
+
     async function createRoom() {
-        let code = generateRoomCode();
-        let docRef = doc(db, "rooms", code);
-        let snap = await getDoc(docRef);
-        while (snap.exists()) {
-            code = generateRoomCode();
-            docRef = doc(db, "rooms", code);
-            snap = await getDoc(docRef);
+        // Guard against double-click
+        if (isCreatingRoom) return;
+        isCreatingRoom = true;
+
+        const btn = $("create-room-btn");
+        btn.disabled = true;
+        const originalText = btn.textContent;
+        btn.textContent = "CREATING...";
+
+        try {
+            const code = generateRoomCode();
+            const docRef = doc(db, "rooms", code);
+
+            state.myPlayerId = getMyPlayerId();
+            const playerName = $("host-player-name").value.trim() || "Host";
+            const teamId = $("host-team").value;
+            state.myPlayerName = playerName;
+
+            const initialStocks = clamp(parseInt($("initial-stocks").value) || 5, 1, 50);
+            const initialWorth = clamp(parseInt($("initial-worth").value) || 100, 10, 1000);
+            const matchDurationMin = clamp(parseInt($("match-duration").value) || 5, 1, 30);
+            const matchDuration = matchDurationMin * 60;
+
+            const targetTeamIdx = teamId === 'a' ? 0 : 1;
+            const playerEntry = { id: state.myPlayerId, name: playerName };
+
+            const initialCash = initialWorth * 2;
+            const initialPlayerWorth = initialCash + (initialStocks * initialWorth);
+
+            // Atomic create: transaction ensures no race if same code generated twice
+            await runTransaction(db, async (transaction) => {
+                const snap = await transaction.get(docRef);
+                if (snap.exists()) {
+                    throw new Error("Room code collision, please try again.");
+                }
+
+                const teams = [
+                    { id: "a", name: "Alpha", players: [] },
+                    { id: "b", name: "Beta",  players: [] }
+                ];
+                teams[targetTeamIdx].players.push(playerEntry);
+
+                const playerState = createPlayerState(state.myPlayerId, initialStocks, initialWorth);
+
+                transaction.set(docRef, {
+                    hostId: state.myPlayerId,
+                    roomCode: code,
+                    initialStocks,
+                    initialWorth,
+                    matchDuration,
+                    maxTeamSize: MAX_TEAM_SIZE,
+                    createdAt: Date.now(),
+
+                    phase: "waiting",
+                    teams,
+
+                    match: {
+                        gameStartTime: 0,
+                        stockWorth: initialWorth,
+                        worthHistory: [initialWorth],
+                        totalBuys: 0,
+                        totalSells: 0,
+                        playerStates: {
+                            [state.myPlayerId]: playerState
+                        }
+                    },
+
+                    matchNumber: 0,
+                    lastUpdateTime: Date.now()
+                });
+            });
+
+            // Success — update local state
+            state.roomId = code;
+            state.isHost = true;
+            state.hostId = state.myPlayerId;
+            state.initialStocks = initialStocks;
+            state.initialWorth = initialWorth;
+            state.matchDuration = matchDuration;
+            state.phase = "waiting";
+            state.teams = [
+                { id: "a", name: "Alpha", players: [] },
+                { id: "b", name: "Beta",  players: [] }
+            ];
+            state.teams[targetTeamIdx].players.push(playerEntry);
+            state.match = {
+                gameStartTime: 0,
+                stockWorth: initialWorth,
+                worthHistory: [initialWorth],
+                totalBuys: 0,
+                totalSells: 0,
+                playerStates: {
+                    [state.myPlayerId]: createPlayerState(state.myPlayerId, initialStocks, initialWorth)
+                }
+            };
+
+            persistSession();
+            listenToRoom(code);
+
+            dom.setup.hidden = true;
+            dom.waitingRoom.hidden = false;
+            $("waiting-room-code-display").innerHTML = `Room Code: <strong>${code}</strong>`;
+            $("start-game-btn").hidden = false;
+
+        } catch (err) {
+            console.error("[Game] Create room failed:", err);
+            alert(err.message || "Failed to create room. Try again.");
+        } finally {
+            isCreatingRoom = false;
+            btn.disabled = false;
+            btn.textContent = originalText;
         }
-
-        state.roomId = code;
-        state.isHost = true;
-        state.myPlayerId = getMyPlayerId();
-
-        const initialStocks = clamp(parseInt($("initial-stocks").value) || 5, 1, 50);
-        const initialWorth = clamp(parseInt($("initial-worth").value) || 100, 10, 1000);
-        const matchDurationMin = clamp(parseInt($("match-duration").value) || 5, 1, 30);
-        const matchDuration = matchDurationMin * 60; // convert to seconds
-
-        const playerName = $("host-player-name").value.trim() || "Host";
-        const teamId = $("host-team").value;
-
-        const playerObj = createPlayerObject(playerName, state.myPlayerId, initialStocks, initialWorth);
-
-        state.initialStocks = initialStocks;
-        state.initialWorth = initialWorth;
-        state.matchDuration = matchDuration;
-        state.stockWorth = initialWorth;
-        state.worthHistory = [initialWorth];
-
-        if (teamId === 'a') state.teams[0].players.push(playerObj);
-        else state.teams[1].players.push(playerObj);
-
-        recalcTeamWorths();
-
-        await setDoc(docRef, {
-            hostId: state.myPlayerId,
-            gameActive: false,
-            ended: false,
-            stockWorth: initialWorth,
-            initialStocks,
-            initialWorth,
-            matchDuration,
-            gameStartTime: 0,
-            worthHistory: [initialWorth],
-            totalBuys: 0,
-            totalSells: 0,
-            teams: state.teams,
-            lastUpdateTime: Date.now()
-        });
-
-        listenToRoom(code);
-
-        dom.setup.hidden = true;
-        dom.waitingRoom.hidden = false;
-        $("waiting-room-code-display").innerHTML = `Room Code: <strong>${code}</strong>`;
-        $("start-game-btn").hidden = false;
     }
 
+    // ── JOIN ROOM ────────────────────────────────────────────────────────────
+
     async function joinRoom() {
+        // Guard against double-click
+        if (isJoiningRoom) return;
+
         const btn = $("join-room-btn");
         if (btn.disabled) return;
 
         const code = $("join-room-code").value.toUpperCase().trim();
         if (!code) return;
 
+        isJoiningRoom = true;
         btn.disabled = true;
         const originalText = btn.textContent;
         btn.textContent = "Joining...";
+        $("join-error").textContent = "";
 
         try {
             const docRef = doc(db, "rooms", code);
-            const snap = await getDoc(docRef);
-            if (!snap.exists()) {
-                $("join-error").textContent = "Room not found!";
-                btn.disabled = false;
-                btn.textContent = originalText;
-                return;
-            }
 
-            const roomData = snap.data();
-            if (roomData.gameActive || roomData.ended) {
-                $("join-error").textContent = "Game already started or ended!";
-                btn.disabled = false;
-                btn.textContent = originalText;
-                return;
-            }
-
-            state.roomId = code;
-            state.isHost = false;
             state.myPlayerId = getMyPlayerId();
-
             const playerName = $("join-player-name").value.trim() || "Player";
             const teamId = $("join-team").value;
+            state.myPlayerName = playerName;
+
+            const targetTeamIdx = teamId === 'a' ? 0 : 1;
+            const playerEntry = { id: state.myPlayerId, name: playerName };
 
             await runTransaction(db, async (transaction) => {
                 const roomSnap = await transaction.get(docRef);
@@ -274,38 +474,68 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
                 }
                 let roomData = roomSnap.data();
 
-                if (roomData.gameActive || roomData.ended) {
-                    throw new Error("Game already started or ended!");
+                if (roomData.phase === "playing") {
+                    throw new Error("Game already in progress!");
                 }
 
                 roomData = validateRoomState(roomData);
 
-                const isAlreadyInTeamA = roomData.teams[0].players.some(p => p.id === state.myPlayerId);
-                const isAlreadyInTeamB = roomData.teams[1].players.some(p => p.id === state.myPlayerId);
-
-                if (isAlreadyInTeamA || isAlreadyInTeamB) {
+                // Check if already in room (idempotent join)
+                const isAlreadyInRoom = roomData.teams.some(t => t.players.some(p => p.id === state.myPlayerId));
+                if (isAlreadyInRoom) {
                     // Already in room, no need to add again
                     return;
                 }
 
-                const playerObj = createPlayerObject(playerName, state.myPlayerId, roomData.initialStocks, roomData.initialWorth);
+                // Check team size limit
+                if (roomData.teams[targetTeamIdx].players.length >= (roomData.maxTeamSize || MAX_TEAM_SIZE)) {
+                    throw new Error(`Team ${roomData.teams[targetTeamIdx].name} is full! (${roomData.maxTeamSize || MAX_TEAM_SIZE} players max)`);
+                }
 
-                if (teamId === 'a') roomData.teams[0].players.push(playerObj);
-                else roomData.teams[1].players.push(playerObj);
+                // Add player to team (ensurePlayerInOneTeam strips from any team first)
+                ensurePlayerInOneTeam(roomData.teams, state.myPlayerId, playerEntry, targetTeamIdx);
+
+                // Initialize player state in match
+                if (!roomData.match) {
+                    roomData.match = {
+                        gameStartTime: 0,
+                        stockWorth: roomData.initialWorth || 100,
+                        worthHistory: [roomData.initialWorth || 100],
+                        totalBuys: 0,
+                        totalSells: 0,
+                        playerStates: {}
+                    };
+                }
+                if (!roomData.match.playerStates) roomData.match.playerStates = {};
+                roomData.match.playerStates[state.myPlayerId] = createPlayerState(
+                    state.myPlayerId, roomData.initialStocks, roomData.initialWorth
+                );
 
                 roomData = validateRoomState(roomData);
 
-                transaction.update(docRef, { teams: roomData.teams, lastUpdateTime: Date.now() });
+                transaction.update(docRef, {
+                    teams: roomData.teams,
+                    match: roomData.match,
+                    lastUpdateTime: Date.now()
+                });
             });
 
+            // Success
+            state.roomId = code;
+            state.isHost = false;
+
+            persistSession();
             listenToRoom(code);
             finalizeJoinUI(code);
+
         } catch (err) {
-            console.error("Join error:", err);
+            console.error("[Game] Join error:", err);
             $("join-error").textContent = err.message || "Failed to join.";
+            state.roomId = null;
+        } finally {
+            isJoiningRoom = false;
             btn.disabled = false;
             btn.textContent = originalText;
-            state.roomId = null;
         }
     }
 
@@ -316,11 +546,12 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         if (dom.switchTeamBtn) dom.switchTeamBtn.hidden = false;
     }
 
-    function createPlayerObject(name, id, initialStocks, initialWorth) {
+    // ── PLAYER STATE FACTORY ─────────────────────────────────────────────────
+
+    function createPlayerState(playerId, initialStocks, initialWorth) {
         const initialCash = initialWorth * 2;
         return {
-            id,
-            name,
+            id: playerId,
             cash: initialCash,
             stocks: initialStocks,
             worth: initialCash + (initialStocks * initialWorth),
@@ -331,7 +562,6 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
             buys: 0,
             shorts: 0,
             initialWorth: initialCash + (initialStocks * initialWorth),
-            // ── Per-player question stream ──
             currentQuestion: null,
             questionNumber: 0,
             lastFeedback: null,
@@ -339,49 +569,80 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
     }
 
     // ── FIREBASE LISTENER ─────────────────────────────────────────────────────
+
     function listenToRoom(code) {
+        // Clean up any existing listener
+        if (state.unsubscribeRoom) {
+            state.unsubscribeRoom();
+            state.unsubscribeRoom = null;
+        }
+
         state.unsubscribeRoom = onSnapshot(doc(db, "rooms", code), (docSnapshot) => {
             if (!docSnapshot.exists()) {
-                const wasActive = state.gameActive;
-                cleanupLocalStateAndUI(wasActive ? "Host left. Match has ended." : "Host left. Room has been closed.");
+                cleanupLocalStateAndUI("Room has been closed.");
                 return;
             }
 
             const data = docSnapshot.data();
-            if (data.invalidBecauseHostLeft) {
-                const wasActive = state.gameActive;
-                cleanupLocalStateAndUI(wasActive ? "Host left. Match has ended." : "Host left. Room has been closed.");
+
+            // Validate on every snapshot
+            const validated = validateRoomState(data);
+            if (validated.invalidBecauseHostLeft) {
+                cleanupLocalStateAndUI("Host left. Room has been closed.");
                 return;
             }
 
-            const wasActive = state.gameActive;
+            const prevPhase = state.phase;
 
-            // Merge remote state into local
-            Object.assign(state, data);
-            recalcTeamWorths();
+            // ── Selective merge (don't blindly Object.assign) ──
+            state.hostId = data.hostId;
+            state.initialStocks = data.initialStocks;
+            state.initialWorth = data.initialWorth;
+            state.matchDuration = data.matchDuration;
+            state.maxTeamSize = data.maxTeamSize || MAX_TEAM_SIZE;
+            state.phase = data.phase || "waiting";
+            state.teams = validated.teams;
+            state.match = data.match || state.match;
+            state.matchNumber = data.matchNumber || 0;
 
             // Toggle switch team button visibility
             if (dom.switchTeamBtn) {
-                dom.switchTeamBtn.hidden = state.gameActive;
+                dom.switchTeamBtn.hidden = state.phase !== "waiting";
             }
 
-            // ── Transition: game just started ──
-            if (!wasActive && state.gameActive) {
+            // ── Phase transitions ──
+
+            // WAITING → PLAYING
+            if (prevPhase !== "playing" && state.phase === "playing") {
                 dom.waitingRoom.hidden = true;
+                dom.results.hidden = true;
                 dom.arena.hidden = false;
                 startCountdown();
+                // Join voice on game start
                 const myTeamId = state.teams[0].players.some(p => p.id === state.myPlayerId) ? "a" : "b";
                 joinTeamVoice(state.roomId, myTeamId, state.myPlayerId);
             }
 
-            // ── Game ended ──
-            if (state.ended) {
+            // ANY → RESULTS
+            if (prevPhase !== "results" && state.phase === "results") {
                 endGameLocal();
                 return;
             }
 
-            // ── Update UI ──
-            if (!dom.waitingRoom.hidden) {
+            // RESULTS/PLAYING → WAITING (play again)
+            if ((prevPhase === "results" || prevPhase === "playing") && state.phase === "waiting") {
+                clearInterval(countdownInterval);
+                dom.arena.hidden = true;
+                dom.results.hidden = true;
+                dom.waitingRoom.hidden = false;
+                $("waiting-room-code-display").innerHTML = `Room Code: <strong>${state.roomId}</strong>`;
+                if (state.isHost) {
+                    $("start-game-btn").hidden = false;
+                }
+            }
+
+            // ── Update UI based on current phase ──
+            if (state.phase === "waiting" && !dom.waitingRoom.hidden) {
                 renderWaitingRoom();
                 if (state.isHost) {
                     const ready = state.teams[0].players.length > 0 && state.teams[1].players.length > 0;
@@ -393,14 +654,16 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
                 } else {
                     $("waiting-message").textContent = "Waiting for host to start...";
                 }
-            } else if (!dom.arena.hidden) {
+            } else if (state.phase === "playing" && !dom.arena.hidden) {
                 renderArena();
             }
         });
     }
 
+    // ── SWITCH TEAM ──────────────────────────────────────────────────────────
+
     async function switchTeam() {
-        if (state.gameActive || state.ended || !state.roomId) return;
+        if (state.phase !== "waiting" || !state.roomId) return;
         const btn = dom.switchTeamBtn;
         if (btn) btn.disabled = true;
 
@@ -411,38 +674,48 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
                 if (!roomSnap.exists()) return;
                 let roomData = roomSnap.data();
 
-                if (roomData.gameActive || roomData.ended) {
+                if (roomData.phase !== "waiting") {
                     throw new Error("Cannot switch team after game has started.");
                 }
 
                 roomData = validateRoomState(roomData);
 
-                let playerObj = null;
+                // Find current team
                 let fromTeam = -1;
+                let playerEntry = null;
                 for (let i = 0; i < 2; i++) {
                     const idx = roomData.teams[i].players.findIndex(p => p.id === state.myPlayerId);
                     if (idx !== -1) {
-                        playerObj = roomData.teams[i].players.splice(idx, 1)[0];
+                        playerEntry = roomData.teams[i].players[idx];
                         fromTeam = i;
                         break;
                     }
                 }
 
-                if (!playerObj) return;
+                if (!playerEntry || fromTeam === -1) return;
 
                 const toTeam = fromTeam === 0 ? 1 : 0;
-                roomData.teams[toTeam].players.push(playerObj);
 
+                // Check target team size
+                if (roomData.teams[toTeam].players.length >= (roomData.maxTeamSize || MAX_TEAM_SIZE)) {
+                    throw new Error(`Team ${roomData.teams[toTeam].name} is full!`);
+                }
+
+                // Atomic move: remove from all, add to target
+                ensurePlayerInOneTeam(roomData.teams, state.myPlayerId, playerEntry, toTeam);
                 roomData = validateRoomState(roomData);
+
                 transaction.update(docRef, { teams: roomData.teams, lastUpdateTime: Date.now() });
             });
         } catch (err) {
-            console.error("Switch team failed:", err);
+            console.error("[Game] Switch team failed:", err);
             alert(err.message);
         } finally {
             if (btn) btn.disabled = false;
         }
     }
+
+    // ── LEAVE ROOM ───────────────────────────────────────────────────────────
 
     async function leaveRoom() {
         if (!state.roomId) return;
@@ -452,23 +725,35 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         try {
             const docRef = doc(db, "rooms", state.roomId);
             if (state.isHost) {
+                // Host leaving destroys the room
                 await deleteDoc(docRef);
             } else {
+                // Player leaving removes themselves
                 await runTransaction(db, async (transaction) => {
                     const roomSnap = await transaction.get(docRef);
                     if (!roomSnap.exists()) return;
                     let roomData = roomSnap.data();
-                    
+
+                    // Remove from teams
                     for (let i = 0; i < 2; i++) {
                         roomData.teams[i].players = roomData.teams[i].players.filter(p => p.id !== state.myPlayerId);
                     }
-                    
+
+                    // Remove from match playerStates
+                    if (roomData.match && roomData.match.playerStates) {
+                        delete roomData.match.playerStates[state.myPlayerId];
+                    }
+
                     roomData = validateRoomState(roomData);
-                    transaction.update(docRef, { teams: roomData.teams, lastUpdateTime: Date.now() });
+                    transaction.update(docRef, {
+                        teams: roomData.teams,
+                        match: roomData.match,
+                        lastUpdateTime: Date.now()
+                    });
                 });
             }
         } catch (err) {
-            console.error("Error leaving room:", err);
+            console.error("[Game] Error leaving room:", err);
         } finally {
             if (btn) btn.disabled = false;
         }
@@ -476,22 +761,41 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
     }
 
     function cleanupLocalStateAndUI(msg = "") {
+        // Unsubscribe Firestore listener
         if (state.unsubscribeRoom) {
             state.unsubscribeRoom();
             state.unsubscribeRoom = null;
         }
+
+        // Clear countdown
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+
+        // Leave voice chat
+        leaveVoice();
+
+        // Clear session
+        clearSession();
+
+        // Reset state
         state.roomId = null;
         state.isHost = false;
-        state.gameActive = false;
-        state.ended = false;
-        
+        state.phase = "waiting";
+        state.hostId = null;
+
+        // Reset UI
         dom.waitingRoom.hidden = true;
         dom.arena.hidden = true;
         dom.results.hidden = true;
         dom.landing.hidden = false;
-        
+
         $("join-room-btn").disabled = false;
         $("join-room-btn").textContent = "JOIN ROOM";
+
+        // Reset operation flags
+        isCreatingRoom = false;
+        isJoiningRoom = false;
+        isSubmitting = false;
 
         if (msg) alert(msg);
     }
@@ -499,29 +803,60 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
     function handleDisconnect() {
         if (!state.roomId) return;
         const docRef = doc(db, "rooms", state.roomId);
+
         if (state.isHost) {
-            deleteDoc(docRef).catch(()=>{});
+            // Host leaving: delete the room (fire-and-forget during unload)
+            deleteDoc(docRef).catch(() => {});
         } else {
-            runTransaction(db, async (transaction) => {
-                const snap = await transaction.get(docRef);
+            // Player leaving: remove from room
+            // For unload reliability, use getDoc + updateDoc instead of transaction
+            // (transactions may not complete during page unload)
+            getDoc(docRef).then(snap => {
                 if (!snap.exists()) return;
                 const data = snap.data();
                 for (let i = 0; i < 2; i++) {
                     data.teams[i].players = data.teams[i].players.filter(p => p.id !== state.myPlayerId);
                 }
-                transaction.update(docRef, { teams: data.teams });
-            }).catch(()=>{});
+                if (data.match && data.match.playerStates) {
+                    delete data.match.playerStates[state.myPlayerId];
+                }
+                updateDoc(docRef, {
+                    teams: data.teams,
+                    match: data.match
+                }).catch(() => {});
+            }).catch(() => {});
         }
+
+        // Best-effort voice cleanup
+        leaveVoice();
     }
 
+    // ── WAITING ROOM RENDER ──────────────────────────────────────────────────
+
     function renderWaitingRoom() {
+        const maxSize = state.maxTeamSize || MAX_TEAM_SIZE;
         const teamA = $("lobby-team-a");
         const teamB = $("lobby-team-b");
-        teamA.innerHTML = state.teams[0].players.map(p => `<div class="game-roster-row"><span class="game-roster-name">${escapeHtml(p.name)}</span></div>`).join("");
-        teamB.innerHTML = state.teams[1].players.map(p => `<div class="game-roster-row"><span class="game-roster-name">${escapeHtml(p.name)}</span></div>`).join("");
+
+        // Update team count headers
+        const teamAHeader = $("lobby-team-a-count");
+        const teamBHeader = $("lobby-team-b-count");
+        if (teamAHeader) teamAHeader.textContent = `(${state.teams[0].players.length}/${maxSize})`;
+        if (teamBHeader) teamBHeader.textContent = `(${state.teams[1].players.length}/${maxSize})`;
+
+        teamA.innerHTML = state.teams[0].players.map(p => {
+            const isMe = p.id === state.myPlayerId;
+            return `<div class="game-roster-row${isMe ? ' game-roster-active' : ''}"><span class="game-roster-name">${escapeHtml(p.name)}${isMe ? ' (you)' : ''}${p.id === state.hostId ? ' ★' : ''}</span></div>`;
+        }).join("") || '<div style="color:var(--muted);padding:12px;text-align:center;font-size:13px;">No players yet</div>';
+
+        teamB.innerHTML = state.teams[1].players.map(p => {
+            const isMe = p.id === state.myPlayerId;
+            return `<div class="game-roster-row${isMe ? ' game-roster-active' : ''}"><span class="game-roster-name">${escapeHtml(p.name)}${isMe ? ' (you)' : ''}${p.id === state.hostId ? ' ★' : ''}</span></div>`;
+        }).join("") || '<div style="color:var(--muted);padding:12px;text-align:center;font-size:13px;">No players yet</div>';
     }
 
     // ── GAME START ────────────────────────────────────────────────────────────
+
     async function startGame() {
         if (!state.isHost) return;
         if (state.teams[0].players.length === 0 || state.teams[1].players.length === 0) {
@@ -529,42 +864,110 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
             return;
         }
 
-        // Generate a unique question for EACH player
-        state.teams.forEach(team => {
-            team.players.forEach(player => {
-                player.currentQuestion = generateQuestion();
-                player.questionNumber = 1;
-                player.lastFeedback = null;
+        const btn = $("start-game-btn");
+        btn.disabled = true;
+
+        try {
+            const docRef = doc(db, "rooms", state.roomId);
+
+            await runTransaction(db, async (transaction) => {
+                const snap = await transaction.get(docRef);
+                if (!snap.exists()) throw new Error("Room not found");
+                const roomData = snap.data();
+
+                if (roomData.phase !== "waiting") {
+                    throw new Error("Game already started");
+                }
+
+                const initialStocks = roomData.initialStocks;
+                const initialWorth = roomData.initialWorth;
+
+                // Build fresh playerStates for all players
+                const playerStates = {};
+                roomData.teams.forEach(team => {
+                    team.players.forEach(player => {
+                        const ps = createPlayerState(player.id, initialStocks, initialWorth);
+                        // Generate initial question
+                        ps.currentQuestion = generateQuestion();
+                        ps.questionNumber = 1;
+                        playerStates[player.id] = ps;
+                    });
+                });
+
+                const gameStartTime = Date.now();
+
+                transaction.update(docRef, {
+                    phase: "playing",
+                    match: {
+                        gameStartTime,
+                        stockWorth: initialWorth,
+                        worthHistory: [initialWorth],
+                        totalBuys: 0,
+                        totalSells: 0,
+                        playerStates
+                    },
+                    matchNumber: (roomData.matchNumber || 0) + 1,
+                    lastUpdateTime: Date.now()
+                });
             });
-        });
-
-        state.gameStartTime = Date.now();
-
-        await updateDoc(doc(db, "rooms", state.roomId), {
-            gameActive: true,
-            ended: false,
-            stockWorth: state.stockWorth,
-            worthHistory: state.worthHistory,
-            totalBuys: 0,
-            totalSells: 0,
-            teams: state.teams,
-            gameStartTime: state.gameStartTime,
-            lastUpdateTime: Date.now()
-        });
+        } catch (err) {
+            console.error("[Game] Start game failed:", err);
+            alert(err.message || "Failed to start game.");
+            btn.disabled = false;
+        }
     }
 
-    async function updateRoomState() {
-        await updateDoc(doc(db, "rooms", state.roomId), {
-            gameActive: state.gameActive,
-            ended: state.ended,
-            stockWorth: state.stockWorth,
-            worthHistory: state.worthHistory,
-            totalBuys: state.totalBuys,
-            totalSells: state.totalSells,
-            teams: state.teams,
-            gameStartTime: state.gameStartTime,
-            lastUpdateTime: Date.now()
-        });
+    // ── PLAY AGAIN (RESET FOR NEXT MATCH) ────────────────────────────────────
+
+    async function resetForNextMatch() {
+        if (!state.isHost) {
+            // Non-host: the host will trigger the reset, we react via listener
+            // But if non-host clicks, we just show a message
+            alert("Waiting for host to start a new match...");
+            return;
+        }
+
+        const btn = dom.playAgainBtn;
+        if (btn) btn.disabled = true;
+
+        try {
+            const docRef = doc(db, "rooms", state.roomId);
+
+            await runTransaction(db, async (transaction) => {
+                const snap = await transaction.get(docRef);
+                if (!snap.exists()) throw new Error("Room not found");
+                const roomData = snap.data();
+
+                const initialStocks = roomData.initialStocks;
+                const initialWorth = roomData.initialWorth;
+
+                // Build fresh playerStates (reset stats, keep players)
+                const playerStates = {};
+                roomData.teams.forEach(team => {
+                    team.players.forEach(player => {
+                        playerStates[player.id] = createPlayerState(player.id, initialStocks, initialWorth);
+                    });
+                });
+
+                transaction.update(docRef, {
+                    phase: "waiting",
+                    match: {
+                        gameStartTime: 0,
+                        stockWorth: initialWorth,
+                        worthHistory: [initialWorth],
+                        totalBuys: 0,
+                        totalSells: 0,
+                        playerStates
+                    },
+                    lastUpdateTime: Date.now()
+                });
+            });
+        } catch (err) {
+            console.error("[Game] Reset for next match failed:", err);
+            alert("Failed to reset. Try again.");
+        } finally {
+            if (btn) btn.disabled = false;
+        }
     }
 
     // ── GAMEPLAY — CONTINUOUS TRADING ─────────────────────────────────────────
@@ -590,21 +993,17 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
     function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 
     /**
-     * Core trade execution — runs on the submitting client.
+     * Core trade execution — uses Firestore transaction to prevent overwrites.
+     * 
      * 1. Validate answer against player's own question
      * 2. Execute buy/sell/hold trade immediately
      * 3. Update stock price based on single trade pressure
-     * 4. Recalculate all worths
-     * 5. Generate next question for this player
-     * 6. Write everything to Firestore
+     * 4. Generate next question for this player
+     * 5. Atomically write to Firestore
      */
     async function handleAnswer(e) {
         e.preventDefault();
-        if (!state.gameActive || state.ended || isSubmitting) return;
-
-        // Find my player object
-        const myPlayer = findMyPlayer();
-        if (!myPlayer || !myPlayer.currentQuestion) return;
+        if (state.phase !== "playing" || isSubmitting) return;
 
         // Prevent double-submit
         isSubmitting = true;
@@ -612,125 +1011,197 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
 
         const inputStr = dom.answerInput.value.trim().toLowerCase();
         const regex = /^([+-]?\d+)(?:\s*([bs\+\-]))?$/i;
-        const match = inputStr.match(regex);
+        const matchResult = inputStr.match(regex);
 
-        const submittedAnswer = match ? parseInt(match[1]) : NaN;
-        const tradeAction = match ? match[2] : null;
-        const correctAnswer = myPlayer.currentQuestion.answer;
-        const isCorrect = submittedAnswer === correctAnswer;
-
-        // ── Execute trade immediately ──
-        if (isCorrect) {
-            myPlayer.correct += 1;
-            myPlayer.score += 1;
-
-            if (tradeAction === 'b' || tradeAction === '+') {
-                // BUY
-                if (myPlayer.cash >= state.stockWorth) {
-                    myPlayer.cash -= state.stockWorth;
-                    myPlayer.stocks += 1;
-                    myPlayer.trades += 1;
-                    myPlayer.buys += 1;
-                    state.totalBuys += 1;
-                    // Buy pressure raises price
-                    applyTradePressure(1);
-                }
-                myPlayer.lastFeedback = {
-                    text: `✓ Correct! Bought 1 stock at $${state.stockWorth.toFixed(2)}`,
-                    className: "game-feedback game-feedback-correct"
-                };
-            } else if (tradeAction === 's' || tradeAction === '-') {
-                // SELL / SHORT
-                myPlayer.cash += state.stockWorth;
-                myPlayer.stocks -= 1;
-                myPlayer.trades += 1;
-                myPlayer.shorts += 1;
-                state.totalSells += 1;
-                // Sell pressure lowers price
-                applyTradePressure(-1);
-                myPlayer.lastFeedback = {
-                    text: `✓ Correct! Sold 1 stock at $${state.stockWorth.toFixed(2)}`,
-                    className: "game-feedback game-feedback-correct"
-                };
-            } else {
-                // HOLD — correct answer but no trade action
-                myPlayer.lastFeedback = {
-                    text: `✓ Correct! Holding position.`,
-                    className: "game-feedback game-feedback-correct"
-                };
-            }
-        } else {
-            // Wrong answer — penalty
-            myPlayer.wrong += 1;
-            const penalty = Math.round(state.initialWorth * 0.1) || 10;
-            myPlayer.cash -= penalty;
-            myPlayer.lastFeedback = {
-                text: `✗ Wrong! Answer was ${correctAnswer}. Penalty: -$${penalty}`,
-                className: "game-feedback game-feedback-wrong"
-            };
+        if (!matchResult) {
+            // Invalid input format
+            dom.answerInput.value = "";
+            dom.answerInput.disabled = false;
+            isSubmitting = false;
+            setTimeout(() => dom.answerInput.focus(), 50);
+            return;
         }
 
-        // ── Generate next question for this player ──
-        myPlayer.questionNumber += 1;
-        myPlayer.currentQuestion = generateQuestion();
+        const submittedAnswer = parseInt(matchResult[1]);
+        const tradeAction = matchResult[2];
 
-        // ── Recalculate all worths ──
-        recalcTeamWorths();
-
-        // ── Check if game time expired ──
-        checkTimeExpired();
-
-        // ── Write updated state to Firestore ──
         try {
-            await updateRoomState();
+            const docRef = doc(db, "rooms", state.roomId);
+
+            await runTransaction(db, async (transaction) => {
+                const snap = await transaction.get(docRef);
+                if (!snap.exists()) throw new Error("Room gone");
+                const roomData = snap.data();
+
+                if (roomData.phase !== "playing") return;
+
+                const myState = roomData.match.playerStates[state.myPlayerId];
+                if (!myState || !myState.currentQuestion) return;
+
+                const correctAnswer = myState.currentQuestion.answer;
+                const isCorrect = submittedAnswer === correctAnswer;
+
+                let stockWorth = roomData.match.stockWorth;
+                let worthHistory = roomData.match.worthHistory || [];
+                let totalBuys = roomData.match.totalBuys || 0;
+                let totalSells = roomData.match.totalSells || 0;
+
+                if (isCorrect) {
+                    myState.correct += 1;
+                    myState.score += 1;
+
+                    if (tradeAction === 'b' || tradeAction === '+') {
+                        // BUY
+                        if (myState.cash >= stockWorth) {
+                            myState.cash -= stockWorth;
+                            myState.stocks += 1;
+                            myState.trades += 1;
+                            myState.buys += 1;
+                            totalBuys += 1;
+                            // Buy pressure raises price
+                            const volatility = 1.5 + Math.random() * 2.5;
+                            stockWorth += volatility;
+                            stockWorth += (Math.random() - 0.5) * 1.5;
+                            if (stockWorth < 1) stockWorth = 1;
+                            stockWorth = Math.round(stockWorth * 100) / 100;
+                            worthHistory.push(stockWorth);
+                        }
+                        myState.lastFeedback = {
+                            text: `✓ Correct! Bought 1 stock at $${stockWorth.toFixed(2)}`,
+                            className: "game-feedback game-feedback-correct"
+                        };
+                    } else if (tradeAction === 's' || tradeAction === '-') {
+                        // SELL / SHORT
+                        myState.cash += stockWorth;
+                        myState.stocks -= 1;
+                        myState.trades += 1;
+                        myState.shorts += 1;
+                        totalSells += 1;
+                        // Sell pressure lowers price
+                        const volatility = 1.5 + Math.random() * 2.5;
+                        stockWorth -= volatility;
+                        stockWorth += (Math.random() - 0.5) * 1.5;
+                        if (stockWorth < 1) stockWorth = 1;
+                        stockWorth = Math.round(stockWorth * 100) / 100;
+                        worthHistory.push(stockWorth);
+                        myState.lastFeedback = {
+                            text: `✓ Correct! Sold 1 stock at $${stockWorth.toFixed(2)}`,
+                            className: "game-feedback game-feedback-correct"
+                        };
+                    } else {
+                        // HOLD
+                        myState.lastFeedback = {
+                            text: `✓ Correct! Holding position.`,
+                            className: "game-feedback game-feedback-correct"
+                        };
+                    }
+                } else {
+                    // Wrong answer — penalty
+                    myState.wrong += 1;
+                    const penalty = Math.round((roomData.initialWorth || 100) * 0.1) || 10;
+                    myState.cash -= penalty;
+                    myState.lastFeedback = {
+                        text: `✗ Wrong! Answer was ${correctAnswer}. Penalty: -$${penalty}`,
+                        className: "game-feedback game-feedback-wrong"
+                    };
+                }
+
+                // Generate next question
+                myState.questionNumber += 1;
+                myState.currentQuestion = generateQuestion();
+
+                // Recalculate this player's worth
+                myState.worth = Math.round((myState.cash + (myState.stocks * stockWorth)) * 100) / 100;
+
+                // Check if game time expired
+                let phase = roomData.phase;
+                if (roomData.match.gameStartTime && roomData.matchDuration) {
+                    const elapsed = (Date.now() - roomData.match.gameStartTime) / 1000;
+                    if (elapsed >= roomData.matchDuration) {
+                        phase = "results";
+                    }
+                }
+
+                // Write updated state
+                const updatedMatch = {
+                    ...roomData.match,
+                    stockWorth,
+                    worthHistory,
+                    totalBuys,
+                    totalSells,
+                    playerStates: {
+                        ...roomData.match.playerStates,
+                        [state.myPlayerId]: myState
+                    }
+                };
+
+                transaction.update(docRef, {
+                    phase,
+                    match: updatedMatch,
+                    lastUpdateTime: Date.now()
+                });
+            });
+
         } catch (err) {
-            console.error("Failed to update room state:", err);
+            console.error("[Game] Trade failed:", err);
         }
 
-        // ── Reset input for next question ──
+        // Reset input for next question
         dom.answerInput.value = "";
         dom.answerInput.disabled = false;
         isSubmitting = false;
 
-        if (!state.ended) {
+        if (state.phase === "playing") {
             setTimeout(() => dom.answerInput.focus(), 50);
         }
     }
 
+    // ── TEAM WORTH CALCULATION ────────────────────────────────────────────────
+
     /**
-     * Apply single-trade price pressure to the stock.
-     * direction: +1 for buy, -1 for sell
+     * Calculate team aggregates from match.playerStates and team membership.
+     * Returns computed team data for rendering.
      */
-    function applyTradePressure(direction) {
-        const volatility = 1.5 + Math.random() * 2.5;
-        state.stockWorth += direction * volatility;
-        state.stockWorth += (Math.random() - 0.5) * 1.5; // small drift
-        if (state.stockWorth < 1) state.stockWorth = 1;
-        state.stockWorth = Math.round(state.stockWorth * 100) / 100;
-        state.worthHistory.push(state.stockWorth);
-    }
+    function getTeamComputedData(teamIdx) {
+        const team = state.teams[teamIdx];
+        const ps = state.match.playerStates || {};
+        const stockWorth = state.match.stockWorth || 0;
 
-    function recalcTeamWorths() {
-        state.teams.forEach((team) => {
-            let tStocks = 0, tCash = 0, tWorth = 0;
-            team.players.forEach((p) => {
-                p.worth = Math.round((p.cash + (p.stocks * state.stockWorth)) * 100) / 100;
-                tStocks += p.stocks;
-                tCash += p.cash;
-                tWorth += p.worth;
-            });
-            team.stocks = tStocks;
-            team.cash = tCash;
-            team.totalWorth = Math.round(tWorth * 100) / 100;
+        let tStocks = 0, tCash = 0, tWorth = 0;
+        const playersWithStats = [];
+
+        team.players.forEach(p => {
+            const playerState = ps[p.id];
+            if (playerState) {
+                const worth = Math.round((playerState.cash + (playerState.stocks * stockWorth)) * 100) / 100;
+                playersWithStats.push({
+                    ...p,
+                    ...playerState,
+                    worth
+                });
+                tStocks += playerState.stocks;
+                tCash += playerState.cash;
+                tWorth += worth;
+            } else {
+                playersWithStats.push({
+                    ...p,
+                    cash: 0, stocks: 0, worth: 0, trades: 0,
+                    correct: 0, wrong: 0, buys: 0, shorts: 0,
+                    initialWorth: 0
+                });
+            }
         });
+
+        return {
+            stocks: tStocks,
+            cash: tCash,
+            totalWorth: Math.round(tWorth * 100) / 100,
+            players: playersWithStats
+        };
     }
 
-    function findMyPlayer() {
-        for (const team of state.teams) {
-            const player = team.players.find(p => p.id === state.myPlayerId);
-            if (player) return player;
-        }
-        return null;
+    function findMyPlayerState() {
+        return state.match.playerStates ? state.match.playerStates[state.myPlayerId] : null;
     }
 
     // ── TIME-BASED GAME END ───────────────────────────────────────────────────
@@ -738,7 +1209,7 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
     function startCountdown() {
         clearInterval(countdownInterval);
         countdownInterval = setInterval(() => {
-            if (!state.gameActive || state.ended) {
+            if (state.phase !== "playing") {
                 clearInterval(countdownInterval);
                 return;
             }
@@ -753,8 +1224,8 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
     }
 
     function getRemainingTime() {
-        if (!state.gameStartTime || !state.matchDuration) return 0;
-        const elapsed = (Date.now() - state.gameStartTime) / 1000;
+        if (!state.match.gameStartTime || !state.matchDuration) return 0;
+        const elapsed = (Date.now() - state.match.gameStartTime) / 1000;
         return Math.max(0, state.matchDuration - elapsed);
     }
 
@@ -764,36 +1235,40 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         return `${m}:${s.toString().padStart(2, '0')}`;
     }
 
-    function checkTimeExpired() {
-        if (getRemainingTime() <= 0) {
-            state.ended = true;
-            state.gameActive = false;
-        }
-    }
-
     async function endGameByTime() {
-        state.ended = true;
-        state.gameActive = false;
-        recalcTeamWorths();
+        clearInterval(countdownInterval);
         try {
-            await updateRoomState();
+            const docRef = doc(db, "rooms", state.roomId);
+            await runTransaction(db, async (transaction) => {
+                const snap = await transaction.get(docRef);
+                if (!snap.exists()) return;
+                const roomData = snap.data();
+                if (roomData.phase !== "playing") return; // Already ended
+
+                transaction.update(docRef, {
+                    phase: "results",
+                    lastUpdateTime: Date.now()
+                });
+            });
         } catch (err) {
-            console.error("Failed to end game:", err);
+            console.error("[Game] Failed to end game:", err);
         }
     }
 
     // ── RENDERING ─────────────────────────────────────────────────────────────
 
     function renderArena() {
-        const myPlayer = findMyPlayer();
+        const myState = findMyPlayerState();
+        const teamAData = getTeamComputedData(0);
+        const teamBData = getTeamComputedData(1);
 
         // Trades count
         if (dom.tradesDisplay) {
-            dom.tradesDisplay.textContent = myPlayer ? `${myPlayer.trades}` : "0";
+            dom.tradesDisplay.textContent = myState ? `${myState.trades}` : "0";
         }
 
         // Stock worth
-        dom.worthDisplay.textContent = state.stockWorth.toFixed(2);
+        dom.worthDisplay.textContent = (state.match.stockWorth || 0).toFixed(2);
 
         // Market status
         if (dom.marketStatus) {
@@ -809,33 +1284,30 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         dom.teamADisplay.textContent = state.teams[0].name.toUpperCase();
         dom.teamBDisplay.textContent = state.teams[1].name.toUpperCase();
 
-        dom.teamAWorth.textContent = state.teams[0].totalWorth.toFixed(2);
-        dom.teamBWorth.textContent = state.teams[1].totalWorth.toFixed(2);
-        dom.teamAStocks.textContent = state.teams[0].stocks;
-        dom.teamBStocks.textContent = state.teams[1].stocks;
-        dom.teamACash.textContent = state.teams[0].cash.toFixed(1);
-        dom.teamBCash.textContent = state.teams[1].cash.toFixed(1);
+        dom.teamAWorth.textContent = teamAData.totalWorth.toFixed(2);
+        dom.teamBWorth.textContent = teamBData.totalWorth.toFixed(2);
+        dom.teamAStocks.textContent = teamAData.stocks;
+        dom.teamBStocks.textContent = teamBData.stocks;
+        dom.teamACash.textContent = teamAData.cash.toFixed(1);
+        dom.teamBCash.textContent = teamBData.cash.toFixed(1);
 
-        renderRoster(dom.teamARoster, state.teams[0].players);
-        renderRoster(dom.teamBRoster, state.teams[1].players);
+        renderRoster(dom.teamARoster, teamAData.players);
+        renderRoster(dom.teamBRoster, teamBData.players);
 
-        // ── Per-player question rendering ──
-        if (myPlayer && myPlayer.currentQuestion) {
-            dom.questionText.textContent = myPlayer.currentQuestion.text;
+        // Per-player question rendering
+        if (myState && myState.currentQuestion) {
+            dom.questionText.textContent = myState.currentQuestion.text;
             dom.answerInput.disabled = false;
             dom.answerInput.placeholder = "e.g. 7 b (buy) or 7 s (sell)";
-            if (document.activeElement !== dom.answerInput && !isSubmitting) {
-                // Don't steal focus if user is typing
-            }
         } else {
             dom.questionText.textContent = "Waiting for game to start...";
             dom.answerInput.disabled = true;
         }
 
-        // ── Per-player feedback ──
-        if (myPlayer && myPlayer.lastFeedback) {
-            dom.feedback.textContent = myPlayer.lastFeedback.text;
-            dom.feedback.className = myPlayer.lastFeedback.className;
+        // Per-player feedback
+        if (myState && myState.lastFeedback) {
+            dom.feedback.textContent = myState.lastFeedback.text;
+            dom.feedback.className = myState.lastFeedback.className;
         } else {
             dom.feedback.textContent = "";
             dom.feedback.className = "game-feedback";
@@ -850,13 +1322,13 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
             return `<div class="game-roster-row ${isMe ? 'game-roster-active' : ''}">
                 <span class="game-roster-name">${escapeHtml(p.name)}${isMe ? ' (you)' : ''}</span>
                 <span class="game-roster-stats">
-                    <span class="game-mono">$${p.cash.toFixed(0)}</span> cash
+                    <span class="game-mono">$${(p.cash || 0).toFixed(0)}</span> cash
                     <span class="game-roster-sep">·</span>
-                    <span class="game-mono">${p.stocks}</span> stk
+                    <span class="game-mono">${p.stocks || 0}</span> stk
                     <span class="game-roster-sep">·</span>
-                    <span class="game-mono">$${p.worth.toFixed(1)}</span> val
+                    <span class="game-mono">$${(p.worth || 0).toFixed(1)}</span> val
                     <span class="game-roster-sep">·</span>
-                    <span class="game-mono">${p.trades}</span> trades
+                    <span class="game-mono">${p.trades || 0}</span> trades
                 </span>
             </div>`;
         }).join("");
@@ -864,41 +1336,50 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
 
     function endGameLocal() {
         clearInterval(countdownInterval);
-        recalcTeamWorths();
+
+        const teamAData = getTeamComputedData(0);
+        const teamBData = getTeamComputedData(1);
 
         let mvp = null;
         let mvpWorth = -Infinity;
-        state.teams.forEach((team) => {
-            team.players.forEach((p) => {
-                if (p.worth > mvpWorth) { mvpWorth = p.worth; mvp = p; }
+        [teamAData, teamBData].forEach(teamData => {
+            teamData.players.forEach(p => {
+                if ((p.worth || 0) > mvpWorth) { mvpWorth = p.worth; mvp = p; }
             });
         });
 
-        const winner = state.teams[0].totalWorth >= state.teams[1].totalWorth ? state.teams[0] : state.teams[1];
-        const isTie = state.teams[0].totalWorth === state.teams[1].totalWorth;
+        const winner = teamAData.totalWorth >= teamBData.totalWorth ? teamAData : teamBData;
+        const winnerName = teamAData.totalWorth >= teamBData.totalWorth ? state.teams[0].name : state.teams[1].name;
+        const isTie = teamAData.totalWorth === teamBData.totalWorth;
 
         dom.arena.hidden = true;
         dom.results.hidden = false;
 
         dom.resultMvpName.textContent = mvp ? mvp.name : "—";
         dom.resultMvpWorth.textContent = mvp ? `Worth: ${mvp.worth.toFixed(2)}` : "";
-        dom.resultWinnerName.textContent = isTie ? "TIE" : winner.name.toUpperCase();
-        dom.resultWinnerWorth.textContent = isTie ? `Both: ${state.teams[0].totalWorth.toFixed(2)}` : `Worth: ${winner.totalWorth.toFixed(2)}`;
+        dom.resultWinnerName.textContent = isTie ? "TIE" : winnerName.toUpperCase();
+        dom.resultWinnerWorth.textContent = isTie ? `Both: ${teamAData.totalWorth.toFixed(2)}` : `Worth: ${winner.totalWorth.toFixed(2)}`;
 
         dom.resultTeamAName.textContent = state.teams[0].name.toUpperCase();
         dom.resultTeamBName.textContent = state.teams[1].name.toUpperCase();
-        dom.resultTeamAWorth.textContent = state.teams[0].totalWorth.toFixed(2);
-        dom.resultTeamBWorth.textContent = state.teams[1].totalWorth.toFixed(2);
+        dom.resultTeamAWorth.textContent = teamAData.totalWorth.toFixed(2);
+        dom.resultTeamBWorth.textContent = teamBData.totalWorth.toFixed(2);
 
-        renderResultRoster(dom.resultTeamARoster, state.teams[0].players);
-        renderResultRoster(dom.resultTeamBRoster, state.teams[1].players);
+        renderResultRoster(dom.resultTeamARoster, teamAData.players);
+        renderResultRoster(dom.resultTeamBRoster, teamBData.players);
 
         drawChart(dom.resultChart);
+
+        // Show/hide play again based on host status
+        if (dom.playAgainBtn) {
+            dom.playAgainBtn.textContent = state.isHost ? "PLAY AGAIN" : "WAITING FOR HOST...";
+            dom.playAgainBtn.disabled = !state.isHost;
+        }
     }
 
     function renderResultRoster(container, players) {
         container.innerHTML = players.map(p => {
-            const pnl = p.worth - p.initialWorth;
+            const pnl = (p.worth || 0) - (p.initialWorth || 0);
             const pnlColor = pnl >= 0 ? 'var(--success)' : 'var(--danger)';
             const pnlSign = pnl >= 0 ? '+' : '';
             return `<div class="game-roster-row" style="display:flex; flex-direction:column; align-items:flex-start; padding: 12px; gap: 8px;">
@@ -907,11 +1388,11 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
                     <span class="game-mono" style="font-size:16px; color:${pnlColor}">${pnlSign}$${Math.abs(pnl).toFixed(2)}</span>
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; width: 100%; gap: 4px; font-size: 13px; color: var(--muted);">
-                    <div>Answers: <span class="game-mono" style="color:var(--text)">${p.correct}✓ ${p.wrong}✗</span></div>
+                    <div>Answers: <span class="game-mono" style="color:var(--text)">${p.correct || 0}✓ ${p.wrong || 0}✗</span></div>
                     <div>Buys/Shorts: <span class="game-mono" style="color:var(--text)">${p.buys || 0} / ${p.shorts || 0}</span></div>
-                    <div>Cash: <span class="game-mono" style="color:var(--text)">$${p.cash.toFixed(1)}</span></div>
-                    <div>Stocks: <span class="game-mono" style="color:var(--text)">${p.stocks}</span></div>
-                    <div>Total Trades: <span class="game-mono" style="color:var(--text)">${p.trades}</span></div>
+                    <div>Cash: <span class="game-mono" style="color:var(--text)">$${(p.cash || 0).toFixed(1)}</span></div>
+                    <div>Stocks: <span class="game-mono" style="color:var(--text)">${p.stocks || 0}</span></div>
+                    <div>Total Trades: <span class="game-mono" style="color:var(--text)">${p.trades || 0}</span></div>
                 </div>
             </div>`;
         }).join("");
@@ -930,7 +1411,7 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         canvas.style.height = h + "px";
         const ctx = canvas.getContext("2d");
         ctx.scale(dpr, dpr);
-        const data = state.worthHistory;
+        const data = state.match.worthHistory || [];
         if (!data || data.length < 2) {
             ctx.fillStyle = "#94a3b8";
             ctx.font = "12px 'JetBrains Mono', monospace";
