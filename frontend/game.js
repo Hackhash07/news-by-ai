@@ -1035,14 +1035,16 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
 
                 if (roomData.phase !== "playing") return;
 
-                const myState = roomData.match.playerStates[state.myPlayerId];
+                // Deep clone to prevent mutating Firestore's local cache directly
+                const myState = JSON.parse(JSON.stringify(roomData.match.playerStates[state.myPlayerId]));
                 if (!myState || !myState.currentQuestion) return;
 
                 const correctAnswer = myState.currentQuestion.answer;
                 const isCorrect = submittedAnswer === correctAnswer;
 
                 let stockWorth = roomData.match.stockWorth;
-                let worthHistory = roomData.match.worthHistory || [];
+                // Clone the history array
+                let worthHistory = [...(roomData.match.worthHistory || [])];
                 let totalBuys = roomData.match.totalBuys || 0;
                 let totalSells = roomData.match.totalSells || 0;
 
@@ -1065,13 +1067,19 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
                             if (stockWorth < 1) stockWorth = 1;
                             stockWorth = Math.round(stockWorth * 100) / 100;
                             worthHistory.push(stockWorth);
+                            
+                            myState.lastFeedback = {
+                                text: `✓ Correct! Bought 1 stock at $${stockWorth.toFixed(2)}`,
+                                className: "game-feedback game-feedback-correct"
+                            };
+                        } else {
+                            myState.lastFeedback = {
+                                text: `✓ Correct! But insufficient cash to buy.`,
+                                className: "game-feedback game-feedback-wrong"
+                            };
                         }
-                        myState.lastFeedback = {
-                            text: `✓ Correct! Bought 1 stock at $${stockWorth.toFixed(2)}`,
-                            className: "game-feedback game-feedback-correct"
-                        };
                     } else if (tradeAction === 's' || tradeAction === '-') {
-                        // SELL / SHORT
+                        // SELL
                         myState.cash += stockWorth;
                         myState.stocks -= 1;
                         myState.trades += 1;
@@ -1389,7 +1397,7 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; width: 100%; gap: 4px; font-size: 13px; color: var(--muted);">
                     <div>Answers: <span class="game-mono" style="color:var(--text)">${p.correct || 0}✓ ${p.wrong || 0}✗</span></div>
-                    <div>Buys/Shorts: <span class="game-mono" style="color:var(--text)">${p.buys || 0} / ${p.shorts || 0}</span></div>
+                    <div>Buys/Sells: <span class="game-mono" style="color:var(--text)">${p.buys || 0} / ${p.shorts || 0}</span></div>
                     <div>Cash: <span class="game-mono" style="color:var(--text)">$${(p.cash || 0).toFixed(1)}</span></div>
                     <div>Stocks: <span class="game-mono" style="color:var(--text)">${p.stocks || 0}</span></div>
                     <div>Total Trades: <span class="game-mono" style="color:var(--text)">${p.trades || 0}</span></div>
