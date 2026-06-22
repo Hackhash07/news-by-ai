@@ -1,5 +1,5 @@
 import { db } from './firebase.js';
-import { doc, setDoc, onSnapshot, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { doc, setDoc, onSnapshot, updateDoc, getDoc, runTransaction, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { joinTeamVoice, toggleMute } from "./voice.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -74,6 +74,9 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         dom.answerInput   = $("game-answer-input");
         dom.feedback      = $("game-feedback");
 
+        dom.switchTeamBtn = $("switch-team-btn");
+        dom.leaveRoomBtn  = $("leave-room-btn");
+
         dom.chartCanvas   = $("game-chart-canvas");
 
         dom.resultMvpName    = $("result-mvp-name");
@@ -112,6 +115,11 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         $("join-room-btn").addEventListener("click", joinRoom);
         $("start-game-btn").addEventListener("click", startGame);
 
+        if (dom.switchTeamBtn) dom.switchTeamBtn.addEventListener("click", switchTeam);
+        if (dom.leaveRoomBtn) dom.leaveRoomBtn.addEventListener("click", leaveRoom);
+
+        window.addEventListener("beforeunload", handleDisconnect);
+
         dom.answerForm.addEventListener("submit", handleAnswer);
 
         dom.playAgainBtn.addEventListener("click", () => {
@@ -128,11 +136,55 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         return Math.random().toString(36).substring(2, 8).toUpperCase();
     }
 
+    function getMyPlayerId() {
+        let id = sessionStorage.getItem("tt_player_id");
+        if (!id) {
+            id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
+            sessionStorage.setItem("tt_player_id", id);
+        }
+        return id;
+    }
+
+    function validateRoomState(roomData, isHostLeaving = false) {
+        if (isHostLeaving || !roomData) return roomData;
+
+        const seenIds = new Set();
+        let hostExists = false;
+
+        for (const team of roomData.teams) {
+            const uniquePlayers = [];
+            for (const p of team.players) {
+                if (!seenIds.has(p.id)) {
+                    seenIds.add(p.id);
+                    uniquePlayers.push(p);
+                    if (p.id === roomData.hostId) {
+                        hostExists = true;
+                    }
+                }
+            }
+            team.players = uniquePlayers;
+        }
+
+        if (!hostExists && roomData.hostId) {
+            roomData.invalidBecauseHostLeft = true;
+        }
+
+        return roomData;
+    }
+
     async function createRoom() {
-        const code = generateRoomCode();
+        let code = generateRoomCode();
+        let docRef = doc(db, "rooms", code);
+        let snap = await getDoc(docRef);
+        while (snap.exists()) {
+            code = generateRoomCode();
+            docRef = doc(db, "rooms", code);
+            snap = await getDoc(docRef);
+        }
+
         state.roomId = code;
         state.isHost = true;
-        state.myPlayerId = Date.now().toString() + Math.random().toString(36).substring(2, 5);
+        state.myPlayerId = getMyPlayerId();
 
         const initialStocks = clamp(parseInt($("initial-stocks").value) || 5, 1, 50);
         const initialWorth = clamp(parseInt($("initial-worth").value) || 100, 10, 1000);
@@ -155,7 +207,8 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
 
         recalcTeamWorths();
 
-        await setDoc(doc(db, "rooms", code), {
+        await setDoc(docRef, {
+            hostId: state.myPlayerId,
             gameActive: false,
             ended: false,
             stockWorth: initialWorth,
@@ -209,36 +262,50 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
 
             state.roomId = code;
             state.isHost = false;
-            if (!state.myPlayerId) {
-                state.myPlayerId = Date.now().toString() + Math.random().toString(36).substring(2, 5);
-            }
-
-            const isAlreadyInTeamA = roomData.teams[0].players.some(p => p.id === state.myPlayerId);
-            const isAlreadyInTeamB = roomData.teams[1].players.some(p => p.id === state.myPlayerId);
-
-            if (isAlreadyInTeamA || isAlreadyInTeamB) {
-                finalizeJoinUI(code);
-                return;
-            }
+            state.myPlayerId = getMyPlayerId();
 
             const playerName = $("join-player-name").value.trim() || "Player";
             const teamId = $("join-team").value;
 
-            const playerObj = createPlayerObject(playerName, state.myPlayerId, roomData.initialStocks, roomData.initialWorth);
+            await runTransaction(db, async (transaction) => {
+                const roomSnap = await transaction.get(docRef);
+                if (!roomSnap.exists()) {
+                    throw new Error("Room not found!");
+                }
+                let roomData = roomSnap.data();
 
-            const updatedTeams = roomData.teams;
-            if (teamId === 'a') updatedTeams[0].players.push(playerObj);
-            else updatedTeams[1].players.push(playerObj);
+                if (roomData.gameActive || roomData.ended) {
+                    throw new Error("Game already started or ended!");
+                }
 
-            await updateDoc(docRef, { teams: updatedTeams, lastUpdateTime: Date.now() });
+                roomData = validateRoomState(roomData);
+
+                const isAlreadyInTeamA = roomData.teams[0].players.some(p => p.id === state.myPlayerId);
+                const isAlreadyInTeamB = roomData.teams[1].players.some(p => p.id === state.myPlayerId);
+
+                if (isAlreadyInTeamA || isAlreadyInTeamB) {
+                    // Already in room, no need to add again
+                    return;
+                }
+
+                const playerObj = createPlayerObject(playerName, state.myPlayerId, roomData.initialStocks, roomData.initialWorth);
+
+                if (teamId === 'a') roomData.teams[0].players.push(playerObj);
+                else roomData.teams[1].players.push(playerObj);
+
+                roomData = validateRoomState(roomData);
+
+                transaction.update(docRef, { teams: roomData.teams, lastUpdateTime: Date.now() });
+            });
 
             listenToRoom(code);
             finalizeJoinUI(code);
         } catch (err) {
             console.error("Join error:", err);
-            $("join-error").textContent = "Failed to join.";
+            $("join-error").textContent = err.message || "Failed to join.";
             btn.disabled = false;
             btn.textContent = originalText;
+            state.roomId = null;
         }
     }
 
@@ -246,6 +313,7 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         dom.join.hidden = true;
         dom.waitingRoom.hidden = false;
         $("waiting-room-code-display").innerHTML = `Room Code: <strong>${code}</strong>`;
+        if (dom.switchTeamBtn) dom.switchTeamBtn.hidden = false;
     }
 
     function createPlayerObject(name, id, initialStocks, initialWorth) {
@@ -272,48 +340,178 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
 
     // ── FIREBASE LISTENER ─────────────────────────────────────────────────────
     function listenToRoom(code) {
-        onSnapshot(doc(db, "rooms", code), (docSnapshot) => {
-            if (docSnapshot.exists()) {
-                const data = docSnapshot.data();
+        state.unsubscribeRoom = onSnapshot(doc(db, "rooms", code), (docSnapshot) => {
+            if (!docSnapshot.exists()) {
                 const wasActive = state.gameActive;
+                cleanupLocalStateAndUI(wasActive ? "Host left. Match has ended." : "Host left. Room has been closed.");
+                return;
+            }
 
-                // Merge remote state into local
-                Object.assign(state, data);
-                recalcTeamWorths();
+            const data = docSnapshot.data();
+            if (data.invalidBecauseHostLeft) {
+                const wasActive = state.gameActive;
+                cleanupLocalStateAndUI(wasActive ? "Host left. Match has ended." : "Host left. Room has been closed.");
+                return;
+            }
 
-                // ── Transition: game just started ──
-                if (!wasActive && state.gameActive) {
-                    dom.waitingRoom.hidden = true;
-                    dom.arena.hidden = false;
-                    startCountdown();
-                    const myTeamId = state.teams[0].players.some(p => p.id === state.myPlayerId) ? "a" : "b";
-                    joinTeamVoice(state.roomId, myTeamId, state.myPlayerId);
+            const wasActive = state.gameActive;
+
+            // Merge remote state into local
+            Object.assign(state, data);
+            recalcTeamWorths();
+
+            // Toggle switch team button visibility
+            if (dom.switchTeamBtn) {
+                dom.switchTeamBtn.hidden = state.gameActive;
+            }
+
+            // ── Transition: game just started ──
+            if (!wasActive && state.gameActive) {
+                dom.waitingRoom.hidden = true;
+                dom.arena.hidden = false;
+                startCountdown();
+                const myTeamId = state.teams[0].players.some(p => p.id === state.myPlayerId) ? "a" : "b";
+                joinTeamVoice(state.roomId, myTeamId, state.myPlayerId);
+            }
+
+            // ── Game ended ──
+            if (state.ended) {
+                endGameLocal();
+                return;
+            }
+
+            // ── Update UI ──
+            if (!dom.waitingRoom.hidden) {
+                renderWaitingRoom();
+                if (state.isHost) {
+                    const ready = state.teams[0].players.length > 0 && state.teams[1].players.length > 0;
+                    const btn = $("start-game-btn");
+                    btn.disabled = !ready;
+                    btn.style.opacity = ready ? "1" : "0.5";
+                    btn.style.cursor = ready ? "pointer" : "not-allowed";
+                    $("waiting-message").textContent = ready ? "Ready to start!" : "Waiting for players to join both teams...";
+                } else {
+                    $("waiting-message").textContent = "Waiting for host to start...";
                 }
-
-                // ── Game ended ──
-                if (state.ended) {
-                    endGameLocal();
-                    return;
-                }
-
-                // ── Update UI ──
-                if (!dom.waitingRoom.hidden) {
-                    renderWaitingRoom();
-                    if (state.isHost) {
-                        const ready = state.teams[0].players.length > 0 && state.teams[1].players.length > 0;
-                        const btn = $("start-game-btn");
-                        btn.disabled = !ready;
-                        btn.style.opacity = ready ? "1" : "0.5";
-                        btn.style.cursor = ready ? "pointer" : "not-allowed";
-                        $("waiting-message").textContent = ready ? "Ready to start!" : "Waiting for players to join both teams...";
-                    } else {
-                        $("waiting-message").textContent = "Waiting for host to start...";
-                    }
-                } else if (!dom.arena.hidden) {
-                    renderArena();
-                }
+            } else if (!dom.arena.hidden) {
+                renderArena();
             }
         });
+    }
+
+    async function switchTeam() {
+        if (state.gameActive || state.ended || !state.roomId) return;
+        const btn = dom.switchTeamBtn;
+        if (btn) btn.disabled = true;
+
+        try {
+            const docRef = doc(db, "rooms", state.roomId);
+            await runTransaction(db, async (transaction) => {
+                const roomSnap = await transaction.get(docRef);
+                if (!roomSnap.exists()) return;
+                let roomData = roomSnap.data();
+
+                if (roomData.gameActive || roomData.ended) {
+                    throw new Error("Cannot switch team after game has started.");
+                }
+
+                roomData = validateRoomState(roomData);
+
+                let playerObj = null;
+                let fromTeam = -1;
+                for (let i = 0; i < 2; i++) {
+                    const idx = roomData.teams[i].players.findIndex(p => p.id === state.myPlayerId);
+                    if (idx !== -1) {
+                        playerObj = roomData.teams[i].players.splice(idx, 1)[0];
+                        fromTeam = i;
+                        break;
+                    }
+                }
+
+                if (!playerObj) return;
+
+                const toTeam = fromTeam === 0 ? 1 : 0;
+                roomData.teams[toTeam].players.push(playerObj);
+
+                roomData = validateRoomState(roomData);
+                transaction.update(docRef, { teams: roomData.teams, lastUpdateTime: Date.now() });
+            });
+        } catch (err) {
+            console.error("Switch team failed:", err);
+            alert(err.message);
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    async function leaveRoom() {
+        if (!state.roomId) return;
+        const btn = dom.leaveRoomBtn;
+        if (btn) btn.disabled = true;
+
+        try {
+            const docRef = doc(db, "rooms", state.roomId);
+            if (state.isHost) {
+                await deleteDoc(docRef);
+            } else {
+                await runTransaction(db, async (transaction) => {
+                    const roomSnap = await transaction.get(docRef);
+                    if (!roomSnap.exists()) return;
+                    let roomData = roomSnap.data();
+                    
+                    for (let i = 0; i < 2; i++) {
+                        roomData.teams[i].players = roomData.teams[i].players.filter(p => p.id !== state.myPlayerId);
+                    }
+                    
+                    roomData = validateRoomState(roomData);
+                    transaction.update(docRef, { teams: roomData.teams, lastUpdateTime: Date.now() });
+                });
+            }
+        } catch (err) {
+            console.error("Error leaving room:", err);
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+        cleanupLocalStateAndUI();
+    }
+
+    function cleanupLocalStateAndUI(msg = "") {
+        if (state.unsubscribeRoom) {
+            state.unsubscribeRoom();
+            state.unsubscribeRoom = null;
+        }
+        state.roomId = null;
+        state.isHost = false;
+        state.gameActive = false;
+        state.ended = false;
+        
+        dom.waitingRoom.hidden = true;
+        dom.arena.hidden = true;
+        dom.results.hidden = true;
+        dom.landing.hidden = false;
+        
+        $("join-room-btn").disabled = false;
+        $("join-room-btn").textContent = "JOIN ROOM";
+
+        if (msg) alert(msg);
+    }
+
+    function handleDisconnect() {
+        if (!state.roomId) return;
+        const docRef = doc(db, "rooms", state.roomId);
+        if (state.isHost) {
+            deleteDoc(docRef).catch(()=>{});
+        } else {
+            runTransaction(db, async (transaction) => {
+                const snap = await transaction.get(docRef);
+                if (!snap.exists()) return;
+                const data = snap.data();
+                for (let i = 0; i < 2; i++) {
+                    data.teams[i].players = data.teams[i].players.filter(p => p.id !== state.myPlayerId);
+                }
+                transaction.update(docRef, { teams: data.teams });
+            }).catch(()=>{});
+        }
     }
 
     function renderWaitingRoom() {
