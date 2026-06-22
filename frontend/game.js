@@ -553,6 +553,16 @@ import { joinTeamVoice, toggleMute } from "./voice.js";
         state.ended = false;
         state.phase = "lobby";
         state.voiceJoined = false;
+        // Reset rosters/match state so re-hosting or re-joining in the same
+        // page session starts clean (otherwise createRoom pushes onto stale teams).
+        state.teams[0].players = [];
+        state.teams[1].players = [];
+        state.stockWorth = state.initialWorth;
+        state.worthHistory = [state.initialWorth];
+        state.totalBuys = 0;
+        state.totalSells = 0;
+        state.gameStartTime = 0;
+        recalcTeamWorths();
         clearInterval(countdownInterval);
 
         dom.waitingRoom.hidden = true;
