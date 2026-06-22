@@ -130,11 +130,7 @@ function showProfileStep(user) {
     document.getElementById("auth-google-email").textContent = user.email ? `✓ ${user.email}` : "";
 
     const avatarEl = document.getElementById("auth-google-avatar");
-    if (user.photoURL) {
-        avatarEl.innerHTML = `<img src="${user.photoURL}" class="auth-google-avatar-img" referrerpolicy="no-referrer" />`;
-    } else {
-        avatarEl.textContent = user.displayName ? user.displayName[0].toUpperCase() : "U";
-    }
+    avatarEl.textContent = user.displayName ? user.displayName[0].toUpperCase() : "U";
 
     document.getElementById("setup-display-name").value = user.displayName || "";
     document.getElementById("setup-username").value = (user.email || "").split("@")[0].replace(/[^a-zA-Z0-9_]/g, "").toLowerCase().slice(0, 20);
@@ -145,28 +141,19 @@ function syncSidebarProfile() {
     const p = state.profile;
 
     if (refs.navAvatar) {
-        if (p.photoURL) {
-            refs.navAvatar.innerHTML = `<img src="${p.photoURL}" class="nav-avatar-img" referrerpolicy="no-referrer" />`;
-            refs.navAvatar.classList.add("has-img");
-        } else {
-            refs.navAvatar.textContent = p.display_name ? p.display_name[0].toUpperCase() : "U";
-            refs.navAvatar.classList.remove("has-img");
-        }
+        refs.navAvatar.textContent = p.username ? p.username[0].toUpperCase() : "U";
+        refs.navAvatar.classList.remove("has-img");
     }
 
     const widgetAvatar = document.getElementById("widget-avatar");
     if (widgetAvatar) {
-        if (p.photoURL) {
-            widgetAvatar.innerHTML = `<img src="${p.photoURL}" class="widget-avatar-img" referrerpolicy="no-referrer" />`;
-            widgetAvatar.classList.add("has-img");
-        } else {
-            widgetAvatar.textContent = p.display_name ? p.display_name[0].toUpperCase() : "U";
-        }
+        widgetAvatar.textContent = p.username ? p.username[0].toUpperCase() : "U";
+        widgetAvatar.classList.remove("has-img");
     }
 
     const el = (id, text) => { const n = document.getElementById(id); if (n) n.textContent = text; };
-    el("widget-display-name", p.display_name || "Trader");
-    el("widget-handle", `@${p.username || "user"}`);
+    el("widget-display-name", `@${p.username || "user"}`);
+    el("widget-handle", "");
 }
 
 // ── CHAT ──────────────────────────────────────────────────────────────
@@ -263,15 +250,13 @@ function renderMessages() {
 
     refs.chatMessages.innerHTML = state.messages.map((msg) => {
         const isMine = msg.uid === myUid;
-        const avatarContent = msg.photoURL
-            ? `<img src="${msg.photoURL}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" referrerpolicy="no-referrer" />`
-            : initials(msg.display_name || msg.username || "A");
+        const avatarContent = initials(msg.username || "U");
 
         return `<article class="chat-row ${isMine ? "mine" : ""}">
             <div class="msg-avatar">${avatarContent}</div>
             <div class="msg-bubble">
                 <div class="msg-meta">
-                    <strong>${escapeHtml(msg.display_name || msg.username || "Anonymous")} <span style="font-weight:400;color:var(--muted)">@${escapeHtml(msg.username || "user")}</span></strong>
+                    <strong>@${escapeHtml(msg.username || "user")}</strong>
                     <span>${formatRelativeTime(msg.created_at)}</span>
                 </div>
                 <div class="msg-text">${escapeHtml(msg.message || "")}</div>

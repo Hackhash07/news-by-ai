@@ -216,7 +216,7 @@ function formatAddedAt(isoString) {
 function fallbackAnalysis(article) {
     const assets = Array.isArray(article.assets) && article.assets.length
         ? article.assets.join(", ") : "broader markets";
-    return `${article.title} is being tracked as a ${(article.category || "General").toLowerCase()} story that may influence ${assets}. Current sentiment is ${(article.sentiment || "Neutral").toLowerCase()}.`;
+    return `Assets most exposed to this event include ${assets}. The system is currently analyzing the ${article.category || "General"} impact.`;
 }
 
 function getCategoryIcon(category) {
@@ -281,8 +281,8 @@ function renderHero(articles) {
     if (refs.heroSentiment) refs.heroSentiment.textContent = `Sentiment: ${top.sentiment}`;
     if (refs.heroHorizon) refs.heroHorizon.textContent = formatAddedAt(top.added_at);
     if (refs.marketMood) refs.marketMood.textContent = mood;
-    if (refs.topBullish) refs.topBullish.textContent = bullish ? `${bullish.asset} (${bullish.count})` : "—";
-    if (refs.topBearish) refs.topBearish.textContent = bearish ? `${bearish.asset} (${bearish.count})` : "—";
+    if (refs.topBullish) refs.topBullish.textContent = bullish ? `${bullish.asset} (Exposure: ${bullish.count})` : "—";
+    if (refs.topBearish) refs.topBearish.textContent = bearish ? `${bearish.asset} (Mentions: ${bearish.count})` : "—";
     if (refs.articleCount) refs.articleCount.textContent = String(articles.length);
 }
 
@@ -290,18 +290,15 @@ function renderSignalStrip(articles) {
     if (!refs.signalStrip) return;
     const signalMap = aggregateAssetSignals(articles);
     const ranked = Object.entries(signalMap)
-        .map(([asset, counts]) => ({ asset, bullish: counts.Bullish, bearish: counts.Bearish, neutral: counts.Neutral, total: counts.Bullish + counts.Bearish + counts.Neutral }))
-        .sort((a, b) => b.total - a.total).slice(0, 6);
+        .map(([asset, counts]) => ({ asset, mentions: counts.Bullish + counts.Bearish + counts.Neutral }))
+        .sort((a, b) => b.mentions - a.mentions).slice(0, 6);
 
     if (!ranked.length) { refs.signalStrip.innerHTML = ""; return; }
 
     refs.signalStrip.innerHTML = ranked.map((item) => {
-        const net = item.bullish - item.bearish;
-        const bias = net > 0 ? "Bullish" : net < 0 ? "Bearish" : "Neutral";
-        const biasClass = net > 0 ? "bull" : net < 0 ? "bear" : "flat";
-        return `<article class="signal-card ${biasClass}">
-            <div class="signal-head"><span class="signal-asset">${escapeHtml(item.asset)}</span><span class="signal-bias">${bias}</span></div>
-            <div class="signal-bars"><span>Bullish ${item.bullish}</span><span>Bearish ${item.bearish}</span><span>Neutral ${item.neutral}</span></div>
+        return `<article class="signal-card flat">
+            <div class="signal-head"><span class="signal-asset">${escapeHtml(item.asset)}</span></div>
+            <div class="signal-bars"><span>Exposure Score: ${item.mentions}</span></div>
         </article>`;
     }).join("");
 }
