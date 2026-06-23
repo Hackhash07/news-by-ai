@@ -1,6 +1,4 @@
-import { auth, db } from "./firebase.js";
-import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-import { doc, getDoc, updateDoc, collection, onSnapshot, deleteDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { supabase } from "./supabase.js";
 
 const state = {
     user: null,
@@ -17,7 +15,8 @@ document.addEventListener("DOMContentLoaded", () => {
     updateClock();
     setInterval(updateClock, 1000);
 
-    onAuthStateChanged(auth, async (user) => {
+    supabase.auth.onAuthStateChange(async (event, session) => {
+        const user = session?.user;
         state.user = user;
         if (user) {
             document.getElementById("auth-warning").hidden = true;
@@ -31,13 +30,20 @@ document.addEventListener("DOMContentLoaded", () => {
             if (refs.navAvatar) refs.navAvatar.textContent = "?";
         }
     });
+    
+    supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) state.user = session.user;
+    });
 
     bindEvents();
 });
 
 function bindEvents() {
-    document.getElementById("signout-btn")?.addEventListener("click", () => {
-        if (confirm("Sign out?")) signOut(auth);
+    document.getElementById("signout-btn")?.addEventListener("click", async () => {
+        if (confirm("Sign out?")) {
+            await supabase.auth.signOut();
+            window.location.reload();
+        }
     });
 
     const editModal = document.getElementById("edit-modal");
@@ -52,7 +58,7 @@ function bindEvents() {
     document.getElementById("save-edit-btn")?.addEventListener("click", async () => {
         const dName = document.getElementById("edit-dname").value.trim();
         if(!dName) return alert("Display name required");
-        await updateDoc(doc(db, "users", state.user.uid), { display_name: dName });
+        await supabase.from('profiles').update({ display_name: dName }).eq('id', state.user.id);
         state.profile.display_name = dName;
         renderHeader();
         editModal.hidden = true;
@@ -62,7 +68,9 @@ function bindEvents() {
         const name = prompt("Watchlist Name:");
         if (!name) return;
         const slug = name.toLowerCase().replace(/[^a-z0-9]/g, "-");
-        await setDoc(doc(db, `users/${state.user.uid}/watchlists`, slug), {
+        await supabase.from('watchlists').insert({
+            id: slug,
+            user_id: state.user.id,
             name,
             assets: [],
             created_at: new Date().toISOString()
@@ -71,30 +79,62 @@ function bindEvents() {
 }
 
 async function loadProfile() {
-    const d = await getDoc(doc(db, "users", state.user.uid));
-    if (d.exists()) {
-        state.profile = d.data();
-        renderHeader();
-    } else {
-        alert("Profile not found. Please log in via Live Desk to complete setup.");
-        window.location.href = "chat.html";
+    let { data, error } = await supabase.from('profiles').select('*').eq('id', state.user.id).single();
+    
+    if (!data) {
+        // Upsert basic profile if missing
+        const newProfile = {
+            id: state.user.id,
+            display_name: state.user.user_metadata?.full_name || state.user.email?.split('@')[0] || 'User',
+            username: (state.user.email?.split('@')[0] || 'user').replace(/[^a-zA-Z0-9_]/g, "").toLowerCase() + Math.floor(Math.random() * 1000),
+            photo_url: state.user.user_metadata?.avatar_url || '',
+            created_at: new Date().toISOString()
+        };
+        const { data: insertedData, error: insertError } = await supabase.from('profiles').upsert(newProfile).select().single();
+        if (insertedData) {
+            data = insertedData;
+        } else {
+            console.error("Profile creation failed:", insertError);
+            alert("Profile not found and could not be created. Please log in via Live Desk to complete setup.");
+            window.location.href = "chat.html";
+            return;
+        }
     }
+
+    state.profile = data;
+    renderHeader();
 }
 
+let unsubWatchlists = null;
 function listenToWatchlists() {
-    onSnapshot(collection(db, `users/${state.user.uid}/watchlists`), (snap) => {
-        state.watchlists = [];
-        snap.forEach(doc => state.watchlists.push({ id: doc.id, ...doc.data() }));
+    if (unsubWatchlists) supabase.removeChannel(unsubWatchlists);
+    
+    const fetchW = async () => {
+        const { data } = await supabase.from('watchlists').select('*').eq('user_id', state.user.id);
+        state.watchlists = data || [];
         renderWatchlists();
-    });
+    };
+    fetchW();
+    
+    unsubWatchlists = supabase.channel('public:watchlists')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'watchlists', filter: `user_id=eq.${state.user.id}` }, fetchW)
+        .subscribe();
 }
 
+let unsubBookmarks = null;
 function listenToBookmarks() {
-    onSnapshot(collection(db, `users/${state.user.uid}/bookmarks`), (snap) => {
-        state.bookmarks = [];
-        snap.forEach(doc => state.bookmarks.push({ id: doc.id, ...doc.data() }));
+    if (unsubBookmarks) supabase.removeChannel(unsubBookmarks);
+    
+    const fetchB = async () => {
+        const { data } = await supabase.from('bookmarks').select('*').eq('user_id', state.user.id);
+        state.bookmarks = data || [];
         renderBookmarks();
-    });
+    };
+    fetchB();
+    
+    unsubBookmarks = supabase.channel('public:bookmarks')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'bookmarks', filter: `user_id=eq.${state.user.id}` }, fetchB)
+        .subscribe();
 }
 
 function renderHeader() {
@@ -102,8 +142,8 @@ function renderHeader() {
     document.getElementById("profile-display-name").textContent = p.display_name;
     document.getElementById("profile-handle").textContent = "@" + p.username;
     
-    const avatarContent = p.photoURL 
-        ? `<img src="${p.photoURL}" style="width:100%;height:100%;border-radius:50%;" referrerpolicy="no-referrer" />`
+    const avatarContent = p.photo_url 
+        ? `<img src="${p.photo_url}" style="width:100%;height:100%;border-radius:50%;" referrerpolicy="no-referrer" />`
         : p.display_name[0].toUpperCase();
 
     document.getElementById("profile-avatar").innerHTML = avatarContent;
@@ -112,12 +152,12 @@ function renderHeader() {
 
 window.deleteWatchlist = async function(id) {
     if(confirm("Delete watchlist?")) {
-        await deleteDoc(doc(db, `users/${state.user.uid}/watchlists`, id));
+        await supabase.from('watchlists').delete().eq('id', id);
     }
 };
 
 window.removeBookmark = async function(id) {
-    await deleteDoc(doc(db, `users/${state.user.uid}/bookmarks`, id));
+    await supabase.from('bookmarks').delete().eq('id', id);
 };
 
 function renderWatchlists() {
@@ -133,7 +173,7 @@ function renderWatchlists() {
                 <button onclick="deleteWatchlist('${w.id}')" style="background:none;border:none;color:var(--ef);cursor:pointer;font-size:12px;">Delete</button>
             </div>
             <p style="margin:10px 0 0 0; font-size:13px; color:var(--t3);">
-                ${w.assets.length ? w.assets.join(", ") : "No assets added."}
+                ${w.assets && w.assets.length ? w.assets.join(", ") : "No assets added."}
             </p>
         </div>
     `).join("");

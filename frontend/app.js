@@ -1,10 +1,8 @@
-import { db, auth } from "./firebase.js";
-import { collection, onSnapshot, doc, setDoc, deleteDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { supabase } from "./supabase.js";
 
-// ── Use the existing Flask endpoints that already work on Render ──
-const API_URL = "/news";
-const MARKET_API_URL = "/market-data";
+// ── Flask API on Render ──
+const API_URL = "https://news-by-ai.onrender.com/news";
+const MARKET_API_URL = "https://news-by-ai.onrender.com/market-data";
 
 const state = {
     articles: [],
@@ -55,36 +53,47 @@ document.addEventListener("DOMContentLoaded", () => {
         refs.refreshBtn.addEventListener("click", loadNews);
     }
 
-    // Listen to Firebase auth for avatar + bookmarks
-    onAuthStateChanged(auth, async (user) => {
+    // Listen to Supabase auth for avatar + bookmarks
+    supabase.auth.onAuthStateChange(async (event, session) => {
+        const user = session?.user;
         state.user = user;
         if (user) {
-            const userDoc = await getDoc(doc(db, "users", user.uid));
-            if (userDoc.exists() && refs.navAvatar) {
-                const data = userDoc.data();
-                if (data.photoURL) {
-                    refs.navAvatar.innerHTML = `<img src="${data.photoURL}" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" referrerpolicy="no-referrer">`;
+            const { data: userData, error } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+            if (userData && refs.navAvatar) {
+                if (userData.photo_url) {
+                    refs.navAvatar.innerHTML = `<img src="${userData.photo_url}" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" referrerpolicy="no-referrer">`;
                 } else {
-                    refs.navAvatar.textContent = (data.display_name || user.email || "U")[0].toUpperCase();
+                    refs.navAvatar.textContent = (userData.display_name || user.email || "U")[0].toUpperCase();
                 }
             }
-            // Listen to bookmarks
-            onSnapshot(collection(db, `users/${user.uid}/bookmarks`), (snap) => {
+            // Fetch bookmarks
+            const fetchBookmarks = async () => {
+                const { data } = await supabase.from('bookmarks').select('title').eq('user_id', user.id);
                 state.savedArticles.clear();
-                snap.forEach(d => state.savedArticles.add(d.id));
+                if (data) data.forEach(d => state.savedArticles.add(d.title));
                 if (state.articles.length) renderDashboard();
-            });
+            };
+            fetchBookmarks();
+
+            supabase.channel('public:bookmarks')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'bookmarks', filter: `user_id=eq.${user.id}` }, payload => {
+                    fetchBookmarks();
+                }).subscribe();
         } else {
             if (refs.navAvatar) refs.navAvatar.textContent = "?";
             state.savedArticles.clear();
         }
     });
 
-    // Load news from Flask API (the existing working endpoint)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) state.user = session.user;
+    });
+
+    // Load news from Flask API on Render
     loadNews();
     setInterval(loadNews, 60000);
 
-    // Load market ticker from Flask API
+    // Load market ticker from Flask API on Render
     loadTicker();
     setInterval(loadTicker, 60000);
 });
@@ -237,18 +246,23 @@ window.toggleBookmark = async function(articleId) {
         alert("Please sign in via the Live Desk to save articles.");
         return;
     }
-    const docRef = doc(db, `users/${state.user.uid}/bookmarks`, articleId);
-    if (state.savedArticles.has(articleId)) {
-        await deleteDoc(docRef);
+    const article = state.articles.find(a => String(a.id) === String(articleId));
+    if (!article) return;
+
+    if (state.savedArticles.has(article.title)) {
+        await supabase.from('bookmarks').delete().eq('user_id', state.user.id).eq('title', article.title);
     } else {
-        const article = state.articles.find(a => String(a.id) === String(articleId));
-        if (article) {
-            await setDoc(docRef, {
-                saved_at: new Date().toISOString(),
-                title: article.title,
-                link: article.link || "#",
-                category: article.category
-            });
+        const { error } = await supabase.from('bookmarks').insert({
+            user_id: state.user.id,
+            saved_at: new Date().toISOString(),
+            title: article.title,
+            link: article.link || "#",
+            category: article.category || "General",
+            article_id: String(article.id)
+        });
+        if (error) {
+            console.error("Error saving bookmark:", error);
+            alert("Failed to save bookmark.");
         }
     }
 };
@@ -356,7 +370,7 @@ function renderCards(articles) {
         const sc = sentimentClass(a.sentiment);
         const assets = Array.isArray(a.assets) ? a.assets : [];
         const aiNote = a.analysis || fallbackAnalysis(a);
-        const isSaved = state.savedArticles.has(String(a.id));
+        const isSaved = state.savedArticles.has(a.title);
 
         const assetTagsHtml = assets.length
             ? assets.map((t) => `<span class="asset-tag">${escapeHtml(t)}</span>`).join("")
@@ -411,7 +425,7 @@ function renderDashboard() {
     renderCards(filtered);
 }
 
-// ── LOAD NEWS (Flask API) ─────────────────────────────────────────────
+// ── LOAD NEWS (Flask API on Render) ───────────────────────────────────
 async function loadNews() {
     try {
         if (refs.lastUpdated) refs.lastUpdated.textContent = "Refreshing…";

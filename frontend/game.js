@@ -1,9 +1,8 @@
-import { db } from './firebase.js';
-import { doc, onSnapshot, updateDoc, getDoc, runTransaction, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { supabase } from './supabase.js';
 import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   TRADING IQ BATTLE — game.js (STABILIZED BUILD)
+   TRADING IQ BATTLE — game.js (SUPABASE BUILD)
    
    Event-driven trading simulation: per-player question streams, immediate
    trade execution, time-based match duration, real-time stock price updates.
@@ -12,7 +11,7 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
    - Room config (host, teams, settings) persists across matches
    - Match state (playerStates, stockWorth, etc.) resets between matches
    - Phase enum: "waiting" → "playing" → "results" → "waiting"
-   - All mutations use Firestore transactions for consistency
+   - Uses Supabase Realtime for sync and atomic updates for consistency
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 (function () {
@@ -28,29 +27,17 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
     };
 
     // ── GAME STATE ────────────────────────────────────────────────────────────
-    let state = {
+    const state = {
         roomId: null,
-        isHost: false,
         myPlayerId: null,
         myPlayerName: null,
-
-        // Room config (persistent across matches)
+        isHost: false,
+        phase: "waiting",
         hostId: null,
-        initialStocks: 5,
-        initialWorth: 100,
-        matchDuration: 300,
-        maxTeamSize: MAX_TEAM_SIZE,
-
-        // Room lifecycle
-        phase: "waiting", // "waiting" | "playing" | "results"
-
-        // Teams (persistent — just id + name per player)
         teams: [
             { id: "a", name: "Alpha", players: [] },
             { id: "b", name: "Beta",  players: [] }
         ],
-
-        // Match state (reset between matches)
         match: {
             gameStartTime: 0,
             stockWorth: 100,
@@ -59,68 +46,63 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
             totalSells: 0,
             playerStates: {}
         },
-
+        initialStocks: 5,
+        initialWorth: 100,
+        matchDuration: 300,
+        maxTeamSize: MAX_TEAM_SIZE,
         matchNumber: 0,
-
-        // Listener cleanup
-        unsubscribeRoom: null,
+        unsubscribeRoom: null
     };
 
+    let isCreatingRoom = false;
+    let isJoiningRoom = false;
+    let isSubmitting = false;
     let countdownInterval = null;
-    let isSubmitting = false;      // prevents double-submit race
-    let isCreatingRoom = false;    // prevents double-create
-    let isJoiningRoom = false;     // prevents double-join
 
-    // ── DOM REFS ──────────────────────────────────────────────────────────────
-    const $ = (id) => document.getElementById(id);
     const dom = {};
+    const $ = (id) => document.getElementById(id);
 
+    // ── DOM CACHE ────────────────────────────────────────────────────────────
     function cacheDom() {
-        dom.landing       = $("game-landing");
+        dom.landing      = $("game-landing");
         dom.setup         = $("game-setup");
         dom.join          = $("game-join");
         dom.waitingRoom   = $("game-waiting-room");
         dom.arena         = $("game-arena");
         dom.results       = $("game-results");
-
-        dom.tradesDisplay = $("game-trades-count");
-        dom.worthDisplay  = $("game-stock-worth");
-        dom.marketStatus  = $("game-market-status");
+        dom.answerForm    = $("game-answer-form");
+        dom.answerInput   = $("game-answer-input");
+        dom.feedback      = $("game-feedback");
+        dom.questionText  = $("game-question-text");
         dom.countdownDisplay = $("game-countdown");
-
+        dom.worthDisplay  = $("game-stock-worth");
+        dom.tradesDisplay = $("game-trades-count");
+        dom.marketStatus  = $("game-market-status");
+        dom.chartCanvas   = $("game-chart-canvas");
+        dom.switchTeamBtn = $("switch-team-btn");
+        dom.leaveRoomBtn  = $("leave-room-btn");
         dom.teamADisplay  = $("team-a-display");
         dom.teamBDisplay  = $("team-b-display");
         dom.teamAWorth    = $("team-a-worth");
         dom.teamBWorth    = $("team-b-worth");
-        dom.teamACash     = $("team-a-cash");
-        dom.teamBCash     = $("team-b-cash");
         dom.teamAStocks   = $("team-a-stocks");
         dom.teamBStocks   = $("team-b-stocks");
+        dom.teamACash     = $("team-a-cash");
+        dom.teamBCash     = $("team-b-cash");
         dom.teamARoster   = $("team-a-roster");
         dom.teamBRoster   = $("team-b-roster");
-
-        dom.questionText  = $("game-question-text");
-        dom.answerForm    = $("game-answer-form");
-        dom.answerInput   = $("game-answer-input");
-        dom.feedback      = $("game-feedback");
-
-        dom.switchTeamBtn = $("switch-team-btn");
-        dom.leaveRoomBtn  = $("leave-room-btn");
-
-        dom.chartCanvas   = $("game-chart-canvas");
-
-        dom.resultMvpName    = $("result-mvp-name");
-        dom.resultMvpWorth   = $("result-mvp-worth");
-        dom.resultWinnerName = $("result-winner-name");
-        dom.resultWinnerWorth = $("result-winner-worth");
-        dom.resultTeamAName  = $("result-team-a-name");
-        dom.resultTeamBName  = $("result-team-b-name");
-        dom.resultTeamAWorth = $("result-team-a-worth");
-        dom.resultTeamBWorth = $("result-team-b-worth");
-        dom.resultTeamARoster = $("result-team-a-roster");
-        dom.resultTeamBRoster = $("result-team-b-roster");
-        dom.resultChart      = $("game-result-chart-canvas");
-        dom.playAgainBtn     = $("play-again-btn");
+        dom.resultMvpName      = $("result-mvp-name");
+        dom.resultMvpWorth     = $("result-mvp-worth");
+        dom.resultWinnerName   = $("result-winner-name");
+        dom.resultWinnerWorth  = $("result-winner-worth");
+        dom.resultTeamAName    = $("result-team-a-name");
+        dom.resultTeamBName    = $("result-team-b-name");
+        dom.resultTeamAWorth   = $("result-team-a-worth");
+        dom.resultTeamBWorth   = $("result-team-b-worth");
+        dom.resultTeamARoster  = $("result-team-a-roster");
+        dom.resultTeamBRoster  = $("result-team-b-roster");
+        dom.resultChart        = $("game-result-chart-canvas");
+        dom.playAgainBtn       = $("play-again-btn");
     }
 
     // ── INITIALIZATION ────────────────────────────────────────────────────────
@@ -198,14 +180,11 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         if (!savedRoomId || !savedPlayerId) return;
 
         try {
-            const docRef = doc(db, "rooms", savedRoomId);
-            const snap = await getDoc(docRef);
-            if (!snap.exists()) {
+            const { data: roomData, error } = await supabase.from('rooms').select('*').eq('id', savedRoomId).single();
+            if (error || !roomData) {
                 clearSession();
                 return;
             }
-
-            const roomData = snap.data();
 
             // Check if player is still in the room
             const isInRoom = roomData.teams.some(t => t.players.some(p => p.id === savedPlayerId));
@@ -217,7 +196,7 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
             // Rejoin
             state.roomId = savedRoomId;
             state.myPlayerId = savedPlayerId;
-            state.isHost = savedIsHost && roomData.hostId === savedPlayerId;
+            state.isHost = savedIsHost && roomData.host_id === savedPlayerId;
             state.myPlayerName = sessionStorage.getItem(SESSION_KEYS.PLAYER_NAME) || "Player";
 
             listenToRoom(savedRoomId);
@@ -232,7 +211,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
                 dom.arena.hidden = false;
                 dom.results.hidden = true;
                 startCountdown();
-                // Rejoin voice
                 const myTeamId = roomData.teams[0].players.some(p => p.id === state.myPlayerId) ? "a" : "b";
                 joinTeamVoice(state.roomId, myTeamId, state.myPlayerId);
             } else if (roomData.phase === "results") {
@@ -240,7 +218,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
                 dom.arena.hidden = true;
                 dom.results.hidden = false;
             } else {
-                // waiting
                 dom.waitingRoom.hidden = false;
                 dom.arena.hidden = true;
                 dom.results.hidden = true;
@@ -267,33 +244,16 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
 
     // ── VALIDATION UTILITIES ─────────────────────────────────────────────────
 
-    /**
-     * Ensure a player only appears in one team. Strips from all teams first,
-     * then adds to the target team index.
-     * 
-     * @param {Array} teams - The teams array
-     * @param {string} playerId - Player ID to ensure
-     * @param {Object|null} playerObj - Player object to add (null = just remove)
-     * @param {number} targetTeamIdx - Target team index (0 or 1), -1 = just remove
-     * @returns {Array} Modified teams
-     */
     function ensurePlayerInOneTeam(teams, playerId, playerObj, targetTeamIdx) {
-        // Strip player from ALL teams
         for (let i = 0; i < teams.length; i++) {
             teams[i].players = teams[i].players.filter(p => p.id !== playerId);
         }
-
-        // Add to target team if provided
         if (playerObj && targetTeamIdx >= 0 && targetTeamIdx < teams.length) {
             teams[targetTeamIdx].players.push(playerObj);
         }
-
         return teams;
     }
 
-    /**
-     * Validate room state: deduplicate players across teams, verify host exists.
-     */
     function validateRoomState(roomData) {
         if (!roomData) return roomData;
 
@@ -306,7 +266,7 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
                 if (!seenIds.has(p.id)) {
                     seenIds.add(p.id);
                     uniquePlayers.push(p);
-                    if (p.id === roomData.hostId) {
+                    if (p.id === roomData.host_id) {
                         hostExists = true;
                     }
                 }
@@ -314,7 +274,7 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
             team.players = uniquePlayers;
         }
 
-        if (!hostExists && roomData.hostId) {
+        if (!hostExists && roomData.host_id) {
             roomData.invalidBecauseHostLeft = true;
         }
 
@@ -324,7 +284,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
     // ── CREATE ROOM ──────────────────────────────────────────────────────────
 
     async function createRoom() {
-        // Guard against double-click
         if (isCreatingRoom) return;
         isCreatingRoom = true;
 
@@ -335,7 +294,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
 
         try {
             const code = generateRoomCode();
-            const docRef = doc(db, "rooms", code);
 
             state.myPlayerId = getMyPlayerId();
             const playerName = $("host-player-name").value.trim() || "Host";
@@ -351,50 +309,41 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
             const playerEntry = { id: state.myPlayerId, name: playerName };
 
             const initialCash = initialWorth * 2;
-            const initialPlayerWorth = initialCash + (initialStocks * initialWorth);
 
-            // Atomic create: transaction ensures no race if same code generated twice
-            await runTransaction(db, async (transaction) => {
-                const snap = await transaction.get(docRef);
-                if (snap.exists()) {
-                    throw new Error("Room code collision, please try again.");
-                }
+            const teams = [
+                { id: "a", name: "Alpha", players: [] },
+                { id: "b", name: "Beta",  players: [] }
+            ];
+            teams[targetTeamIdx].players.push(playerEntry);
 
-                const teams = [
-                    { id: "a", name: "Alpha", players: [] },
-                    { id: "b", name: "Beta",  players: [] }
-                ];
-                teams[targetTeamIdx].players.push(playerEntry);
+            const playerState = createPlayerState(state.myPlayerId, initialStocks, initialWorth);
 
-                const playerState = createPlayerState(state.myPlayerId, initialStocks, initialWorth);
+            const roomRow = {
+                id: code,
+                host_id: state.myPlayerId,
+                initial_stocks: initialStocks,
+                initial_worth: initialWorth,
+                match_duration: matchDuration,
+                max_team_size: MAX_TEAM_SIZE,
+                created_at: new Date().toISOString(),
+                phase: "waiting",
+                teams: teams,
+                match: {
+                    gameStartTime: 0,
+                    stockWorth: initialWorth,
+                    worthHistory: [initialWorth],
+                    totalBuys: 0,
+                    totalSells: 0,
+                    playerStates: {
+                        [state.myPlayerId]: playerState
+                    }
+                },
+                match_number: 0,
+                last_update_time: Date.now()
+            };
 
-                transaction.set(docRef, {
-                    hostId: state.myPlayerId,
-                    roomCode: code,
-                    initialStocks,
-                    initialWorth,
-                    matchDuration,
-                    maxTeamSize: MAX_TEAM_SIZE,
-                    createdAt: Date.now(),
-
-                    phase: "waiting",
-                    teams,
-
-                    match: {
-                        gameStartTime: 0,
-                        stockWorth: initialWorth,
-                        worthHistory: [initialWorth],
-                        totalBuys: 0,
-                        totalSells: 0,
-                        playerStates: {
-                            [state.myPlayerId]: playerState
-                        }
-                    },
-
-                    matchNumber: 0,
-                    lastUpdateTime: Date.now()
-                });
-            });
+            const { error } = await supabase.from('rooms').insert(roomRow);
+            if (error) throw new Error(error.message || "Failed to create room.");
 
             // Success — update local state
             state.roomId = code;
@@ -404,11 +353,7 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
             state.initialWorth = initialWorth;
             state.matchDuration = matchDuration;
             state.phase = "waiting";
-            state.teams = [
-                { id: "a", name: "Alpha", players: [] },
-                { id: "b", name: "Beta",  players: [] }
-            ];
-            state.teams[targetTeamIdx].players.push(playerEntry);
+            state.teams = JSON.parse(JSON.stringify(teams));
             state.match = {
                 gameStartTime: 0,
                 stockWorth: initialWorth,
@@ -441,7 +386,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
     // ── JOIN ROOM ────────────────────────────────────────────────────────────
 
     async function joinRoom() {
-        // Guard against double-click
         if (isJoiningRoom) return;
 
         const btn = $("join-room-btn");
@@ -457,8 +401,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         $("join-error").textContent = "";
 
         try {
-            const docRef = doc(db, "rooms", code);
-
             state.myPlayerId = getMyPlayerId();
             const playerName = $("join-player-name").value.trim() || "Player";
             const teamId = $("join-team").value;
@@ -467,58 +409,52 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
             const targetTeamIdx = teamId === 'a' ? 0 : 1;
             const playerEntry = { id: state.myPlayerId, name: playerName };
 
-            await runTransaction(db, async (transaction) => {
-                const roomSnap = await transaction.get(docRef);
-                if (!roomSnap.exists()) {
-                    throw new Error("Room not found!");
-                }
-                let roomData = roomSnap.data();
+            // Fetch current room data
+            const { data: roomData, error: fetchErr } = await supabase.from('rooms').select('*').eq('id', code).single();
+            if (fetchErr || !roomData) {
+                throw new Error("Room not found!");
+            }
 
-                if (roomData.phase === "playing") {
-                    throw new Error("Game already in progress!");
-                }
+            if (roomData.phase === "playing") {
+                throw new Error("Game already in progress!");
+            }
 
-                roomData = validateRoomState(roomData);
+            const validated = validateRoomState(roomData);
 
-                // Check if already in room (idempotent join)
-                const isAlreadyInRoom = roomData.teams.some(t => t.players.some(p => p.id === state.myPlayerId));
-                if (isAlreadyInRoom) {
-                    // Already in room, no need to add again
-                    return;
-                }
-
+            // Check if already in room
+            const isAlreadyInRoom = validated.teams.some(t => t.players.some(p => p.id === state.myPlayerId));
+            if (!isAlreadyInRoom) {
                 // Check team size limit
-                if (roomData.teams[targetTeamIdx].players.length >= (roomData.maxTeamSize || MAX_TEAM_SIZE)) {
-                    throw new Error(`Team ${roomData.teams[targetTeamIdx].name} is full! (${roomData.maxTeamSize || MAX_TEAM_SIZE} players max)`);
+                if (validated.teams[targetTeamIdx].players.length >= (validated.max_team_size || MAX_TEAM_SIZE)) {
+                    throw new Error(`Team ${validated.teams[targetTeamIdx].name} is full! (${validated.max_team_size || MAX_TEAM_SIZE} players max)`);
                 }
 
-                // Add player to team (ensurePlayerInOneTeam strips from any team first)
-                ensurePlayerInOneTeam(roomData.teams, state.myPlayerId, playerEntry, targetTeamIdx);
+                ensurePlayerInOneTeam(validated.teams, state.myPlayerId, playerEntry, targetTeamIdx);
 
                 // Initialize player state in match
-                if (!roomData.match) {
-                    roomData.match = {
+                if (!validated.match) {
+                    validated.match = {
                         gameStartTime: 0,
-                        stockWorth: roomData.initialWorth || 100,
-                        worthHistory: [roomData.initialWorth || 100],
+                        stockWorth: validated.initial_worth || 100,
+                        worthHistory: [validated.initial_worth || 100],
                         totalBuys: 0,
                         totalSells: 0,
                         playerStates: {}
                     };
                 }
-                if (!roomData.match.playerStates) roomData.match.playerStates = {};
-                roomData.match.playerStates[state.myPlayerId] = createPlayerState(
-                    state.myPlayerId, roomData.initialStocks, roomData.initialWorth
+                if (!validated.match.playerStates) validated.match.playerStates = {};
+                validated.match.playerStates[state.myPlayerId] = createPlayerState(
+                    state.myPlayerId, validated.initial_stocks, validated.initial_worth
                 );
 
-                roomData = validateRoomState(roomData);
+                const { error: updateErr } = await supabase.from('rooms').update({
+                    teams: validated.teams,
+                    match: validated.match,
+                    last_update_time: Date.now()
+                }).eq('id', code);
 
-                transaction.update(docRef, {
-                    teams: roomData.teams,
-                    match: roomData.match,
-                    lastUpdateTime: Date.now()
-                });
-            });
+                if (updateErr) throw new Error(updateErr.message);
+            }
 
             // Success
             state.roomId = code;
@@ -568,24 +504,20 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         };
     }
 
-    // ── FIREBASE LISTENER ─────────────────────────────────────────────────────
+    // ── SUPABASE REALTIME LISTENER ───────────────────────────────────────────
 
     function listenToRoom(code) {
-        // Clean up any existing listener
         if (state.unsubscribeRoom) {
-            state.unsubscribeRoom();
+            supabase.removeChannel(state.unsubscribeRoom);
             state.unsubscribeRoom = null;
         }
 
-        state.unsubscribeRoom = onSnapshot(doc(db, "rooms", code), (docSnapshot) => {
-            if (!docSnapshot.exists()) {
+        const handleData = (data) => {
+            if (!data) {
                 cleanupLocalStateAndUI("Room has been closed.");
                 return;
             }
 
-            const data = docSnapshot.data();
-
-            // Validate on every snapshot
             const validated = validateRoomState(data);
             if (validated.invalidBecauseHostLeft) {
                 cleanupLocalStateAndUI("Host left. Room has been closed.");
@@ -594,23 +526,20 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
 
             const prevPhase = state.phase;
 
-            // ── Selective merge (don't blindly Object.assign) ──
-            state.hostId = data.hostId;
-            state.initialStocks = data.initialStocks;
-            state.initialWorth = data.initialWorth;
-            state.matchDuration = data.matchDuration;
-            state.maxTeamSize = data.maxTeamSize || MAX_TEAM_SIZE;
+            // ── Selective merge ──
+            state.hostId = data.host_id;
+            state.initialStocks = data.initial_stocks;
+            state.initialWorth = data.initial_worth;
+            state.matchDuration = data.match_duration;
+            state.maxTeamSize = data.max_team_size || MAX_TEAM_SIZE;
             state.phase = data.phase || "waiting";
             state.teams = validated.teams;
             state.match = data.match || state.match;
-            state.matchNumber = data.matchNumber || 0;
+            state.matchNumber = data.match_number || 0;
 
-            // Toggle switch team button visibility
             if (dom.switchTeamBtn) {
                 dom.switchTeamBtn.hidden = state.phase !== "waiting";
             }
-
-            // ── Phase transitions ──
 
             // WAITING → PLAYING
             if (prevPhase !== "playing" && state.phase === "playing") {
@@ -618,7 +547,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
                 dom.results.hidden = true;
                 dom.arena.hidden = false;
                 startCountdown();
-                // Join voice on game start
                 const myTeamId = state.teams[0].players.some(p => p.id === state.myPlayerId) ? "a" : "b";
                 joinTeamVoice(state.roomId, myTeamId, state.myPlayerId);
             }
@@ -641,7 +569,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
                 }
             }
 
-            // ── Update UI based on current phase ──
             if (state.phase === "waiting" && !dom.waitingRoom.hidden) {
                 renderWaitingRoom();
                 if (state.isHost) {
@@ -657,7 +584,26 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
             } else if (state.phase === "playing" && !dom.arena.hidden) {
                 renderArena();
             }
-        });
+        };
+
+        // Initial fetch
+        const fetchRoom = async () => {
+            const { data, error } = await supabase.from('rooms').select('*').eq('id', code).single();
+            if (data) handleData(data);
+            else if (error) console.error("[Game] Error fetching room:", error);
+        };
+        fetchRoom();
+
+        // Realtime subscription
+        state.unsubscribeRoom = supabase.channel(`room-${code}-${Date.now()}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${code}` }, (payload) => {
+                if (payload.eventType === 'DELETE') {
+                    handleData(null);
+                } else {
+                    handleData(payload.new);
+                }
+            })
+            .subscribe();
     }
 
     // ── SWITCH TEAM ──────────────────────────────────────────────────────────
@@ -668,45 +614,39 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         if (btn) btn.disabled = true;
 
         try {
-            const docRef = doc(db, "rooms", state.roomId);
-            await runTransaction(db, async (transaction) => {
-                const roomSnap = await transaction.get(docRef);
-                if (!roomSnap.exists()) return;
-                let roomData = roomSnap.data();
+            const { data: roomData, error: fetchErr } = await supabase.from('rooms').select('*').eq('id', state.roomId).single();
+            if (fetchErr || !roomData) return;
+            if (roomData.phase !== "waiting") throw new Error("Cannot switch team after game has started.");
 
-                if (roomData.phase !== "waiting") {
-                    throw new Error("Cannot switch team after game has started.");
+            const validated = validateRoomState(roomData);
+
+            let fromTeam = -1;
+            let playerEntry = null;
+            for (let i = 0; i < 2; i++) {
+                const idx = validated.teams[i].players.findIndex(p => p.id === state.myPlayerId);
+                if (idx !== -1) {
+                    playerEntry = validated.teams[i].players[idx];
+                    fromTeam = i;
+                    break;
                 }
+            }
 
-                roomData = validateRoomState(roomData);
+            if (!playerEntry || fromTeam === -1) return;
 
-                // Find current team
-                let fromTeam = -1;
-                let playerEntry = null;
-                for (let i = 0; i < 2; i++) {
-                    const idx = roomData.teams[i].players.findIndex(p => p.id === state.myPlayerId);
-                    if (idx !== -1) {
-                        playerEntry = roomData.teams[i].players[idx];
-                        fromTeam = i;
-                        break;
-                    }
-                }
+            const toTeam = fromTeam === 0 ? 1 : 0;
 
-                if (!playerEntry || fromTeam === -1) return;
+            if (validated.teams[toTeam].players.length >= (validated.max_team_size || MAX_TEAM_SIZE)) {
+                throw new Error(`Team ${validated.teams[toTeam].name} is full!`);
+            }
 
-                const toTeam = fromTeam === 0 ? 1 : 0;
+            ensurePlayerInOneTeam(validated.teams, state.myPlayerId, playerEntry, toTeam);
 
-                // Check target team size
-                if (roomData.teams[toTeam].players.length >= (roomData.maxTeamSize || MAX_TEAM_SIZE)) {
-                    throw new Error(`Team ${roomData.teams[toTeam].name} is full!`);
-                }
+            const { error: updateErr } = await supabase.from('rooms').update({
+                teams: validated.teams,
+                last_update_time: Date.now()
+            }).eq('id', state.roomId);
 
-                // Atomic move: remove from all, add to target
-                ensurePlayerInOneTeam(roomData.teams, state.myPlayerId, playerEntry, toTeam);
-                roomData = validateRoomState(roomData);
-
-                transaction.update(docRef, { teams: roomData.teams, lastUpdateTime: Date.now() });
-            });
+            if (updateErr) throw new Error(updateErr.message);
         } catch (err) {
             console.error("[Game] Switch team failed:", err);
             alert(err.message);
@@ -723,34 +663,25 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         if (btn) btn.disabled = true;
 
         try {
-            const docRef = doc(db, "rooms", state.roomId);
             if (state.isHost) {
                 // Host leaving destroys the room
-                await deleteDoc(docRef);
+                await supabase.from('rooms').delete().eq('id', state.roomId);
             } else {
                 // Player leaving removes themselves
-                await runTransaction(db, async (transaction) => {
-                    const roomSnap = await transaction.get(docRef);
-                    if (!roomSnap.exists()) return;
-                    let roomData = roomSnap.data();
-
-                    // Remove from teams
+                const { data: roomData } = await supabase.from('rooms').select('*').eq('id', state.roomId).single();
+                if (roomData) {
                     for (let i = 0; i < 2; i++) {
                         roomData.teams[i].players = roomData.teams[i].players.filter(p => p.id !== state.myPlayerId);
                     }
-
-                    // Remove from match playerStates
                     if (roomData.match && roomData.match.playerStates) {
                         delete roomData.match.playerStates[state.myPlayerId];
                     }
-
-                    roomData = validateRoomState(roomData);
-                    transaction.update(docRef, {
+                    await supabase.from('rooms').update({
                         teams: roomData.teams,
                         match: roomData.match,
-                        lastUpdateTime: Date.now()
-                    });
-                });
+                        last_update_time: Date.now()
+                    }).eq('id', state.roomId);
+                }
             }
         } catch (err) {
             console.error("[Game] Error leaving room:", err);
@@ -761,29 +692,21 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
     }
 
     function cleanupLocalStateAndUI(msg = "") {
-        // Unsubscribe Firestore listener
         if (state.unsubscribeRoom) {
-            state.unsubscribeRoom();
+            supabase.removeChannel(state.unsubscribeRoom);
             state.unsubscribeRoom = null;
         }
 
-        // Clear countdown
         clearInterval(countdownInterval);
         countdownInterval = null;
-
-        // Leave voice chat
         leaveVoice();
-
-        // Clear session
         clearSession();
 
-        // Reset state
         state.roomId = null;
         state.isHost = false;
         state.phase = "waiting";
         state.hostId = null;
 
-        // Reset UI
         dom.waitingRoom.hidden = true;
         dom.arena.hidden = true;
         dom.results.hidden = true;
@@ -792,7 +715,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         $("join-room-btn").disabled = false;
         $("join-room-btn").textContent = "JOIN ROOM";
 
-        // Reset operation flags
         isCreatingRoom = false;
         isJoiningRoom = false;
         isSubmitting = false;
@@ -802,32 +724,25 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
 
     function handleDisconnect() {
         if (!state.roomId) return;
-        const docRef = doc(db, "rooms", state.roomId);
 
         if (state.isHost) {
-            // Host leaving: delete the room (fire-and-forget during unload)
-            deleteDoc(docRef).catch(() => {});
+            supabase.from('rooms').delete().eq('id', state.roomId).then(() => {}).catch(() => {});
         } else {
-            // Player leaving: remove from room
-            // For unload reliability, use getDoc + updateDoc instead of transaction
-            // (transactions may not complete during page unload)
-            getDoc(docRef).then(snap => {
-                if (!snap.exists()) return;
-                const data = snap.data();
+            supabase.from('rooms').select('*').eq('id', state.roomId).single().then(({ data }) => {
+                if (!data) return;
                 for (let i = 0; i < 2; i++) {
                     data.teams[i].players = data.teams[i].players.filter(p => p.id !== state.myPlayerId);
                 }
                 if (data.match && data.match.playerStates) {
                     delete data.match.playerStates[state.myPlayerId];
                 }
-                updateDoc(docRef, {
+                supabase.from('rooms').update({
                     teams: data.teams,
                     match: data.match
-                }).catch(() => {});
+                }).eq('id', state.roomId).then(() => {}).catch(() => {});
             }).catch(() => {});
         }
 
-        // Best-effort voice cleanup
         leaveVoice();
     }
 
@@ -838,7 +753,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         const teamA = $("lobby-team-a");
         const teamB = $("lobby-team-b");
 
-        // Update team count headers
         const teamAHeader = $("lobby-team-a-count");
         const teamBHeader = $("lobby-team-b-count");
         if (teamAHeader) teamAHeader.textContent = `(${state.teams[0].players.length}/${maxSize})`;
@@ -868,48 +782,40 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         btn.disabled = true;
 
         try {
-            const docRef = doc(db, "rooms", state.roomId);
+            const { data: roomData, error: fetchErr } = await supabase.from('rooms').select('*').eq('id', state.roomId).single();
+            if (fetchErr || !roomData) throw new Error("Room not found");
+            if (roomData.phase !== "waiting") throw new Error("Game already started");
 
-            await runTransaction(db, async (transaction) => {
-                const snap = await transaction.get(docRef);
-                if (!snap.exists()) throw new Error("Room not found");
-                const roomData = snap.data();
+            const initialStocks = roomData.initial_stocks;
+            const initialWorth = roomData.initial_worth;
 
-                if (roomData.phase !== "waiting") {
-                    throw new Error("Game already started");
-                }
-
-                const initialStocks = roomData.initialStocks;
-                const initialWorth = roomData.initialWorth;
-
-                // Build fresh playerStates for all players
-                const playerStates = {};
-                roomData.teams.forEach(team => {
-                    team.players.forEach(player => {
-                        const ps = createPlayerState(player.id, initialStocks, initialWorth);
-                        // Generate initial question
-                        ps.currentQuestion = generateQuestion();
-                        ps.questionNumber = 1;
-                        playerStates[player.id] = ps;
-                    });
-                });
-
-                const gameStartTime = Date.now();
-
-                transaction.update(docRef, {
-                    phase: "playing",
-                    match: {
-                        gameStartTime,
-                        stockWorth: initialWorth,
-                        worthHistory: [initialWorth],
-                        totalBuys: 0,
-                        totalSells: 0,
-                        playerStates
-                    },
-                    matchNumber: (roomData.matchNumber || 0) + 1,
-                    lastUpdateTime: Date.now()
+            const playerStates = {};
+            roomData.teams.forEach(team => {
+                team.players.forEach(player => {
+                    const ps = createPlayerState(player.id, initialStocks, initialWorth);
+                    ps.currentQuestion = generateQuestion();
+                    ps.questionNumber = 1;
+                    playerStates[player.id] = ps;
                 });
             });
+
+            const gameStartTime = Date.now();
+
+            const { error: updateErr } = await supabase.from('rooms').update({
+                phase: "playing",
+                match: {
+                    gameStartTime,
+                    stockWorth: initialWorth,
+                    worthHistory: [initialWorth],
+                    totalBuys: 0,
+                    totalSells: 0,
+                    playerStates
+                },
+                match_number: (roomData.match_number || 0) + 1,
+                last_update_time: Date.now()
+            }).eq('id', state.roomId);
+
+            if (updateErr) throw new Error(updateErr.message);
         } catch (err) {
             console.error("[Game] Start game failed:", err);
             alert(err.message || "Failed to start game.");
@@ -921,8 +827,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
 
     async function resetForNextMatch() {
         if (!state.isHost) {
-            // Non-host: the host will trigger the reset, we react via listener
-            // But if non-host clicks, we just show a message
             alert("Waiting for host to start a new match...");
             return;
         }
@@ -931,37 +835,33 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         if (btn) btn.disabled = true;
 
         try {
-            const docRef = doc(db, "rooms", state.roomId);
+            const { data: roomData, error: fetchErr } = await supabase.from('rooms').select('*').eq('id', state.roomId).single();
+            if (fetchErr || !roomData) throw new Error("Room not found");
 
-            await runTransaction(db, async (transaction) => {
-                const snap = await transaction.get(docRef);
-                if (!snap.exists()) throw new Error("Room not found");
-                const roomData = snap.data();
+            const initialStocks = roomData.initial_stocks;
+            const initialWorth = roomData.initial_worth;
 
-                const initialStocks = roomData.initialStocks;
-                const initialWorth = roomData.initialWorth;
-
-                // Build fresh playerStates (reset stats, keep players)
-                const playerStates = {};
-                roomData.teams.forEach(team => {
-                    team.players.forEach(player => {
-                        playerStates[player.id] = createPlayerState(player.id, initialStocks, initialWorth);
-                    });
-                });
-
-                transaction.update(docRef, {
-                    phase: "waiting",
-                    match: {
-                        gameStartTime: 0,
-                        stockWorth: initialWorth,
-                        worthHistory: [initialWorth],
-                        totalBuys: 0,
-                        totalSells: 0,
-                        playerStates
-                    },
-                    lastUpdateTime: Date.now()
+            const playerStates = {};
+            roomData.teams.forEach(team => {
+                team.players.forEach(player => {
+                    playerStates[player.id] = createPlayerState(player.id, initialStocks, initialWorth);
                 });
             });
+
+            const { error: updateErr } = await supabase.from('rooms').update({
+                phase: "waiting",
+                match: {
+                    gameStartTime: 0,
+                    stockWorth: initialWorth,
+                    worthHistory: [initialWorth],
+                    totalBuys: 0,
+                    totalSells: 0,
+                    playerStates
+                },
+                last_update_time: Date.now()
+            }).eq('id', state.roomId);
+
+            if (updateErr) throw new Error(updateErr.message);
         } catch (err) {
             console.error("[Game] Reset for next match failed:", err);
             alert("Failed to reset. Try again.");
@@ -993,19 +893,18 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
     function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 
     /**
-     * Core trade execution — uses Firestore transaction to prevent overwrites.
+     * Core trade execution — uses Supabase atomic updates to prevent overwrites.
      * 
      * 1. Validate answer against player's own question
      * 2. Execute buy/sell/hold trade immediately
      * 3. Update stock price based on single trade pressure
      * 4. Generate next question for this player
-     * 5. Atomically write to Firestore
+     * 5. Atomically write to Supabase
      */
     async function handleAnswer(e) {
         e.preventDefault();
         if (state.phase !== "playing" || isSubmitting) return;
 
-        // Prevent double-submit
         isSubmitting = true;
         dom.answerInput.disabled = true;
 
@@ -1014,7 +913,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         const matchResult = inputStr.match(regex);
 
         if (!matchResult) {
-            // Invalid input format
             dom.answerInput.value = "";
             dom.answerInput.disabled = false;
             isSubmitting = false;
@@ -1026,135 +924,117 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         const tradeAction = matchResult[2];
 
         try {
-            const docRef = doc(db, "rooms", state.roomId);
+            // Fetch latest room state
+            const { data: roomData, error: fetchErr } = await supabase.from('rooms').select('*').eq('id', state.roomId).single();
+            if (fetchErr || !roomData) throw new Error("Room gone");
+            if (roomData.phase !== "playing") return;
 
-            await runTransaction(db, async (transaction) => {
-                const snap = await transaction.get(docRef);
-                if (!snap.exists()) throw new Error("Room gone");
-                const roomData = snap.data();
+            const myState = JSON.parse(JSON.stringify(roomData.match.playerStates[state.myPlayerId]));
+            if (!myState || !myState.currentQuestion) return;
 
-                if (roomData.phase !== "playing") return;
+            const correctAnswer = myState.currentQuestion.answer;
+            const isCorrect = submittedAnswer === correctAnswer;
 
-                // Deep clone to prevent mutating Firestore's local cache directly
-                const myState = JSON.parse(JSON.stringify(roomData.match.playerStates[state.myPlayerId]));
-                if (!myState || !myState.currentQuestion) return;
+            let stockWorth = roomData.match.stockWorth;
+            let worthHistory = [...(roomData.match.worthHistory || [])];
+            let totalBuys = roomData.match.totalBuys || 0;
+            let totalSells = roomData.match.totalSells || 0;
 
-                const correctAnswer = myState.currentQuestion.answer;
-                const isCorrect = submittedAnswer === correctAnswer;
+            if (isCorrect) {
+                myState.correct += 1;
+                myState.score += 1;
 
-                let stockWorth = roomData.match.stockWorth;
-                // Clone the history array
-                let worthHistory = [...(roomData.match.worthHistory || [])];
-                let totalBuys = roomData.match.totalBuys || 0;
-                let totalSells = roomData.match.totalSells || 0;
-
-                if (isCorrect) {
-                    myState.correct += 1;
-                    myState.score += 1;
-
-                    if (tradeAction === 'b' || tradeAction === '+') {
-                        // BUY
-                        if (myState.cash >= stockWorth) {
-                            myState.cash -= stockWorth;
-                            myState.stocks += 1;
-                            myState.trades += 1;
-                            myState.buys += 1;
-                            totalBuys += 1;
-                            // Buy pressure raises price
-                            const volatility = 1.5 + Math.random() * 2.5;
-                            stockWorth += volatility;
-                            stockWorth += (Math.random() - 0.5) * 1.5;
-                            if (stockWorth < 1) stockWorth = 1;
-                            stockWorth = Math.round(stockWorth * 100) / 100;
-                            worthHistory.push(stockWorth);
-                            
-                            myState.lastFeedback = {
-                                text: `✓ Correct! Bought 1 stock at $${stockWorth.toFixed(2)}`,
-                                className: "game-feedback game-feedback-correct"
-                            };
-                        } else {
-                            myState.lastFeedback = {
-                                text: `✓ Correct! But insufficient cash to buy.`,
-                                className: "game-feedback game-feedback-wrong"
-                            };
-                        }
-                    } else if (tradeAction === 's' || tradeAction === '-') {
-                        // SELL
-                        myState.cash += stockWorth;
-                        myState.stocks -= 1;
+                if (tradeAction === 'b' || tradeAction === '+') {
+                    if (myState.cash >= stockWorth) {
+                        myState.cash -= stockWorth;
+                        myState.stocks += 1;
                         myState.trades += 1;
-                        myState.shorts += 1;
-                        totalSells += 1;
-                        // Sell pressure lowers price
+                        myState.buys += 1;
+                        totalBuys += 1;
                         const volatility = 1.5 + Math.random() * 2.5;
-                        stockWorth -= volatility;
+                        stockWorth += volatility;
                         stockWorth += (Math.random() - 0.5) * 1.5;
                         if (stockWorth < 1) stockWorth = 1;
                         stockWorth = Math.round(stockWorth * 100) / 100;
                         worthHistory.push(stockWorth);
                         myState.lastFeedback = {
-                            text: `✓ Correct! Sold 1 stock at $${stockWorth.toFixed(2)}`,
+                            text: `✓ Correct! Bought 1 stock at $${stockWorth.toFixed(2)}`,
                             className: "game-feedback game-feedback-correct"
                         };
                     } else {
-                        // HOLD
                         myState.lastFeedback = {
-                            text: `✓ Correct! Holding position.`,
-                            className: "game-feedback game-feedback-correct"
+                            text: `✓ Correct! But insufficient cash to buy.`,
+                            className: "game-feedback game-feedback-wrong"
                         };
                     }
-                } else {
-                    // Wrong answer — penalty
-                    myState.wrong += 1;
-                    const penalty = Math.round((roomData.initialWorth || 100) * 0.1) || 10;
-                    myState.cash -= penalty;
+                } else if (tradeAction === 's' || tradeAction === '-') {
+                    myState.cash += stockWorth;
+                    myState.stocks -= 1;
+                    myState.trades += 1;
+                    myState.shorts += 1;
+                    totalSells += 1;
+                    const volatility = 1.5 + Math.random() * 2.5;
+                    stockWorth -= volatility;
+                    stockWorth += (Math.random() - 0.5) * 1.5;
+                    if (stockWorth < 1) stockWorth = 1;
+                    stockWorth = Math.round(stockWorth * 100) / 100;
+                    worthHistory.push(stockWorth);
                     myState.lastFeedback = {
-                        text: `✗ Wrong! Answer was ${correctAnswer}. Penalty: -$${penalty}`,
-                        className: "game-feedback game-feedback-wrong"
+                        text: `✓ Correct! Sold 1 stock at $${stockWorth.toFixed(2)}`,
+                        className: "game-feedback game-feedback-correct"
+                    };
+                } else {
+                    myState.lastFeedback = {
+                        text: `✓ Correct! Holding position.`,
+                        className: "game-feedback game-feedback-correct"
                     };
                 }
-
-                // Generate next question
-                myState.questionNumber += 1;
-                myState.currentQuestion = generateQuestion();
-
-                // Recalculate this player's worth
-                myState.worth = Math.round((myState.cash + (myState.stocks * stockWorth)) * 100) / 100;
-
-                // Check if game time expired
-                let phase = roomData.phase;
-                if (roomData.match.gameStartTime && roomData.matchDuration) {
-                    const elapsed = (Date.now() - roomData.match.gameStartTime) / 1000;
-                    if (elapsed >= roomData.matchDuration) {
-                        phase = "results";
-                    }
-                }
-
-                // Write updated state
-                const updatedMatch = {
-                    ...roomData.match,
-                    stockWorth,
-                    worthHistory,
-                    totalBuys,
-                    totalSells,
-                    playerStates: {
-                        ...roomData.match.playerStates,
-                        [state.myPlayerId]: myState
-                    }
+            } else {
+                myState.wrong += 1;
+                const penalty = Math.round((roomData.initial_worth || 100) * 0.1) || 10;
+                myState.cash -= penalty;
+                myState.lastFeedback = {
+                    text: `✗ Wrong! Answer was ${correctAnswer}. Penalty: -$${penalty}`,
+                    className: "game-feedback game-feedback-wrong"
                 };
+            }
 
-                transaction.update(docRef, {
-                    phase,
-                    match: updatedMatch,
-                    lastUpdateTime: Date.now()
-                });
-            });
+            myState.questionNumber += 1;
+            myState.currentQuestion = generateQuestion();
+            myState.worth = Math.round((myState.cash + (myState.stocks * stockWorth)) * 100) / 100;
+
+            let phase = roomData.phase;
+            if (roomData.match.gameStartTime && roomData.match_duration) {
+                const elapsed = (Date.now() - roomData.match.gameStartTime) / 1000;
+                if (elapsed >= roomData.match_duration) {
+                    phase = "results";
+                }
+            }
+
+            const updatedMatch = {
+                ...roomData.match,
+                stockWorth,
+                worthHistory,
+                totalBuys,
+                totalSells,
+                playerStates: {
+                    ...roomData.match.playerStates,
+                    [state.myPlayerId]: myState
+                }
+            };
+
+            const { error: updateErr } = await supabase.from('rooms').update({
+                phase,
+                match: updatedMatch,
+                last_update_time: Date.now()
+            }).eq('id', state.roomId);
+
+            if (updateErr) throw new Error(updateErr.message);
 
         } catch (err) {
             console.error("[Game] Trade failed:", err);
         }
 
-        // Reset input for next question
         dom.answerInput.value = "";
         dom.answerInput.disabled = false;
         isSubmitting = false;
@@ -1166,10 +1046,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
 
     // ── TEAM WORTH CALCULATION ────────────────────────────────────────────────
 
-    /**
-     * Calculate team aggregates from match.playerStates and team membership.
-     * Returns computed team data for rendering.
-     */
     function getTeamComputedData(teamIdx) {
         const team = state.teams[teamIdx];
         const ps = state.match.playerStates || {};
@@ -1246,18 +1122,12 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
     async function endGameByTime() {
         clearInterval(countdownInterval);
         try {
-            const docRef = doc(db, "rooms", state.roomId);
-            await runTransaction(db, async (transaction) => {
-                const snap = await transaction.get(docRef);
-                if (!snap.exists()) return;
-                const roomData = snap.data();
-                if (roomData.phase !== "playing") return; // Already ended
+            const { error } = await supabase.from('rooms').update({
+                phase: "results",
+                last_update_time: Date.now()
+            }).eq('id', state.roomId);
 
-                transaction.update(docRef, {
-                    phase: "results",
-                    lastUpdateTime: Date.now()
-                });
-            });
+            if (error) throw new Error(error.message);
         } catch (err) {
             console.error("[Game] Failed to end game:", err);
         }
@@ -1270,25 +1140,20 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         const teamAData = getTeamComputedData(0);
         const teamBData = getTeamComputedData(1);
 
-        // Trades count
         if (dom.tradesDisplay) {
             dom.tradesDisplay.textContent = myState ? `${myState.trades}` : "0";
         }
 
-        // Stock worth
         dom.worthDisplay.textContent = (state.match.stockWorth || 0).toFixed(2);
 
-        // Market status
         if (dom.marketStatus) {
             dom.marketStatus.innerHTML = `<span class="market-live-dot"></span> LIVE`;
         }
 
-        // Countdown
         if (dom.countdownDisplay) {
             dom.countdownDisplay.textContent = formatTime(getRemainingTime());
         }
 
-        // Team panels
         dom.teamADisplay.textContent = state.teams[0].name.toUpperCase();
         dom.teamBDisplay.textContent = state.teams[1].name.toUpperCase();
 
@@ -1302,7 +1167,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         renderRoster(dom.teamARoster, teamAData.players);
         renderRoster(dom.teamBRoster, teamBData.players);
 
-        // Per-player question rendering
         if (myState && myState.currentQuestion) {
             dom.questionText.textContent = myState.currentQuestion.text;
             dom.answerInput.disabled = false;
@@ -1312,7 +1176,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
             dom.answerInput.disabled = true;
         }
 
-        // Per-player feedback
         if (myState && myState.lastFeedback) {
             dom.feedback.textContent = myState.lastFeedback.text;
             dom.feedback.className = myState.lastFeedback.className;
@@ -1378,7 +1241,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
 
         drawChart(dom.resultChart);
 
-        // Show/hide play again based on host status
         if (dom.playAgainBtn) {
             dom.playAgainBtn.textContent = state.isHost ? "PLAY AGAIN" : "WAITING FOR HOST...";
             dom.playAgainBtn.disabled = !state.isHost;

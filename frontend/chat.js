@@ -1,6 +1,4 @@
-import { auth, db, googleProvider } from "./firebase.js";
-import { signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-import { collection, doc, setDoc, getDoc, onSnapshot, query, orderBy, limit, addDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { supabase } from "./supabase.js";
 
 // ── ROOMS ─────────────────────────────────────────────────────────────
 const ROOMS = [
@@ -28,12 +26,13 @@ document.addEventListener("DOMContentLoaded", () => {
     updateClock();
     setInterval(updateClock, 1000);
 
-    onAuthStateChanged(auth, async (user) => {
+    supabase.auth.onAuthStateChange(async (event, session) => {
+        const user = session?.user;
         state.user = user;
         if (user) {
-            const userDoc = await getDoc(doc(db, "users", user.uid));
-            if (userDoc.exists()) {
-                state.profile = userDoc.data();
+            const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+            if (profileData) {
+                state.profile = profileData;
                 hideAuthGate();
                 syncSidebarProfile();
                 initChat();
@@ -44,6 +43,10 @@ document.addEventListener("DOMContentLoaded", () => {
         } else {
             showAuthGate();
         }
+    });
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) state.user = session.user;
     });
 });
 
@@ -61,11 +64,17 @@ function cacheRefs() {
 }
 
 function bindEvents() {
-    document.getElementById("google-login-btn")?.addEventListener("click", () => {
-        signInWithPopup(auth, googleProvider).catch(err => {
-            console.error("Google Sign-In Error:", err);
-            alert("Sign-in failed: " + err.message);
+    document.getElementById("google-login-btn")?.addEventListener("click", async () => {
+        const { error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+                redirectTo: window.location.href
+            }
         });
+        if (error) {
+            console.error("Google Sign-In Error:", error);
+            alert("Sign-in failed: " + error.message);
+        }
     });
 
     document.getElementById("complete-profile-btn")?.addEventListener("click", async () => {
@@ -76,14 +85,19 @@ function bindEvents() {
         if (handle.length < 2) { alert("Handle must be at least 2 characters"); return; }
 
         const profileData = {
+            id: state.user.id,
             display_name: dName,
             username: handle,
-            photoURL: state.user.photoURL || "",
-            email: state.user.email || "",
+            photo_url: state.user.user_metadata?.avatar_url || "",
             created_at: new Date().toISOString()
         };
 
-        await setDoc(doc(db, "users", state.user.uid), profileData);
+        const { error } = await supabase.from('profiles').upsert(profileData);
+        if (error) {
+            console.error("Profile creation failed:", error);
+            alert("Failed to create profile: " + error.message);
+            return;
+        }
         state.profile = profileData;
 
         hideAuthGate();
@@ -91,8 +105,11 @@ function bindEvents() {
         initChat();
     });
 
-    document.getElementById("signout-btn")?.addEventListener("click", () => {
-        if (confirm("Sign out of Trade Trends Live Desk?")) signOut(auth);
+    document.getElementById("signout-btn")?.addEventListener("click", async () => {
+        if (confirm("Sign out of Trade Trends Live Desk?")) {
+            await supabase.auth.signOut();
+            window.location.reload();
+        }
     });
 
     refs.chatForm?.addEventListener("submit", async (e) => {
@@ -126,13 +143,14 @@ function showProfileStep(user) {
     document.getElementById("auth-step-1").hidden = true;
     document.getElementById("auth-step-2").hidden = false;
 
-    document.getElementById("auth-google-name").textContent = user.displayName || "";
+    const displayName = user.user_metadata?.full_name || user.user_metadata?.name || "";
+    document.getElementById("auth-google-name").textContent = displayName;
     document.getElementById("auth-google-email").textContent = user.email ? `✓ ${user.email}` : "";
 
     const avatarEl = document.getElementById("auth-google-avatar");
-    avatarEl.textContent = user.displayName ? user.displayName[0].toUpperCase() : "U";
+    avatarEl.textContent = displayName ? displayName[0].toUpperCase() : "U";
 
-    document.getElementById("setup-display-name").value = user.displayName || "";
+    document.getElementById("setup-display-name").value = displayName || "";
     document.getElementById("setup-username").value = (user.email || "").split("@")[0].replace(/[^a-zA-Z0-9_]/g, "").toLowerCase().slice(0, 20);
 }
 
@@ -168,26 +186,48 @@ function initChat() {
 let unsubMessages = null;
 
 function listenToMessages() {
-    if (unsubMessages) unsubMessages();
+    if (unsubMessages) {
+        supabase.removeChannel(unsubMessages);
+        unsubMessages = null;
+    }
 
     if (refs.chatStatus) refs.chatStatus.textContent = "Connecting…";
 
-    const q = query(
-        collection(db, `rooms/${state.currentRoom}/messages`),
-        orderBy("created_at", "asc"),
-        limit(100)
-    );
+    const fetchMessages = async () => {
+        const { data, error } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('room_id', state.currentRoom)
+            .order('created_at', { ascending: true })
+            .limit(100);
 
-    unsubMessages = onSnapshot(q, (snap) => {
-        state.messages = [];
-        snap.forEach(d => state.messages.push({ id: d.id, ...d.data() }));
+        if (error) {
+            console.error("Messages fetch error:", error);
+            if (refs.chatStatus) refs.chatStatus.textContent = "Reconnecting…";
+            return;
+        }
+
+        state.messages = data || [];
         renderMessages();
         if (refs.chatStatus) refs.chatStatus.textContent = `${state.messages.length} messages`;
         if (refs.chatStatusBar) refs.chatStatusBar.textContent = `${state.messages.length} messages • ${state.currentRoom}`;
-    }, (err) => {
-        console.error("Messages listener error:", err);
-        if (refs.chatStatus) refs.chatStatus.textContent = "Reconnecting…";
-    });
+    };
+
+    fetchMessages();
+
+    unsubMessages = supabase.channel(`room-messages-${state.currentRoom}-${Date.now()}`)
+        .on('postgres_changes', {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `room_id=eq.${state.currentRoom}`
+        }, (payload) => {
+            state.messages.push(payload.new);
+            renderMessages();
+            if (refs.chatStatus) refs.chatStatus.textContent = `${state.messages.length} messages`;
+            if (refs.chatStatusBar) refs.chatStatusBar.textContent = `${state.messages.length} messages • ${state.currentRoom}`;
+        })
+        .subscribe();
 }
 
 function renderRooms() {
@@ -221,17 +261,19 @@ async function sendMessage() {
     if (!message || !state.profile) return;
 
     const payload = {
+        room_id: state.currentRoom,
         username: state.profile.username,
         display_name: state.profile.display_name,
-        photoURL: state.profile.photoURL || "",
+        photo_url: state.profile.photo_url || "",
         message,
         created_at: new Date().toISOString(),
-        uid: state.user.uid
+        user_id: state.user.id
     };
 
     try {
         refs.chatInput.value = "";
-        await addDoc(collection(db, `rooms/${state.currentRoom}/messages`), payload);
+        const { error } = await supabase.from('messages').insert(payload);
+        if (error) throw error;
     } catch (err) {
         console.error("Send error:", err);
         if (refs.chatStatusBar) refs.chatStatusBar.textContent = "Send failed — try again";
@@ -246,10 +288,10 @@ function renderMessages() {
         return;
     }
 
-    const myUid = state.user?.uid;
+    const myUid = state.user?.id;
 
     refs.chatMessages.innerHTML = state.messages.map((msg) => {
-        const isMine = msg.uid === myUid;
+        const isMine = msg.user_id === myUid;
         const avatarContent = initials(msg.username || "U");
 
         return `<article class="chat-row ${isMine ? "mine" : ""}">

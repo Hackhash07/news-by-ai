@@ -1385,7 +1385,7 @@ button, input { font: inherit; }
 }
 
 
-/* ── PROFILE & FIREBASE UI ────────────────────────────────── */
+/* ── PROFILE & AUTH UI ────────────────────────────────── */
 .profile-layout .shell { max-width: 1200px; }
 
 .profile-header {

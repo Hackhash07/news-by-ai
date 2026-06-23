@@ -44,7 +44,7 @@ export async function joinTeamVoice(roomId, teamId, playerId) {
     rtc.joining = true;
     rtc.lastError = null;
 
-    // In production, fetch this from Firebase Remote Config or environment variables
+    // In production, fetch this from environment variables or a secure endpoint
     const appId = "YOUR_AGORA_APP_ID"; // The user needs to replace this
     const channel = `${roomId}_${teamId}`;
 
@@ -63,7 +63,8 @@ export async function joinTeamVoice(roomId, teamId, playerId) {
         }
 
         // Fetch token from cloud function
-        const tokenUrl = `https://us-central1-trade-trends-70426.cloudfunctions.net/generateAgoraToken?channel=${channel}&uid=${playerId}`;
+        // Token endpoint (configure your own secure token server if using Agora in production)
+        const tokenUrl = ``;
 
         let token = null;
         try {
