@@ -596,12 +596,14 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         fetchRoom();
 
         // Realtime subscription
-        state.unsubscribeRoom = supabase.channel(`room-${code}-${Date.now()}`)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${code}` }, (payload) => {
-                if (payload.eventType === 'DELETE') {
-                    handleData(null);
-                } else {
-                    handleData(payload.new);
+        state.unsubscribeRoom = supabase.channel(`room-${code}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, (payload) => {
+                if (payload.new && payload.new.id === code) {
+                    if (payload.eventType === 'DELETE') {
+                        handleData(null);
+                    } else {
+                        handleData(payload.new);
+                    }
                 }
             })
             .subscribe();
@@ -1034,13 +1036,25 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
                 }
             };
 
+            // ── OPTIMISTIC UI UPDATE (Instant Feedback) ──
+            state.phase = phase;
+            state.match = updatedMatch;
+            if (phase === "playing") {
+                renderArena();
+            } else if (phase === "results") {
+                renderResults();
+            }
+
             const { error: updateErr } = await supabase.from('rooms').update({
                 phase,
                 match: updatedMatch,
                 last_update_time: Date.now()
             }).eq('id', state.roomId);
 
-            if (updateErr) throw new Error(updateErr.message);
+            if (updateErr) {
+                console.error("[Trade] Update error:", updateErr);
+                throw new Error(updateErr.message);
+            }
 
         } catch (err) {
             console.error("[Game] Trade failed:", err);
