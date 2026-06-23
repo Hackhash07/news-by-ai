@@ -1,5 +1,4 @@
 import { supabase } from './supabase.js';
-import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice.js";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    TRADING IQ BATTLE — game.js (SUPABASE BUILD)
@@ -59,6 +58,9 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
     let isSubmitting = false;
     let countdownInterval = null;
 
+    let presenceChannel = null;
+    let onlinePlayerIds = new Set();
+
     const dom = {};
     const $ = (id) => document.getElementById(id);
 
@@ -113,12 +115,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         $("landing-host-btn").addEventListener("click", () => { dom.landing.hidden = true; dom.setup.hidden = false; });
         $("landing-join-btn").addEventListener("click", () => { dom.landing.hidden = true; dom.join.hidden = false; });
 
-        let voiceMuted = false;
-        $("voice-mute-btn").addEventListener("click", (e) => {
-            voiceMuted = !voiceMuted;
-            toggleMute(voiceMuted);
-            e.target.textContent = voiceMuted ? "MUTED" : "UNMUTED";
-            e.target.style.color = voiceMuted ? "var(--red)" : "inherit";
         });
         $("host-back-btn").addEventListener("click", () => { dom.setup.hidden = true; dom.landing.hidden = false; });
         $("join-back-btn").addEventListener("click", () => { dom.join.hidden = true; dom.landing.hidden = false; });
@@ -129,6 +125,14 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
 
         if (dom.switchTeamBtn) dom.switchTeamBtn.addEventListener("click", switchTeam);
         if (dom.leaveRoomBtn) dom.leaveRoomBtn.addEventListener("click", leaveRoom);
+        
+        const disbandRoomBtn = $("disband-room-btn");
+        if (disbandRoomBtn) disbandRoomBtn.addEventListener("click", initiateDisbandVote);
+
+        const disbandAgreeBtn = $("disband-agree-btn");
+        const disbandDisagreeBtn = $("disband-disagree-btn");
+        if (disbandAgreeBtn) disbandAgreeBtn.addEventListener("click", () => castDisbandVote("agree"));
+        if (disbandDisagreeBtn) disbandDisagreeBtn.addEventListener("click", () => castDisbandVote("disagree"));
 
         window.addEventListener("beforeunload", handleDisconnect);
 
@@ -213,7 +217,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
                 dom.results.hidden = true;
                 startCountdown();
                 const myTeamId = roomData.teams[0].players.some(p => p.id === state.myPlayerId) ? "a" : "b";
-                joinTeamVoice(state.roomId, myTeamId, state.myPlayerId);
             } else if (roomData.phase === "results") {
                 dom.waitingRoom.hidden = true;
                 dom.arena.hidden = true;
@@ -537,6 +540,7 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
             state.teams = validated.teams;
             state.match = data.match || state.match;
             state.matchNumber = data.match_number || 0;
+            state.match_settings = data.match_settings || {};
 
             if (dom.switchTeamBtn) {
                 dom.switchTeamBtn.hidden = state.phase !== "waiting";
@@ -549,7 +553,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
                 dom.arena.hidden = false;
                 startCountdown();
                 const myTeamId = state.teams[0].players.some(p => p.id === state.myPlayerId) ? "a" : "b";
-                joinTeamVoice(state.roomId, myTeamId, state.myPlayerId);
             }
 
             // ANY → RESULTS
@@ -573,19 +576,51 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
             if (state.phase === "waiting" && !dom.waitingRoom.hidden) {
                 renderWaitingRoom();
                 if (state.isHost) {
-                    const ready = state.teams[0].players.length > 0 && state.teams[1].players.length > 0;
+                    const tA = state.teams[0].players.length;
+                    const tB = state.teams[1].players.length;
+                    const ready = tA > 0 && tB > 0 && tA === tB;
                     const btn = $("start-game-btn");
                     btn.disabled = !ready;
                     btn.style.opacity = ready ? "1" : "0.5";
                     btn.style.cursor = ready ? "pointer" : "not-allowed";
-                    $("waiting-message").textContent = ready ? "Ready to start!" : "Waiting for players to join both teams...";
+                    if (tA > 0 && tB > 0 && tA !== tB) {
+                        $("waiting-message").textContent = "Teams must have an equal number of players to start.";
+                    } else if (!ready) {
+                        $("waiting-message").textContent = "Waiting for players to join both teams...";
+                    } else {
+                        $("waiting-message").textContent = "Ready to start!";
+                    }
                 } else {
                     $("waiting-message").textContent = "Waiting for host to start...";
                 }
             } else if (state.phase === "playing" && !dom.arena.hidden) {
                 renderArena();
             }
+
+            checkDisbandVoteStatus();
         };
+
+        // Presence subscription
+        if (presenceChannel) supabase.removeChannel(presenceChannel);
+        presenceChannel = supabase.channel(`presence-${code}`, {
+            config: { presence: { key: state.myPlayerId } }
+        });
+        presenceChannel
+            .on('presence', { event: 'sync' }, () => {
+                const presenceState = presenceChannel.presenceState();
+                onlinePlayerIds.clear();
+                for (const id in presenceState) {
+                    onlinePlayerIds.add(id);
+                }
+                if (state.phase === "waiting" && !dom.waitingRoom.hidden) renderWaitingRoom();
+                else if (state.phase === "playing" && !dom.arena.hidden) renderArena();
+                checkDisbandVoteStatus(); // Re-check if someone dropped offline
+            })
+            .subscribe(async (status) => {
+                if (status === 'SUBSCRIBED') {
+                    await presenceChannel.track({ online_at: new Date().toISOString() });
+                }
+            });
 
         // Initial fetch
         const fetchRoom = async () => {
@@ -600,10 +635,10 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
             .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, (payload) => {
                 const row = payload.new || payload.old;
                 if (row && row.id === code) {
-                    if (payload.eventType === 'DELETE') {
+                    if (payload.eventType === 'DELETE' || row.phase === 'disbanded') {
                         handleData(null);
                     } else {
-                        handleData(payload.new);
+                        handleData(row);
                     }
                 }
             })
@@ -711,9 +746,13 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
             state.unsubscribeRoom = null;
         }
 
+        if (presenceChannel) {
+            supabase.removeChannel(presenceChannel);
+            presenceChannel = null;
+        }
+
         clearInterval(countdownInterval);
         countdownInterval = null;
-        leaveVoice();
         clearSession();
 
         state.roomId = null;
@@ -734,6 +773,96 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         isSubmitting = false;
 
         if (msg) alert(msg);
+    }
+
+    // ── DISBAND VOTE ──────────────────────────────────────────────────────────
+
+    async function initiateDisbandVote() {
+        if (!state.roomId) return;
+        if (!confirm("Are you sure you want to start a vote to disband this room?")) return;
+
+        const { data: roomData } = await supabase.from('rooms').select('*').eq('id', state.roomId).single();
+        if (!roomData) return;
+
+        const match_settings = roomData.match_settings || {};
+        match_settings.disband_vote = {
+            active: true,
+            votes: { [state.myPlayerId]: 'agree' }
+        };
+
+        await supabase.from('rooms').update({
+            match_settings,
+            last_update_time: Date.now()
+        }).eq('id', state.roomId);
+    }
+
+    async function castDisbandVote(voteType) {
+        if (!state.roomId) return;
+        $("disband-vote-modal").hidden = true;
+
+        const { data: roomData } = await supabase.from('rooms').select('*').eq('id', state.roomId).single();
+        if (!roomData || !roomData.match_settings || !roomData.match_settings.disband_vote) return;
+
+        const disband_vote = roomData.match_settings.disband_vote;
+        if (!disband_vote.active) return;
+
+        disband_vote.votes[state.myPlayerId] = voteType;
+
+        if (voteType === 'disagree') {
+            disband_vote.active = false;
+        }
+
+        await supabase.from('rooms').update({
+            match_settings: roomData.match_settings,
+            last_update_time: Date.now()
+        }).eq('id', state.roomId);
+    }
+
+    async function checkDisbandVoteStatus() {
+        const modal = $("disband-vote-modal");
+        if (!modal) return;
+        const disband_vote = state.match_settings?.disband_vote;
+
+        if (!disband_vote || !disband_vote.active) {
+            modal.hidden = true;
+            return;
+        }
+
+        // Check if I have voted
+        if (disband_vote.votes[state.myPlayerId]) {
+            modal.hidden = true;
+        } else {
+            modal.hidden = false;
+        }
+
+        // If I am host, check if all online players voted agree
+        if (state.isHost) {
+            let allAgreed = true;
+            let onlineCount = 0;
+            
+            for (const team of state.teams) {
+                for (const p of team.players) {
+                    if (onlinePlayerIds.has(p.id)) {
+                        onlineCount++;
+                        if (disband_vote.votes[p.id] !== 'agree') {
+                            allAgreed = false;
+                        }
+                    }
+                }
+            }
+
+            // Only disband if we have players online and they ALL agreed
+            if (onlineCount > 0 && allAgreed) {
+                try {
+                    await supabase.from('rooms').update({
+                        phase: 'disbanded',
+                        last_update_time: Date.now()
+                    }).eq('id', state.roomId);
+                } catch(e) {
+                    console.error("Failed to disband:", e);
+                }
+            }
+        }
     }
 
     function handleDisconnect() {
@@ -757,7 +886,6 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
             }).catch(() => {});
         }
 
-        leaveVoice();
     }
 
     // ── WAITING ROOM RENDER ──────────────────────────────────────────────────
@@ -774,12 +902,16 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
 
         teamA.innerHTML = state.teams[0].players.map(p => {
             const isMe = p.id === state.myPlayerId;
-            return `<div class="game-roster-row${isMe ? ' game-roster-active' : ''}"><span class="game-roster-name">${escapeHtml(p.name)}${isMe ? ' (you)' : ''}${p.id === state.hostId ? ' ★' : ''}</span></div>`;
+            const isOnline = onlinePlayerIds.has(p.id);
+            const statusIndicator = isOnline ? '' : '<span style="color:var(--red);font-size:10px;margin-left:6px;">(Offline)</span>';
+            return `<div class="game-roster-row${isMe ? ' game-roster-active' : ''}"><span class="game-roster-name">${escapeHtml(p.name)}${isMe ? ' (you)' : ''}${p.id === state.hostId ? ' ★' : ''}${statusIndicator}</span></div>`;
         }).join("") || '<div style="color:var(--muted);padding:12px;text-align:center;font-size:13px;">No players yet</div>';
 
         teamB.innerHTML = state.teams[1].players.map(p => {
             const isMe = p.id === state.myPlayerId;
-            return `<div class="game-roster-row${isMe ? ' game-roster-active' : ''}"><span class="game-roster-name">${escapeHtml(p.name)}${isMe ? ' (you)' : ''}${p.id === state.hostId ? ' ★' : ''}</span></div>`;
+            const isOnline = onlinePlayerIds.has(p.id);
+            const statusIndicator = isOnline ? '' : '<span style="color:var(--red);font-size:10px;margin-left:6px;">(Offline)</span>';
+            return `<div class="game-roster-row${isMe ? ' game-roster-active' : ''}"><span class="game-roster-name">${escapeHtml(p.name)}${isMe ? ' (you)' : ''}${p.id === state.hostId ? ' ★' : ''}${statusIndicator}</span></div>`;
         }).join("") || '<div style="color:var(--muted);padding:12px;text-align:center;font-size:13px;">No players yet</div>';
     }
 
@@ -789,6 +921,10 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         if (!state.isHost) return;
         if (state.teams[0].players.length === 0 || state.teams[1].players.length === 0) {
             alert("Both teams need at least 1 player to start!");
+            return;
+        }
+        if (state.teams[0].players.length !== state.teams[1].players.length) {
+            alert("Teams must have an equal number of players to start the match!");
             return;
         }
 
@@ -1216,8 +1352,10 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
     function renderRoster(container, players) {
         container.innerHTML = players.map((p) => {
             const isMe = p.id === state.myPlayerId;
+            const isOnline = onlinePlayerIds.has(p.id);
+            const statusIndicator = isOnline ? '' : '<span style="color:var(--red);font-size:10px;margin-left:6px;">(Offline)</span>';
             return `<div class="game-roster-row ${isMe ? 'game-roster-active' : ''}">
-                <span class="game-roster-name">${escapeHtml(p.name)}${isMe ? ' (you)' : ''}</span>
+                <span class="game-roster-name">${escapeHtml(p.name)}${isMe ? ' (you)' : ''}${statusIndicator}</span>
                 <span class="game-roster-stats">
                     <span class="game-mono">$${(p.cash || 0).toFixed(0)}</span> cash
                     <span class="game-roster-sep">·</span>
