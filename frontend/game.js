@@ -610,13 +610,20 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
     // ── SWITCH TEAM ──────────────────────────────────────────────────────────
 
     async function switchTeam() {
-        if (state.phase !== "waiting" || !state.roomId) return;
+        if (state.phase !== "waiting" || !state.roomId) {
+            console.error("[SwitchTeam] Invalid state:", state);
+            return;
+        }
         const btn = dom.switchTeamBtn;
         if (btn) btn.disabled = true;
 
         try {
             const { data: roomData, error: fetchErr } = await supabase.from('rooms').select('*').eq('id', state.roomId).single();
-            if (fetchErr || !roomData) return;
+            if (fetchErr) {
+                console.error("[SwitchTeam] Fetch error:", fetchErr);
+                throw new Error("Failed to fetch room: " + fetchErr.message);
+            }
+            if (!roomData) throw new Error("Room data is empty.");
             if (roomData.phase !== "waiting") throw new Error("Cannot switch team after game has started.");
 
             const validated = validateRoomState(roomData);
@@ -632,7 +639,10 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
                 }
             }
 
-            if (!playerEntry || fromTeam === -1) return;
+            if (!playerEntry || fromTeam === -1) {
+                console.error("[SwitchTeam] Player not found in teams. myPlayerId:", state.myPlayerId, "Teams:", validated.teams);
+                throw new Error("You are not assigned to a team.");
+            }
 
             const toTeam = fromTeam === 0 ? 1 : 0;
 
