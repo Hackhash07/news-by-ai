@@ -126,7 +126,9 @@ import { supabase } from './supabase.js';
         if (dom.leaveRoomBtn) dom.leaveRoomBtn.addEventListener("click", leaveRoom);
         
         const disbandRoomBtn = $("disband-room-btn");
+        const arenaDisbandBtn = $("arena-disband-btn");
         if (disbandRoomBtn) disbandRoomBtn.addEventListener("click", initiateDisbandVote);
+        if (arenaDisbandBtn) arenaDisbandBtn.addEventListener("click", initiateDisbandVote);
 
         const disbandAgreeBtn = $("disband-agree-btn");
         const disbandDisagreeBtn = $("disband-disagree-btn");
