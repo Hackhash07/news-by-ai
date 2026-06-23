@@ -598,7 +598,8 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
         // Realtime subscription
         state.unsubscribeRoom = supabase.channel(`room-${code}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, (payload) => {
-                if (payload.new && payload.new.id === code) {
+                const row = payload.new || payload.old;
+                if (row && row.id === code) {
                     if (payload.eventType === 'DELETE') {
                         handleData(null);
                     } else {
