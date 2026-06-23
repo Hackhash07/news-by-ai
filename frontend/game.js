@@ -150,8 +150,9 @@ import { joinTeamVoice, toggleMute, leaveVoice, isVoiceConnected } from "./voice
 
     function getMyPlayerId() {
         let id = sessionStorage.getItem(SESSION_KEYS.PLAYER_ID);
-        if (!id) {
-            id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!id || !uuidRegex.test(id)) {
+            id = crypto.randomUUID();
             sessionStorage.setItem(SESSION_KEYS.PLAYER_ID, id);
         }
         return id;
