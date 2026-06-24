@@ -1508,39 +1508,130 @@ import { supabase } from './supabase.js';
     }
 
     // ── CHART ─────────────────────────────────────────────────────────────────
+    // ── CHART ANIMATION STATE ─────────────────────────────────────────────────
+    const chartAnimState = new WeakMap();
+
     function drawChart(canvas) {
         if (!canvas) return;
+        const data = state.match.worthHistory || [];
+        
+        let anim = chartAnimState.get(canvas);
+        if (!anim) {
+            anim = {
+                displayData: [...data],
+                pulse: 0,
+                pulseSize: 0,
+                frameId: null
+            };
+            chartAnimState.set(canvas, anim);
+        }
+
+        // Trigger pulse on new data or significant change
+        const targetLast = data[data.length - 1] || 0;
+        const currentLast = anim.displayData[anim.displayData.length - 1] || 0;
+        if (data.length > anim.displayData.length || Math.abs(targetLast - currentLast) > 0.05) {
+            anim.pulse = 1.0;
+            anim.pulseSize = Math.min(25, 10 + Math.abs(targetLast - currentLast) * 2);
+        }
+
+        // Sync array lengths for smooth transitions
+        while(anim.displayData.length < data.length) {
+            anim.displayData.push(anim.displayData[anim.displayData.length - 1] || data[data.length - 1]);
+        }
+        while(anim.displayData.length > data.length) {
+            anim.displayData.pop();
+        }
+
+        if (!anim.frameId) {
+            const loop = () => {
+                // Pause if canvas is hidden
+                if (canvas.offsetParent === null) {
+                    anim.frameId = null;
+                    return;
+                }
+                
+                let needsUpdate = false;
+                
+                // Smooth easing towards actual data
+                for (let i = 0; i < data.length; i++) {
+                    const diff = data[i] - anim.displayData[i];
+                    if (Math.abs(diff) > 0.005) {
+                        anim.displayData[i] += diff * 0.12; // Easing speed
+                        needsUpdate = true;
+                    } else {
+                        anim.displayData[i] = data[i];
+                    }
+                }
+
+                if (anim.pulse > 0) {
+                    anim.pulse -= 0.03; // Pulse fade speed
+                    needsUpdate = true;
+                } else {
+                    anim.pulse = 0;
+                }
+
+                // Subtle organic market noise (only when playing)
+                const time = Date.now() * 0.001;
+                const noise = state.phase === "playing" ? (Math.sin(time * 2.5) * 0.08 + Math.cos(time * 1.8) * 0.05) : 0;
+                
+                renderChartFrame(canvas, anim.displayData, anim.pulse, anim.pulseSize, noise, data);
+
+                if (needsUpdate || state.phase === "playing") {
+                    anim.frameId = requestAnimationFrame(loop);
+                } else {
+                    anim.frameId = null;
+                }
+            };
+            anim.frameId = requestAnimationFrame(loop);
+        }
+    }
+
+    function renderChartFrame(canvas, displayData, pulseProgress, pulseSize, noise, realData) {
         const parent = canvas.parentElement;
         const dpr = window.devicePixelRatio || 1;
         const w = parent.clientWidth;
         const h = parent.clientHeight || w;
-        canvas.width = w * dpr;
-        canvas.height = h * dpr;
-        canvas.style.width = w + "px";
-        canvas.style.height = h + "px";
+        
+        // Responsive resize
+        if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+            canvas.width = w * dpr;
+            canvas.height = h * dpr;
+            canvas.style.width = w + "px";
+            canvas.style.height = h + "px";
+        }
+        
         const ctx = canvas.getContext("2d");
+        ctx.save();
         ctx.scale(dpr, dpr);
-        const data = state.match.worthHistory || [];
-        if (!data || data.length < 2) {
+        ctx.clearRect(0, 0, w, h);
+
+        if (!displayData || displayData.length < 2) {
             ctx.fillStyle = "#94a3b8";
-            ctx.font = "12px 'JetBrains Mono', monospace";
+            ctx.font = "12px 'Inter', sans-serif";
             ctx.textAlign = "center";
             ctx.fillText("Awaiting data...", w / 2, h / 2);
+            ctx.restore();
             return;
         }
-        const pad = { top: 24, right: 16, bottom: 32, left: 52 };
+
+        const pad = { top: 32, right: 24, bottom: 40, left: 56 };
         const cw = w - pad.left - pad.right;
         const ch = h - pad.top - pad.bottom;
-        const minVal = Math.min(...data) * 0.95;
-        const maxVal = Math.max(...data) * 1.05;
+        
+        // Scale based on real data to prevent jitter during easing
+        const minVal = Math.min(...realData) * 0.95;
+        const maxVal = Math.max(...realData) * 1.05;
         const range = maxVal - minVal || 1;
-        ctx.clearRect(0, 0, w, h);
+
+        // ── Grid ──
         const gridLines = 5;
-        ctx.strokeStyle = "rgba(255,255,255,0.06)";
+        ctx.strokeStyle = "rgba(255,255,255,0.03)";
         ctx.lineWidth = 1;
         ctx.font = "10px 'JetBrains Mono', monospace";
-        ctx.fillStyle = "#64748b";
+        ctx.fillStyle = "#475569";
         ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        
         for (let i = 0; i <= gridLines; i++) {
             const y = pad.top + (ch / gridLines) * i;
             const val = maxVal - (range / gridLines) * i;
@@ -1548,84 +1639,127 @@ import { supabase } from './supabase.js';
             ctx.moveTo(pad.left, y);
             ctx.lineTo(w - pad.right, y);
             ctx.stroke();
-            ctx.fillText(val.toFixed(1), pad.left - 6, y + 3);
+            ctx.fillText(val.toFixed(1), pad.left - 10, y);
         }
+
         ctx.textAlign = "center";
-        const xStep = Math.max(1, Math.floor(data.length / 8));
-        for (let i = 0; i < data.length; i += xStep) {
-            const x = pad.left + (i / (data.length - 1)) * cw;
-            ctx.fillText(String(i), x, h - pad.bottom + 16);
+        ctx.textBaseline = "top";
+        const xStep = Math.max(1, Math.floor(displayData.length / 8));
+        for (let i = 0; i < displayData.length; i += xStep) {
+            const x = pad.left + (i / (displayData.length - 1)) * cw;
+            ctx.fillText(String(i), x, h - pad.bottom + 12);
         }
+
+        // Apply noise to the final rendering point
+        const renderData = [...displayData];
+        renderData[renderData.length - 1] += noise;
+
+        // ── Catmull-Rom Spline Points ──
+        const pts = [];
+        for (let i = 0; i < renderData.length; i++) {
+            const x = pad.left + (i / (renderData.length - 1)) * cw;
+            const y = pad.top + ch - ((renderData[i] - minVal) / range) * ch;
+            pts.push({x, y});
+        }
+
+        // Helper to draw smooth path
+        const drawSmoothPath = () => {
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (let i = 0; i < pts.length - 1; i++) {
+                const p0 = i > 0 ? pts[i - 1] : pts[0];
+                const p1 = pts[i];
+                const p2 = pts[i + 1];
+                const p3 = i !== pts.length - 2 ? pts[i + 2] : p2;
+
+                const tension = 0.25;
+                const cp1x = p1.x + (p2.x - p0.x) * tension / 3;
+                const cp1y = p1.y + (p2.y - p0.y) * tension / 3;
+                const cp2x = p2.x - (p3.x - p1.x) * tension / 3;
+                const cp2y = p2.y - (p3.y - p1.y) * tension / 3;
+
+                ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+            }
+        };
+
+        // ── Glowing Line ──
         ctx.beginPath();
-        ctx.strokeStyle = "#d8b15b";
-        ctx.lineWidth = 2.5;
+        drawSmoothPath();
+        
+        const gradientLine = ctx.createLinearGradient(pad.left, 0, w - pad.right, 0);
+        gradientLine.addColorStop(0, "rgba(216,177,91,0.4)");
+        gradientLine.addColorStop(1, "rgba(255,204,51,1)");
+
+        ctx.strokeStyle = gradientLine;
+        ctx.lineWidth = 3;
         ctx.lineJoin = "round";
         ctx.lineCap = "round";
-        ctx.shadowColor = "#d8b15b";
+        ctx.shadowColor = "rgba(255,204,51,0.5)";
         ctx.shadowBlur = 12;
-
-        for (let i = 0; i < data.length; i++) {
-            const x = pad.left + (i / (data.length - 1)) * cw;
-            const y = pad.top + ch - ((data[i] - minVal) / range) * ch;
-            if (i === 0) {
-                ctx.moveTo(x, y);
-            } else {
-                const prevX = pad.left + ((i - 1) / (data.length - 1)) * cw;
-                const prevY = pad.top + ch - ((data[i - 1] - minVal) / range) * ch;
-                const cpX = prevX + (x - prevX) / 2;
-                ctx.quadraticCurveTo(cpX, prevY, x, y);
-            }
-        }
         ctx.stroke();
+        ctx.shadowBlur = 0;
 
-        ctx.shadowBlur = 0; // Disable glow for fill
-
-        const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + ch);
-        gradient.addColorStop(0, "rgba(216,177,91,0.2)");
-        gradient.addColorStop(1, "rgba(216,177,91,0.0)");
-        ctx.lineTo(pad.left + cw, pad.top + ch);
-        ctx.lineTo(pad.left, pad.top + ch);
-        ctx.closePath();
-        ctx.fillStyle = gradient;
-        ctx.fill();
-
-        const lastX = pad.left + cw;
-        const lastY = pad.top + ch - ((data[data.length - 1] - minVal) / range) * ch;
+        // ── Fill Area ──
         ctx.beginPath();
-        ctx.arc(lastX, lastY, 5, 0, Math.PI * 2);
-        ctx.fillStyle = "#d8b15b";
-        ctx.fill();
-        ctx.strokeStyle = "#0b1020";
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        drawSmoothPath();
+        ctx.lineTo(pts[pts.length - 1].x, pad.top + ch);
+        ctx.lineTo(pts[0].x, pad.top + ch);
+        ctx.closePath();
 
-        // Latest Price Marker
-        ctx.shadowColor = "#d8b15b";
-        ctx.shadowBlur = 6;
-        ctx.fillStyle = "#0b1020";
-        ctx.strokeStyle = "#d8b15b";
-        ctx.lineWidth = 1;
+        const gradientFill = ctx.createLinearGradient(0, pad.top, 0, pad.top + ch);
+        gradientFill.addColorStop(0, "rgba(255,204,51,0.2)");
+        gradientFill.addColorStop(0.4, "rgba(216,177,91,0.05)");
+        gradientFill.addColorStop(1, "rgba(216,177,91,0.0)");
         
-        const priceText = `$${data[data.length - 1].toFixed(2)}`;
-        ctx.font = "11px 'JetBrains Mono', monospace";
+        ctx.fillStyle = gradientFill;
+        ctx.fill();
+
+        // ── Latest Point Marker & Pulse ──
+        const lastPt = pts[pts.length - 1];
+        
+        if (pulseProgress > 0) {
+            ctx.beginPath();
+            ctx.arc(lastPt.x, lastPt.y, 4 + (1 - pulseProgress) * pulseSize, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255,204,51, ${pulseProgress * 0.4})`;
+            ctx.fill();
+        }
+
+        ctx.beginPath();
+        ctx.arc(lastPt.x, lastPt.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = "#0b1020";
+        ctx.fill();
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = "#ffcc33";
+        ctx.shadowColor = "#ffcc33";
+        ctx.shadowBlur = 8;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // ── Price Badge ──
+        const latestRealValue = realData[realData.length - 1];
+        const priceText = `$${latestRealValue.toFixed(2)}`;
+        ctx.font = "bold 11px 'JetBrains Mono', monospace";
         const textWidth = ctx.measureText(priceText).width;
         
-        const boxW = textWidth + 12;
-        const boxH = 20;
-        let boxX = lastX - boxW - 8;
-        let boxY = lastY - boxH / 2;
-        if (boxX < pad.left) boxX = lastX + 8; // flip to right if goes offscreen
+        const boxW = textWidth + 14;
+        const boxH = 22;
+        let boxX = lastPt.x - boxW - 12;
+        let boxY = lastPt.y - boxH / 2;
+        if (boxX < pad.left) boxX = lastPt.x + 12; // Flip to right if cramped
 
         ctx.beginPath();
-        ctx.roundRect(boxX, boxY, boxW, boxH, 4);
+        ctx.roundRect(boxX, boxY, boxW, boxH, 6);
+        ctx.fillStyle = "rgba(11, 16, 32, 0.9)";
         ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "rgba(255,204,51,0.3)";
         ctx.stroke();
-        
-        ctx.shadowBlur = 0;
-        ctx.fillStyle = "#fff";
+
+        ctx.fillStyle = "#ffcc33";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(priceText, boxX + boxW / 2, boxY + boxH / 2);
+
+        ctx.restore();
     }
 
     // ── UTILITIES ─────────────────────────────────────────────────────────────
