@@ -517,7 +517,7 @@ import { supabase } from './supabase.js';
 
         const handleData = (data) => {
             if (!data) {
-                cleanupLocalStateAndUI("Room has been closed.");
+                cleanupLocalStateAndUI("Host left. Room has been closed.");
                 return;
             }
 
@@ -604,6 +604,12 @@ import { supabase } from './supabase.js';
         presenceChannel = supabase.channel(`presence-${code}`, {
             config: { presence: { key: state.myPlayerId } }
         });
+        const syncPresenceUI = () => {
+            if (state.phase === "waiting" && !dom.waitingRoom.hidden) renderWaitingRoom();
+            else if (state.phase === "playing" && !dom.arena.hidden) renderArena();
+            checkDisbandVoteStatus(); // Re-check if someone dropped offline
+        };
+
         presenceChannel
             .on('presence', { event: 'sync' }, () => {
                 const presenceState = presenceChannel.presenceState();
@@ -611,9 +617,18 @@ import { supabase } from './supabase.js';
                 for (const id in presenceState) {
                     onlinePlayerIds.add(id);
                 }
-                if (state.phase === "waiting" && !dom.waitingRoom.hidden) renderWaitingRoom();
-                else if (state.phase === "playing" && !dom.arena.hidden) renderArena();
-                checkDisbandVoteStatus(); // Re-check if someone dropped offline
+                syncPresenceUI();
+            })
+            .on('presence', { event: 'join' }, ({ key }) => {
+                onlinePlayerIds.add(key);
+                syncPresenceUI();
+            })
+            .on('presence', { event: 'leave' }, ({ key }) => {
+                const presenceState = presenceChannel.presenceState();
+                if (!presenceState[key]) {
+                    onlinePlayerIds.delete(key);
+                }
+                syncPresenceUI();
             })
             .subscribe(async (status) => {
                 if (status === 'SUBSCRIBED') {
@@ -631,14 +646,13 @@ import { supabase } from './supabase.js';
 
         // Realtime subscription
         state.unsubscribeRoom = supabase.channel(`room-${code}`)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, (payload) => {
-                const row = payload.new || payload.old;
-                if (row && row.id === code) {
-                    if (payload.eventType === 'DELETE' || row.phase === 'disbanded') {
-                        handleData(null);
-                    } else {
-                        handleData(row);
-                    }
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${code}` }, (payload) => {
+                if (payload.eventType === 'DELETE') {
+                    handleData(null);
+                } else if (payload.new && payload.new.phase === 'disbanded') {
+                    handleData(null);
+                } else {
+                    handleData(payload.new);
                 }
             })
             .subscribe();
@@ -1393,9 +1407,9 @@ import { supabase } from './supabase.js';
             const isMe = p.id === state.myPlayerId;
             const isOnline = onlinePlayerIds.has(p.id);
             const statusIndicator = isOnline ? '' : '<span style="color:var(--red);font-size:10px;margin-left:6px;">(Offline)</span>';
-            return `<div class="game-roster-row ${isMe ? 'game-roster-active' : ''}">
+            return `<div class="game-roster-row ${isMe ? 'game-roster-active' : ''}" style="flex-direction: column; align-items: flex-start; gap: 4px;">
                 <span class="game-roster-name">${escapeHtml(p.name)}${isMe ? ' (you)' : ''}${statusIndicator}</span>
-                <span class="game-roster-stats">
+                <span class="game-roster-stats" style="white-space: normal; line-height: 1.4;">
                     <span class="game-mono">$${(p.cash || 0).toFixed(0)}</span> cash
                     <span class="game-roster-sep">·</span>
                     <span class="game-mono">${p.stocks || 0}</span> stk
