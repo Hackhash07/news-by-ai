@@ -1093,13 +1093,15 @@ import { supabase } from './supabase.js';
                         stockWorth = Math.round(stockWorth * 100) / 100;
                         worthHistory.push(stockWorth);
                         myState.lastFeedback = {
-                            text: `✓ Correct! Bought 1 stock at $${stockWorth.toFixed(2)}`,
-                            className: "game-feedback game-feedback-correct"
+                            text: `<div class="dopamine-tag">+1 STOCK ACQUIRED</div><div class="dopamine-sub">Price: $${stockWorth.toFixed(2)}</div>`,
+                            className: "game-feedback feedback-flash-green",
+                            isHtml: true
                         };
                     } else {
                         myState.lastFeedback = {
-                            text: `✓ Correct! But insufficient cash to buy.`,
-                            className: "game-feedback game-feedback-wrong"
+                            text: `<div class="dopamine-tag">INSUFFICIENT FUNDS</div><div class="dopamine-sub">Cannot buy stock at $${stockWorth.toFixed(2)}</div>`,
+                            className: "game-feedback feedback-flash-red",
+                            isHtml: true
                         };
                     }
                 } else if (tradeAction === 's' || tradeAction === '-') {
@@ -1115,13 +1117,15 @@ import { supabase } from './supabase.js';
                     stockWorth = Math.round(stockWorth * 100) / 100;
                     worthHistory.push(stockWorth);
                     myState.lastFeedback = {
-                        text: `✓ Correct! Sold 1 stock at $${stockWorth.toFixed(2)}`,
-                        className: "game-feedback game-feedback-correct"
+                        text: `<div class="dopamine-tag">STOCK SOLD</div><div class="dopamine-sub">+$${stockWorth.toFixed(2)} CASH</div>`,
+                        className: "game-feedback feedback-flash-green",
+                        isHtml: true
                     };
                 } else {
                     myState.lastFeedback = {
-                        text: `✓ Correct! Holding position.`,
-                        className: "game-feedback game-feedback-correct"
+                        text: `<div class="dopamine-tag">POSITION HELD</div><div class="dopamine-sub">Waiting for better price</div>`,
+                        className: "game-feedback feedback-flash-green",
+                        isHtml: true
                     };
                 }
             } else {
@@ -1129,8 +1133,9 @@ import { supabase } from './supabase.js';
                 const penalty = Math.round((roomData.initial_worth || 100) * 0.1) || 10;
                 myState.cash -= penalty;
                 myState.lastFeedback = {
-                    text: `✗ Wrong! Answer was ${correctAnswer}. Penalty: -$${penalty}`,
-                    className: "game-feedback game-feedback-wrong"
+                    text: `<div class="dopamine-tag">INCORRECT</div><div class="dopamine-sub">Answer was ${correctAnswer} | Penalty: -$${penalty}</div>`,
+                    className: "game-feedback feedback-flash-red",
+                    isHtml: true
                 };
             }
 
@@ -1211,7 +1216,7 @@ import { supabase } from './supabase.js';
         const ps = state.match.playerStates || {};
         const stockWorth = state.match.stockWorth || 0;
 
-        let tStocks = 0, tCash = 0, tWorth = 0;
+        let tStocks = 0, tCash = 0, tWorth = 0, tInitialWorth = 0, tTrades = 0;
         const playersWithStats = [];
 
         team.players.forEach(p => {
@@ -1226,6 +1231,8 @@ import { supabase } from './supabase.js';
                 tStocks += playerState.stocks;
                 tCash += playerState.cash;
                 tWorth += worth;
+                tInitialWorth += playerState.initialWorth;
+                tTrades += playerState.trades;
             } else {
                 playersWithStats.push({
                     ...p,
@@ -1240,6 +1247,8 @@ import { supabase } from './supabase.js';
             stocks: tStocks,
             cash: tCash,
             totalWorth: Math.round(tWorth * 100) / 100,
+            initialTotalWorth: tInitialWorth,
+            trades: tTrades,
             players: playersWithStats
         };
     }
@@ -1324,6 +1333,22 @@ import { supabase } from './supabase.js';
         dom.teamACash.textContent = teamAData.cash.toFixed(1);
         dom.teamBCash.textContent = teamBData.cash.toFixed(1);
 
+        if ($("team-a-trades")) $("team-a-trades").textContent = teamAData.trades;
+        if ($("team-b-trades")) $("team-b-trades").textContent = teamBData.trades;
+
+        const calcPL = (team) => team.initialTotalWorth ? ((team.totalWorth - team.initialTotalWorth) / team.initialTotalWorth * 100) : 0;
+        const plA = calcPL(teamAData);
+        const plB = calcPL(teamBData);
+        
+        if ($("team-a-pl")) {
+            $("team-a-pl").textContent = (plA >= 0 ? "+" : "") + plA.toFixed(1) + "%";
+            $("team-a-pl").style.color = plA >= 0 ? "var(--success)" : "var(--danger)";
+        }
+        if ($("team-b-pl")) {
+            $("team-b-pl").textContent = (plB >= 0 ? "+" : "") + plB.toFixed(1) + "%";
+            $("team-b-pl").style.color = plB >= 0 ? "var(--success)" : "var(--danger)";
+        }
+
         renderRoster(dom.teamARoster, teamAData.players);
         renderRoster(dom.teamBRoster, teamBData.players);
 
@@ -1331,13 +1356,29 @@ import { supabase } from './supabase.js';
             dom.questionText.textContent = myState.currentQuestion.text;
             dom.answerInput.disabled = false;
             dom.answerInput.placeholder = "e.g. 7 b (buy) or 7 s (sell)";
+
+            const qNumEl = $("game-question-num");
+            const qBox = $("game-question-container");
+            const expectedNum = (myState.questionNumber || 0) + 1;
+            if (qNumEl && qNumEl.textContent != expectedNum) {
+                qNumEl.textContent = expectedNum;
+                if (qBox) {
+                    qBox.classList.remove("question-pulse");
+                    void qBox.offsetWidth; // trigger reflow
+                    qBox.classList.add("question-pulse");
+                }
+            }
         } else {
             dom.questionText.textContent = "Waiting for game to start...";
             dom.answerInput.disabled = true;
         }
 
         if (myState && myState.lastFeedback) {
-            dom.feedback.textContent = myState.lastFeedback.text;
+            if (myState.lastFeedback.isHtml) {
+                dom.feedback.innerHTML = myState.lastFeedback.text;
+            } else {
+                dom.feedback.textContent = myState.lastFeedback.text;
+            }
             dom.feedback.className = myState.lastFeedback.className;
         } else {
             dom.feedback.textContent = "";
@@ -1481,33 +1522,74 @@ import { supabase } from './supabase.js';
         }
         ctx.beginPath();
         ctx.strokeStyle = "#d8b15b";
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2.5;
         ctx.lineJoin = "round";
         ctx.lineCap = "round";
+        ctx.shadowColor = "#d8b15b";
+        ctx.shadowBlur = 12;
+
         for (let i = 0; i < data.length; i++) {
             const x = pad.left + (i / (data.length - 1)) * cw;
             const y = pad.top + ch - ((data[i] - minVal) / range) * ch;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                const prevX = pad.left + ((i - 1) / (data.length - 1)) * cw;
+                const prevY = pad.top + ch - ((data[i - 1] - minVal) / range) * ch;
+                const cpX = prevX + (x - prevX) / 2;
+                ctx.quadraticCurveTo(cpX, prevY, x, y);
+            }
         }
         ctx.stroke();
+
+        ctx.shadowBlur = 0; // Disable glow for fill
+
         const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + ch);
-        gradient.addColorStop(0, "rgba(216,177,91,0.15)");
-        gradient.addColorStop(1, "rgba(216,177,91,0)");
+        gradient.addColorStop(0, "rgba(216,177,91,0.2)");
+        gradient.addColorStop(1, "rgba(216,177,91,0.0)");
         ctx.lineTo(pad.left + cw, pad.top + ch);
         ctx.lineTo(pad.left, pad.top + ch);
         ctx.closePath();
         ctx.fillStyle = gradient;
         ctx.fill();
+
         const lastX = pad.left + cw;
         const lastY = pad.top + ch - ((data[data.length - 1] - minVal) / range) * ch;
         ctx.beginPath();
-        ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
+        ctx.arc(lastX, lastY, 5, 0, Math.PI * 2);
         ctx.fillStyle = "#d8b15b";
         ctx.fill();
         ctx.strokeStyle = "#0b1020";
         ctx.lineWidth = 2;
         ctx.stroke();
+
+        // Latest Price Marker
+        ctx.shadowColor = "#d8b15b";
+        ctx.shadowBlur = 6;
+        ctx.fillStyle = "#0b1020";
+        ctx.strokeStyle = "#d8b15b";
+        ctx.lineWidth = 1;
+        
+        const priceText = `$${data[data.length - 1].toFixed(2)}`;
+        ctx.font = "11px 'JetBrains Mono', monospace";
+        const textWidth = ctx.measureText(priceText).width;
+        
+        const boxW = textWidth + 12;
+        const boxH = 20;
+        let boxX = lastX - boxW - 8;
+        let boxY = lastY - boxH / 2;
+        if (boxX < pad.left) boxX = lastX + 8; // flip to right if goes offscreen
+
+        ctx.beginPath();
+        ctx.roundRect(boxX, boxY, boxW, boxH, 4);
+        ctx.fill();
+        ctx.stroke();
+        
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#fff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(priceText, boxX + boxW / 2, boxY + boxH / 2);
     }
 
     // ── UTILITIES ─────────────────────────────────────────────────────────────
