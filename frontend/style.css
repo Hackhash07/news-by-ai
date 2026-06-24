@@ -1453,18 +1453,34 @@ button, input { font: inherit; }
 }
 
 @media (max-width: 768px) {
+  .topnav {
+    padding: 12px 14px;
+  }
   .nav-inner {
     flex-wrap: wrap;
+    gap: 10px;
   }
+  .brand { gap: 8px; }
+  .brand-mark { width: 32px; height: 32px; font-size: 12px; border-radius: 8px; }
+  .brand-name { font-size: 12px; }
+  .brand-sub { display: none; } /* Hide 'Market Intelligence' on mobile to save space */
+  
+  .nav-right { gap: 10px; }
+  .nav-avatar { width: 32px; height: 32px; font-size: 11px; }
+  .game-nav-icon svg { width: 18px; height: 18px; }
+  .ticker-time { display: none; } /* Hide clock on mobile nav to save space */
+  
   .nav-links {
     order: 3;
     width: 100%;
-    justify-content: center;
-    margin-top: 10px;
+    justify-content: space-between; /* spread links out evenly */
+    gap: 8px;
+    margin-top: 8px;
     padding-top: 12px;
     border-top: 1px solid rgba(255,255,255,0.06);
+    overflow-x: auto;
   }
-  .nav-link { font-size: 13px; gap: 12px; }
+  .nav-link { font-size: 13px; padding: 4px 0; }
 
   .profile-grid {
     grid-template-columns: 1fr;
@@ -1483,6 +1499,7 @@ button, input { font: inherit; }
   .ph-right {
     width: 100%;
     justify-content: center;
+    flex-wrap: wrap;
   }
 }
 
