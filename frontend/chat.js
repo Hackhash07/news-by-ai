@@ -72,7 +72,7 @@ function bindEvents() {
             }
         });
         if (error) {
-            console.error("Google Sign-In Error:", error);
+            // console.error("Google Sign-In Error:", error);
             alert("Sign-in failed: " + error.message);
         }
     });
@@ -94,7 +94,7 @@ function bindEvents() {
 
         const { error } = await supabase.from('profiles').upsert(profileData);
         if (error) {
-            console.error("Profile creation failed:", error);
+            // console.error("Profile creation failed:", error);
             alert("Failed to create profile: " + error.message);
             return;
         }
@@ -202,7 +202,7 @@ function listenToMessages() {
             .limit(100);
 
         if (error) {
-            console.error("Messages fetch error:", error);
+            // console.error("Messages fetch error:", error);
             if (refs.chatStatus) refs.chatStatus.textContent = "Reconnecting…";
             return;
         }
@@ -257,7 +257,7 @@ function renderRoomHeader() {
 }
 
 async function sendMessage() {
-    const message = refs.chatInput?.value.trim();
+    const message = refs.chatInput?.value.trim().substring(0, 500);
     if (!message || !state.profile) return;
 
     const payload = {
@@ -275,7 +275,7 @@ async function sendMessage() {
         const { error } = await supabase.from('messages').insert(payload);
         if (error) throw error;
     } catch (err) {
-        console.error("Send error:", err);
+            // console.error("Send error:", err);
         if (refs.chatStatusBar) refs.chatStatusBar.textContent = "Send failed — try again";
     }
 }

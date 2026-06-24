@@ -135,8 +135,6 @@ import { supabase } from './supabase.js';
         if (disbandAgreeBtn) disbandAgreeBtn.addEventListener("click", () => castDisbandVote("agree"));
         if (disbandDisagreeBtn) disbandDisagreeBtn.addEventListener("click", () => castDisbandVote("disagree"));
 
-        window.addEventListener("beforeunload", handleDisconnect);
-
         dom.answerForm.addEventListener("submit", handleAnswer);
 
         // Play Again — return to waiting room, NOT reload
@@ -301,7 +299,7 @@ import { supabase } from './supabase.js';
             const code = generateRoomCode();
 
             state.myPlayerId = getMyPlayerId();
-            const playerName = $("host-player-name").value.trim() || "Host";
+            const playerName = ($("host-player-name").value.trim() || "Host").substring(0, 30);
             const teamId = $("host-team").value;
             state.myPlayerName = playerName;
 
@@ -407,7 +405,7 @@ import { supabase } from './supabase.js';
 
         try {
             state.myPlayerId = getMyPlayerId();
-            const playerName = $("join-player-name").value.trim() || "Player";
+            const playerName = ($("join-player-name").value.trim() || "Player").substring(0, 30);
             const teamId = $("join-team").value;
             state.myPlayerName = playerName;
 
@@ -420,7 +418,7 @@ import { supabase } from './supabase.js';
                 throw new Error("Room not found!");
             }
 
-            if (roomData.phase === "playing") {
+            if (roomData.phase === "playing" || roomData.phase === "results") {
                 throw new Error("Game already in progress!");
             }
 
@@ -866,28 +864,7 @@ import { supabase } from './supabase.js';
         }
     }
 
-    function handleDisconnect() {
-        if (!state.roomId) return;
-
-        if (state.isHost) {
-            supabase.from('rooms').delete().eq('id', state.roomId).then(() => {}).catch(() => {});
-        } else {
-            supabase.from('rooms').select('*').eq('id', state.roomId).single().then(({ data }) => {
-                if (!data) return;
-                for (let i = 0; i < 2; i++) {
-                    data.teams[i].players = data.teams[i].players.filter(p => p.id !== state.myPlayerId);
-                }
-                if (data.match && data.match.playerStates) {
-                    delete data.match.playerStates[state.myPlayerId];
-                }
-                supabase.from('rooms').update({
-                    teams: data.teams,
-                    match: data.match
-                }).eq('id', state.roomId).then(() => {}).catch(() => {});
-            }).catch(() => {});
-        }
-
-    }
+    // Removed handleDisconnect since presence handles online/offline and we want to allow reconnects on refresh.
 
     // ── WAITING ROOM RENDER ──────────────────────────────────────────────────
 
@@ -1183,15 +1160,28 @@ import { supabase } from './supabase.js';
                 renderResults();
             }
 
-            const { error: updateErr } = await supabase.from('rooms').update({
+            const { data: updateData, error: updateErr } = await supabase.from('rooms').update({
                 phase,
                 match: updatedMatch,
                 last_update_time: Date.now()
-            }).eq('id', state.roomId);
+            })
+            .eq('id', state.roomId)
+            .eq('last_update_time', roomData.last_update_time)
+            .select();
 
             if (updateErr) {
                 console.error("[Trade] Update error:", updateErr);
                 throw new Error(updateErr.message);
+            }
+            if (!updateData || updateData.length === 0) {
+                // Revert optimistic UI if failed due to collision
+                state.match = roomData.match;
+                myState.lastFeedback = {
+                    text: `✗ Market moved too fast. Trade dropped. Please retry.`,
+                    className: "game-feedback game-feedback-wrong"
+                };
+                renderArena();
+                throw new Error("Trade collision. Market moved too fast.");
             }
 
         } catch (err) {

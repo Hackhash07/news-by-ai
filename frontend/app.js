@@ -261,9 +261,8 @@ window.toggleBookmark = async function(articleId) {
             article_id: String(article.id)
         });
         if (error) {
-            console.error("Error saving bookmark:", error);
-            alert("Failed to save bookmark.");
-        }
+            showToast("Failed to save bookmark", "error");
+        } else {   }
     }
 };
 
@@ -453,8 +452,7 @@ async function loadNews() {
             refs.lastUpdated.textContent = "Updated " + new Date().toLocaleTimeString("en-IN", { hour12: true });
         }
     } catch (error) {
-        console.error("[TradeTrends]", error);
-        if (refs.lastUpdated) refs.lastUpdated.textContent = "Load failed";
+        if (state.news.length === 0) {refs.lastUpdated.textContent = "Load failed";
         if (refs.newsContainer) {
             refs.newsContainer.innerHTML = `<div class="empty-state"><strong>Unable to load feed</strong> Check that the API is running, then refresh.</div>`;
         }
@@ -518,6 +516,6 @@ async function loadTicker() {
             setTickerPair("banknifty-price", "banknifty-change", data.BANKNIFTY.price, data.BANKNIFTY.change, true);
         }
     } catch (error) {
-        console.error("Ticker Error:", error);
+        // console.error("Ticker Error:", error);
     }
 }
