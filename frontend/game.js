@@ -853,10 +853,17 @@ import { supabase } from './supabase.js';
             // Only disband if we have players online and they ALL agreed
             if (onlineCount > 0 && allAgreed) {
                 try {
-                    await supabase.from('rooms').update({
-                        phase: 'disbanded',
-                        last_update_time: Date.now()
-                    }).eq('id', state.roomId);
+                    const { data: roomData } = await supabase.from('rooms').select('*').eq('id', state.roomId).single();
+                    if (roomData) {
+                        const match_settings = roomData.match_settings || {};
+                        match_settings.disband_vote = { active: false, votes: {} };
+                        
+                        await supabase.from('rooms').update({
+                            phase: 'waiting',
+                            match_settings: match_settings,
+                            last_update_time: Date.now()
+                        }).eq('id', state.roomId);
+                    }
                 } catch(e) {
                     console.error("Failed to disband:", e);
                 }
