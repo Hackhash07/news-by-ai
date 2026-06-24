@@ -107,6 +107,226 @@ import { supabase } from './supabase.js';
         dom.playAgainBtn       = $("play-again-btn");
     }
 
+    // ── WEBRTC VOICE CHAT ─────────────────────────────────────────────────────
+
+    const webrtc = {
+        signalingChannel: null,
+        localStream: null,
+        peers: {}, // map of targetId -> RTCPeerConnection
+        isMuted: true
+    };
+
+    const rtcConfig = {
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    };
+
+    function getMyTeamId() {
+        if (!state.teams || !state.teams.length) return null;
+        if (state.teams[0].players.some(p => p.id === state.myPlayerId)) return "a";
+        if (state.teams[1].players.some(p => p.id === state.myPlayerId)) return "b";
+        return null;
+    }
+
+    function initVoiceSignaling() {
+        if (webrtc.signalingChannel) {
+            supabase.removeChannel(webrtc.signalingChannel);
+        }
+        webrtc.signalingChannel = supabase.channel(`webrtc-${state.roomId}`);
+        webrtc.signalingChannel
+            .on("broadcast", { event: "signal" }, (payload) => handleSignalingMessage(payload.payload))
+            .subscribe((status) => {
+                if (status === "SUBSCRIBED") {
+                    console.log("[VOICE] signaling connected");
+                    if (!webrtc.isMuted && webrtc.localStream) {
+                        broadcastSignal({ type: "join" });
+                    }
+                }
+            });
+    }
+
+    function broadcastSignal(payload) {
+        if (!webrtc.signalingChannel) return;
+        payload.senderId = state.myPlayerId;
+        payload.teamId = getMyTeamId();
+        if (!payload.teamId) return;
+        webrtc.signalingChannel.send({
+            type: "broadcast",
+            event: "signal",
+            payload: payload
+        });
+    }
+
+    async function handleSignalingMessage(payload) {
+        if (!payload || payload.senderId === state.myPlayerId) return;
+        
+        const myTeam = getMyTeamId();
+        if (!myTeam || payload.teamId !== myTeam) return;
+
+        if (payload.targetId && payload.targetId !== state.myPlayerId) return;
+
+        if (webrtc.isMuted || !webrtc.localStream) return;
+
+        try {
+            if (payload.type === "join") {
+                createPeerConnection(payload.senderId, true);
+            } else if (payload.type === "leave") {
+                closePeerConnection(payload.senderId);
+            } else if (payload.type === "offer") {
+                console.log("[VOICE] offer received");
+                const pc = createPeerConnection(payload.senderId, false);
+                await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                console.log("[VOICE] answer sent");
+                broadcastSignal({
+                    type: "answer",
+                    targetId: payload.senderId,
+                    sdp: pc.localDescription
+                });
+            } else if (payload.type === "answer") {
+                console.log("[VOICE] answer received");
+                const pc = webrtc.peers[payload.senderId];
+                if (pc) {
+                    await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+                }
+            } else if (payload.type === "candidate") {
+                console.log("[VOICE] candidate received");
+                const pc = webrtc.peers[payload.senderId];
+                if (pc && payload.candidate) {
+                    await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+                }
+            }
+        } catch (err) {
+            console.error("[VOICE] error handling signal:", err);
+        }
+    }
+
+    function createPeerConnection(targetId, isInitiator) {
+        if (webrtc.peers[targetId]) {
+            return webrtc.peers[targetId]; // Prevent duplicates
+        }
+
+        console.log("[VOICE] peer created");
+        const pc = new RTCPeerConnection(rtcConfig);
+        webrtc.peers[targetId] = pc;
+
+        if (webrtc.localStream) {
+            webrtc.localStream.getTracks().forEach(track => {
+                pc.addTrack(track, webrtc.localStream);
+            });
+        }
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                broadcastSignal({
+                    type: "candidate",
+                    targetId: targetId,
+                    candidate: event.candidate
+                });
+            }
+        };
+
+        pc.ontrack = (event) => {
+            console.log("[VOICE] remote stream attached");
+            let audioEl = document.getElementById(`audio-${targetId}`);
+            if (!audioEl) {
+                audioEl = document.createElement("audio");
+                audioEl.id = `audio-${targetId}`;
+                audioEl.autoplay = true;
+                audioEl.style.display = "none";
+                document.body.appendChild(audioEl);
+            }
+            audioEl.srcObject = event.streams[0];
+        };
+
+        pc.oniceconnectionstatechange = () => {
+            if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed" || pc.iceConnectionState === "closed") {
+                console.log("[VOICE] peer disconnected");
+                closePeerConnection(targetId);
+            }
+        };
+
+        if (isInitiator) {
+            pc.createOffer().then(offer => {
+                return pc.setLocalDescription(offer);
+            }).then(() => {
+                console.log("[VOICE] offer sent");
+                broadcastSignal({
+                    type: "offer",
+                    targetId: targetId,
+                    sdp: pc.localDescription
+                });
+            }).catch(e => console.error("[VOICE] offer error", e));
+        }
+
+        return pc;
+    }
+
+    function closePeerConnection(targetId) {
+        if (webrtc.peers[targetId]) {
+            webrtc.peers[targetId].close();
+            delete webrtc.peers[targetId];
+        }
+        const audioEl = document.getElementById(`audio-${targetId}`);
+        if (audioEl) audioEl.remove();
+    }
+
+    async function toggleMic() {
+        const btn = $("voice-toggle-btn");
+        const slash = $("mic-slash");
+        
+        if (webrtc.isMuted) {
+            try {
+                if (!webrtc.localStream) {
+                    webrtc.localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    console.log("[VOICE] mic granted");
+                }
+                webrtc.isMuted = false;
+                if (slash) slash.style.display = "none";
+                if (btn) btn.style.color = "#4ade80"; 
+                
+                broadcastSignal({ type: "join" });
+            } catch (err) {
+                console.log("[VOICE] mic denied");
+                console.error(err);
+                alert("Microphone access denied. Please allow microphone access to use voice chat.");
+                webrtc.isMuted = true;
+            }
+        } else {
+            webrtc.isMuted = true;
+            if (slash) slash.style.display = "block";
+            if (btn) btn.style.color = "inherit";
+            
+            broadcastSignal({ type: "leave" });
+            Object.keys(webrtc.peers).forEach(closePeerConnection);
+        }
+    }
+
+    function cleanupVoice(fullCleanup = false) {
+        if (!webrtc.isMuted) {
+            broadcastSignal({ type: "leave" });
+        }
+        
+        Object.keys(webrtc.peers).forEach(closePeerConnection);
+        
+        if (fullCleanup) {
+            if (webrtc.localStream) {
+                webrtc.localStream.getTracks().forEach(t => t.stop());
+                webrtc.localStream = null;
+            }
+            if (webrtc.signalingChannel) {
+                supabase.removeChannel(webrtc.signalingChannel);
+                webrtc.signalingChannel = null;
+            }
+            webrtc.isMuted = true;
+            const btn = $("voice-toggle-btn");
+            const slash = $("mic-slash");
+            if (slash) slash.style.display = "block";
+            if (btn) btn.style.color = "inherit";
+        }
+        console.log("[VOICE] cleanup complete");
+    }
+
     // ── INITIALIZATION ────────────────────────────────────────────────────────
     function initApp() {
         cacheDom();
@@ -143,6 +363,13 @@ import { supabase } from './supabase.js';
         window.addEventListener("resize", () => {
             if (!dom.arena.hidden) drawChart(dom.chartCanvas);
             if (!dom.results.hidden) drawChart(dom.resultChart);
+        });
+
+        const voiceToggleBtn = $("voice-toggle-btn");
+        if (voiceToggleBtn) voiceToggleBtn.addEventListener("click", toggleMic);
+
+        window.addEventListener("beforeunload", () => {
+            cleanupVoice(true);
         });
 
         // ── Auto-rejoin on page load ──
@@ -550,6 +777,7 @@ import { supabase } from './supabase.js';
             }
 
             const prevPhase = state.phase;
+            const prevTeamId = getMyTeamId();
 
             // ── Selective merge ──
             state.hostId = data.host_id;
@@ -624,6 +852,15 @@ import { supabase } from './supabase.js';
             }
 
             checkDisbandVoteStatus();
+
+            // Detect Team Switch for Voice
+            const newTeamId = getMyTeamId();
+            if (prevTeamId && newTeamId && prevTeamId !== newTeamId) {
+                cleanupVoice(false);
+                if (!webrtc.isMuted && webrtc.localStream) {
+                    setTimeout(() => broadcastSignal({ type: "join" }), 200);
+                }
+            }
         };
 
         // Presence subscription
@@ -661,6 +898,8 @@ import { supabase } from './supabase.js';
                     await presenceChannel.track({ online_at: new Date().toISOString() });
                 }
             });
+
+        initVoiceSignaling();
 
         // Initial fetch
         const fetchRoom = async () => {
@@ -774,12 +1013,14 @@ import { supabase } from './supabase.js';
         } catch (err) {
             console.error("[Game] Error leaving room:", err);
         } finally {
+            cleanupVoice(true);
+            cleanupLocalStateAndUI();
             if (btn) btn.disabled = false;
         }
-        cleanupLocalStateAndUI();
     }
 
     function cleanupLocalStateAndUI(msg = "") {
+        cleanupVoice(true);
         if (state.unsubscribeRoom) {
             supabase.removeChannel(state.unsubscribeRoom);
             state.unsubscribeRoom = null;
