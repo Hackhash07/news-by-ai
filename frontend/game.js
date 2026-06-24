@@ -1519,11 +1519,14 @@ import { supabase } from './supabase.js';
         if (!anim) {
             anim = {
                 displayData: [...data],
+                targetData: data,
                 pulse: 0,
                 pulseSize: 0,
                 frameId: null
             };
             chartAnimState.set(canvas, anim);
+        } else {
+            anim.targetData = data;
         }
 
         // Trigger pulse on new data or significant change
@@ -1553,13 +1556,13 @@ import { supabase } from './supabase.js';
                 let needsUpdate = false;
                 
                 // Smooth easing towards actual data
-                for (let i = 0; i < data.length; i++) {
-                    const diff = data[i] - anim.displayData[i];
+                for (let i = 0; i < anim.targetData.length; i++) {
+                    const diff = anim.targetData[i] - anim.displayData[i];
                     if (Math.abs(diff) > 0.005) {
                         anim.displayData[i] += diff * 0.12; // Easing speed
                         needsUpdate = true;
                     } else {
-                        anim.displayData[i] = data[i];
+                        anim.displayData[i] = anim.targetData[i];
                     }
                 }
 
@@ -1574,7 +1577,7 @@ import { supabase } from './supabase.js';
                 const time = Date.now() * 0.001;
                 const noise = state.phase === "playing" ? (Math.sin(time * 2.5) * 0.08 + Math.cos(time * 1.8) * 0.05) : 0;
                 
-                renderChartFrame(canvas, anim.displayData, anim.pulse, anim.pulseSize, noise, data);
+                renderChartFrame(canvas, anim.displayData, anim.pulse, anim.pulseSize, noise, anim.targetData);
 
                 if (needsUpdate || state.phase === "playing") {
                     anim.frameId = requestAnimationFrame(loop);
