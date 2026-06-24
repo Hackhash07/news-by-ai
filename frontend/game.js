@@ -563,6 +563,11 @@ import { supabase } from './supabase.js';
             state.matchNumber = data.match_number || 0;
             state.match_settings = data.match_settings || {};
 
+            // Force phase to results if time is up locally (avoids flicker if host update is delayed)
+            if (state.phase === "playing" && getRemainingTime() <= 0) {
+                state.phase = "results";
+            }
+
             if (dom.switchTeamBtn) {
                 dom.switchTeamBtn.hidden = state.phase !== "waiting";
             }
@@ -1141,22 +1146,30 @@ import { supabase } from './supabase.js';
                         };
                     }
                 } else if (tradeAction === 's' || tradeAction === '-') {
-                    myState.cash += stockWorth;
-                    myState.stocks -= 1;
-                    myState.trades += 1;
-                    myState.shorts += 1;
-                    totalSells += 1;
-                    const volatility = 1.5 + Math.random() * 2.5;
-                    stockWorth -= volatility;
-                    stockWorth += (Math.random() - 0.5) * 1.5;
-                    if (stockWorth < 1) stockWorth = 1;
-                    stockWorth = Math.round(stockWorth * 100) / 100;
-                    worthHistory.push(stockWorth);
-                    myState.lastFeedback = {
-                        text: `<div class="dopamine-tag">STOCK SOLD</div><div class="dopamine-sub">+$${stockWorth.toFixed(2)} CASH</div>`,
-                        className: "game-feedback feedback-flash-green",
-                        isHtml: true
-                    };
+                    if (myState.stocks > 0) {
+                        myState.cash += stockWorth;
+                        myState.stocks -= 1;
+                        myState.trades += 1;
+                        myState.shorts += 1;
+                        totalSells += 1;
+                        const volatility = 1.5 + Math.random() * 2.5;
+                        stockWorth -= volatility;
+                        stockWorth += (Math.random() - 0.5) * 1.5;
+                        if (stockWorth < 1) stockWorth = 1;
+                        stockWorth = Math.round(stockWorth * 100) / 100;
+                        worthHistory.push(stockWorth);
+                        myState.lastFeedback = {
+                            text: `<div class="dopamine-tag">STOCK SOLD</div><div class="dopamine-sub">+$${stockWorth.toFixed(2)} CASH</div>`,
+                            className: "game-feedback feedback-flash-green",
+                            isHtml: true
+                        };
+                    } else {
+                        myState.lastFeedback = {
+                            text: `<div class="dopamine-tag">NO STOCKS TO SELL</div><div class="dopamine-sub">You must buy stocks first</div>`,
+                            className: "game-feedback feedback-flash-red",
+                            isHtml: true
+                        };
+                    }
                 } else {
                     myState.lastFeedback = {
                         text: `<div class="dopamine-tag">POSITION HELD</div><div class="dopamine-sub">Waiting for better price</div>`,
@@ -1306,8 +1319,13 @@ import { supabase } from './supabase.js';
             if (dom.countdownDisplay) {
                 dom.countdownDisplay.textContent = formatTime(remaining);
             }
-            if (remaining <= 0 && state.isHost) {
-                endGameByTime();
+            if (remaining <= 0) {
+                if (state.isHost) {
+                    endGameByTime();
+                } else if (state.phase !== "results") {
+                    state.phase = "results";
+                    endGameLocal();
+                }
             }
         }, 250);
     }
