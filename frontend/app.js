@@ -431,7 +431,16 @@ async function loadNews() {
         if (refs.lastUpdated) refs.lastUpdated.textContent = "Refreshing…";
         if (refs.refreshBtn) refs.refreshBtn.disabled = true;
 
+        let isFetching = true;
+        setTimeout(() => {
+            if (isFetching && refs.heroTitle && state.articles.length === 0) {
+                refs.heroTitle.textContent = "Waking up server (may take ~45s)...";
+                if (refs.heroSummary) refs.heroSummary.textContent = "Our free-tier backend sleeps after inactivity. Please hold on while it spins up!";
+            }
+        }, 3000);
+
         const response = await fetch(API_URL, { cache: "no-store" });
+        isFetching = false;
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const data = await response.json();
