@@ -3761,3 +3761,32 @@ button, input { font: inherit; }
     min-width: 0;
   }
 }
+
+/* ── SKELETON LOADING ── */
+.skeleton {
+    background: linear-gradient(90deg, var(--card) 25%, var(--border) 50%, var(--card) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite linear;
+    border-radius: 4px;
+    color: transparent !important;
+}
+
+.skeleton-text {
+    height: 1.2em;
+    margin-bottom: 0.5em;
+    display: inline-block;
+    min-width: 100px;
+}
+
+@keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.refresh-btn.refreshing svg {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    100% { transform: rotate(360deg); }
+}

@@ -89,6 +89,25 @@ document.addEventListener("DOMContentLoaded", () => {
         if (session?.user) state.user = session.user;
     });
 
+    // Hydrate from cache immediately
+    const cachedNews = localStorage.getItem('trade_trends_cache');
+    if (cachedNews) {
+        try {
+            const data = JSON.parse(cachedNews);
+            state.articles = data.map(normalizeArticle);
+            renderFilters();
+            renderDashboard();
+            if (refs.lastUpdated) refs.lastUpdated.textContent = "Showing cached data...";
+        } catch (e) {}
+    }
+
+    const cachedTicker = localStorage.getItem('trade_trends_ticker_cache');
+    if (cachedTicker) {
+        try {
+            renderTicker(JSON.parse(cachedTicker));
+        } catch (e) {}
+    }
+
     // Load news from Flask API on Render
     loadNews();
     setInterval(loadNews, 60000);
@@ -428,13 +447,21 @@ function renderDashboard() {
 async function loadNews() {
     try {
         if (refs.lastUpdated) refs.lastUpdated.textContent = "Refreshing…";
-        if (refs.refreshBtn) refs.refreshBtn.disabled = true;
+        if (refs.refreshBtn) {
+            refs.refreshBtn.disabled = true;
+            refs.refreshBtn.classList.add("refreshing");
+        }
 
         let isFetching = true;
         setTimeout(() => {
             if (isFetching && refs.heroTitle && state.articles.length === 0) {
-                refs.heroTitle.textContent = "Waking up server (may take ~45s)...";
-                if (refs.heroSummary) refs.heroSummary.textContent = "Our free-tier backend sleeps after inactivity. Please hold on while it spins up!";
+                refs.heroTitle.textContent = "Market Intelligence Pending";
+                refs.heroTitle.className = "hero-title";
+                if (refs.heroSummary) {
+                    refs.heroSummary.textContent = "Waking up the analysis engine to fetch fresh signals. Please hold on...";
+                    refs.heroSummary.className = "hero-summary";
+                    refs.heroSummary.style = "";
+                }
             }
         }, 3000);
 
@@ -443,21 +470,38 @@ async function loadNews() {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const data = await response.json();
+        localStorage.setItem('trade_trends_cache', JSON.stringify(data));
         state.articles = data.map(normalizeArticle);
+
+        if (refs.heroTitle) refs.heroTitle.className = "hero-title";
+        if (refs.heroSummary) {
+            refs.heroSummary.className = "hero-summary";
+            refs.heroSummary.style = "";
+        }
 
         renderFilters();
         renderDashboard();
+
+        if (state.articles.length === 0) {
+            if (refs.heroTitle) refs.heroTitle.textContent = "No intelligence available";
+            if (refs.heroSummary) refs.heroSummary.textContent = "Check back later for fresh signals.";
+        }
 
         if (refs.lastUpdated) {
             refs.lastUpdated.textContent = "Updated " + new Date().toLocaleTimeString("en-IN", { hour12: true });
         }
     } catch (error) {
-        if (state.news.length === 0) {refs.lastUpdated.textContent = "Load failed";
-        if (refs.newsContainer) {
-            refs.newsContainer.innerHTML = `<div class="empty-state"><strong>Unable to load feed</strong> Check that the API is running, then refresh.</div>`;
+        if (state.articles.length === 0) {
+            if (refs.lastUpdated) refs.lastUpdated.textContent = "Load failed";
+            if (refs.newsContainer) {
+                refs.newsContainer.innerHTML = `<div class="empty-state"><strong>Unable to load feed</strong> Check that the API is running, then refresh.</div>`;
+            }
         }
     } finally {
-        if (refs.refreshBtn) refs.refreshBtn.disabled = false;
+        if (refs.refreshBtn) {
+            refs.refreshBtn.disabled = false;
+            refs.refreshBtn.classList.remove("refreshing");
+        }
     }
 }
 
@@ -495,26 +539,30 @@ function setTickerPair(priceId, changeId, priceValue, changeValue, isLiveLabel =
     }
 }
 
+function renderTicker(data) {
+    if (data.BTC) {
+        setTickerPair("btc-price", "btc-change", data.BTC.price, data.BTC.change, false);
+    }
+    if (data.USDINR) {
+        setTickerPair("usdinr-price", "usdinr-change", data.USDINR.price, data.USDINR.change, true);
+    }
+    if (data.GOLD) {
+        setTickerPair("gold-price", "gold-change", data.GOLD.price, data.GOLD.change, false);
+    }
+    if (data.NIFTY) {
+        setTickerPair("nifty-price", "nifty-change", data.NIFTY.price, data.NIFTY.change, true);
+    }
+    if (data.BANKNIFTY) {
+        setTickerPair("banknifty-price", "banknifty-change", data.BANKNIFTY.price, data.BANKNIFTY.change, true);
+    }
+}
+
 async function loadTicker() {
     try {
         const response = await fetch(MARKET_API_URL, { cache: "no-store" });
         const data = await response.json();
-
-        if (data.BTC) {
-            setTickerPair("btc-price", "btc-change", data.BTC.price, data.BTC.change, false);
-        }
-        if (data.USDINR) {
-            setTickerPair("usdinr-price", "usdinr-change", data.USDINR.price, data.USDINR.change, true);
-        }
-        if (data.GOLD) {
-            setTickerPair("gold-price", "gold-change", data.GOLD.price, data.GOLD.change, false);
-        }
-        if (data.NIFTY) {
-            setTickerPair("nifty-price", "nifty-change", data.NIFTY.price, data.NIFTY.change, true);
-        }
-        if (data.BANKNIFTY) {
-            setTickerPair("banknifty-price", "banknifty-change", data.BANKNIFTY.price, data.BANKNIFTY.change, true);
-        }
+        localStorage.setItem('trade_trends_ticker_cache', JSON.stringify(data));
+        renderTicker(data);
     } catch (error) {
         // console.error("Ticker Error:", error);
     }
