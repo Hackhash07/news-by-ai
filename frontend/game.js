@@ -569,7 +569,6 @@ import { supabase } from './supabase.js';
             const initialWorth = clamp(parseInt($("initial-worth").value) || 100, 10, 1000);
             const matchDurationMin = clamp(parseInt($("match-duration").value) || 5, 1, 30);
             const matchDuration = matchDurationMin * 60;
-            const voiceMode = $("voice-mode") ? $("voice-mode").value : "team";
 
             const targetTeamIdx = teamId === 'a' ? 0 : 1;
             const playerEntry = { id: state.myPlayerId, name: playerName };
@@ -594,7 +593,7 @@ import { supabase } from './supabase.js';
                 created_at: new Date().toISOString(),
                 phase: "waiting",
                 teams: teams,
-                match_settings: { voice_mode: voiceMode },
+                match_settings: { voice_mode: "team" },
                 match: {
                     gameStartTime: 0,
                     stockWorth: initialWorth,
@@ -638,6 +637,12 @@ import { supabase } from './supabase.js';
             dom.setup.hidden = true;
             dom.waitingRoom.hidden = false;
             $("waiting-room-code-display").innerHTML = `Room Code: <strong>${code}</strong>`;
+            
+            const hostControls = $("waiting-room-host-controls");
+            if (hostControls) {
+                hostControls.style.display = state.isHost ? "flex" : "none";
+            }
+            
             $("start-game-btn").hidden = false;
 
         } catch (err) {
@@ -1245,8 +1250,13 @@ import { supabase } from './supabase.js';
 
             const gameStartTime = Date.now();
 
+            const voiceMode = $("waiting-room-voice-mode") ? $("waiting-room-voice-mode").value : "team";
+            if (!roomData.match_settings) roomData.match_settings = {};
+            roomData.match_settings.voice_mode = voiceMode;
+
             const { error: updateErr } = await supabase.from('rooms').update({
                 phase: "playing",
+                match_settings: roomData.match_settings,
                 match: {
                     gameStartTime,
                     stockWorth: initialWorth,
