@@ -147,6 +147,28 @@ import { supabase } from './supabase.js';
 
         // ── Auto-rejoin on page load ──
         tryAutoRejoin();
+
+        // Ensure presence drops cleanly on unload
+        window.addEventListener("beforeunload", () => {
+            if (presenceChannel) {
+                presenceChannel.untrack();
+                supabase.removeChannel(presenceChannel);
+            }
+        });
+
+        // If host navigates away via logo, delete the room
+        const brandLink = document.querySelector('.brand a');
+        if (brandLink) {
+            brandLink.addEventListener('click', async (e) => {
+                if (state.roomId && state.isHost) {
+                    e.preventDefault();
+                    if (confirm("Leaving will close the room. Are you sure?")) {
+                        await supabase.from('rooms').delete().eq('id', state.roomId);
+                        window.location.href = brandLink.href;
+                    }
+                }
+            });
+        }
     }
 
     // ── PLAYER IDENTITY ──────────────────────────────────────────────────────
@@ -615,7 +637,9 @@ import { supabase } from './supabase.js';
                 const presenceState = presenceChannel.presenceState();
                 onlinePlayerIds.clear();
                 for (const id in presenceState) {
-                    onlinePlayerIds.add(id);
+                    if (presenceState[id].length > 0) {
+                        onlinePlayerIds.add(id);
+                    }
                 }
                 syncPresenceUI();
             })
@@ -624,10 +648,7 @@ import { supabase } from './supabase.js';
                 syncPresenceUI();
             })
             .on('presence', { event: 'leave' }, ({ key }) => {
-                const presenceState = presenceChannel.presenceState();
-                if (!presenceState[key]) {
-                    onlinePlayerIds.delete(key);
-                }
+                onlinePlayerIds.delete(key);
                 syncPresenceUI();
             })
             .subscribe(async (status) => {
@@ -848,8 +869,9 @@ import { supabase } from './supabase.js';
             modal.hidden = false;
         }
 
-        // If I am host, check if all online players voted agree
-        if (state.isHost) {
+        // If I am host, or if the host is offline, check if all online players voted agree
+        const hostIsOffline = state.hostId && !onlinePlayerIds.has(state.hostId);
+        if (state.isHost || hostIsOffline) {
             let allAgreed = true;
             let onlineCount = 0;
             
