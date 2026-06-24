@@ -159,8 +159,21 @@ import { supabase } from './supabase.js';
     async function handleSignalingMessage(payload) {
         if (!payload || payload.senderId === state.myPlayerId) return;
         
-        const myTeam = getMyTeamId();
-        if (!myTeam || payload.teamId !== myTeam) return;
+        const voiceMode = (state.match_settings && state.match_settings.voice_mode) || "team";
+        
+        let isGlobal = false;
+        if (state.phase === "waiting") {
+            isGlobal = true; // Lobby is always global
+        } else if (voiceMode === "global") {
+            isGlobal = true; // Match is global
+        } else if (voiceMode === "off") {
+            return; // Voice disabled during match
+        }
+
+        if (!isGlobal) {
+            const myTeam = getMyTeamId();
+            if (!myTeam || payload.teamId !== myTeam) return;
+        }
 
         if (payload.targetId && payload.targetId !== state.myPlayerId) return;
 
@@ -556,6 +569,7 @@ import { supabase } from './supabase.js';
             const initialWorth = clamp(parseInt($("initial-worth").value) || 100, 10, 1000);
             const matchDurationMin = clamp(parseInt($("match-duration").value) || 5, 1, 30);
             const matchDuration = matchDurationMin * 60;
+            const voiceMode = $("voice-mode") ? $("voice-mode").value : "team";
 
             const targetTeamIdx = teamId === 'a' ? 0 : 1;
             const playerEntry = { id: state.myPlayerId, name: playerName };
@@ -580,6 +594,7 @@ import { supabase } from './supabase.js';
                 created_at: new Date().toISOString(),
                 phase: "waiting",
                 teams: teams,
+                match_settings: { voice_mode: voiceMode },
                 match: {
                     gameStartTime: 0,
                     stockWorth: initialWorth,
@@ -807,6 +822,18 @@ import { supabase } from './supabase.js';
                 dom.arena.hidden = false;
                 startCountdown();
                 const myTeamId = state.teams[0].players.some(p => p.id === state.myPlayerId) ? "a" : "b";
+
+                // --- Voice Mode Enforcer ---
+                const voiceMode = (state.match_settings && state.match_settings.voice_mode) || "team";
+                if (voiceMode === "off") {
+                    cleanupVoice(true);
+                } else if (voiceMode === "team") {
+                    cleanupVoice(false);
+                    if (!webrtc.isMuted && webrtc.localStream) {
+                        setTimeout(() => broadcastSignal({ type: "join" }), 200);
+                    }
+                }
+                // If "global", lobby connections seamlessly persist.
             }
 
             // ANY → RESULTS
