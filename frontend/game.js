@@ -123,24 +123,24 @@ import { supabase } from './supabase.js';
             { urls: "stun:stun.l.google.com:19302" },
             { urls: "stun:stun1.l.google.com:19302" },
             { 
-                urls: "turn:YOUR_SUBDOMAIN.metered.live:80",
-                username: "YOUR_USERNAME",
-                credential: "YOUR_CREDENTIAL"
+                urls: "turn:global.relay.metered.ca:80",
+                username: "1eebe9c7dcaa092b84cb0a2b",
+                credential: "B8aHlW4dFGQIQ7//"
             },
             { 
-                urls: "turn:YOUR_SUBDOMAIN.metered.live:80?transport=tcp",
-                username: "YOUR_USERNAME",
-                credential: "YOUR_CREDENTIAL"
+                urls: "turn:global.relay.metered.ca:80?transport=tcp",
+                username: "1eebe9c7dcaa092b84cb0a2b",
+                credential: "B8aHlW4dFGQIQ7//"
             },
             { 
-                urls: "turn:YOUR_SUBDOMAIN.metered.live:443",
-                username: "YOUR_USERNAME",
-                credential: "YOUR_CREDENTIAL"
+                urls: "turn:global.relay.metered.ca:443",
+                username: "1eebe9c7dcaa092b84cb0a2b",
+                credential: "B8aHlW4dFGQIQ7//"
             },
             { 
-                urls: "turns:YOUR_SUBDOMAIN.metered.live:443?transport=tcp",
-                username: "YOUR_USERNAME",
-                credential: "YOUR_CREDENTIAL"
+                urls: "turns:global.relay.metered.ca:443?transport=tcp",
+                username: "1eebe9c7dcaa092b84cb0a2b",
+                credential: "B8aHlW4dFGQIQ7//"
             }
         ]
     };
