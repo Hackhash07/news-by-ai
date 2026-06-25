@@ -128,6 +128,16 @@ import { supabase } from './supabase.js';
                 urls: "turn:openrelay.metered.ca:80",
                 username: "openrelayproject",
                 credential: "openrelayproject"
+            },
+            { 
+                urls: "turn:openrelay.metered.ca:443",
+                username: "openrelayproject",
+                credential: "openrelayproject"
+            },
+            { 
+                urls: "turns:openrelay.metered.ca:443?transport=tcp",
+                username: "openrelayproject",
+                credential: "openrelayproject"
             }
         ]
     };
@@ -325,10 +335,31 @@ import { supabase } from './supabase.js';
         pc.oniceconnectionstatechange = async () => {
             console.log(`[VOICE] ICE connection state change for ${targetId}: ${pc.iceConnectionState}`);
             
-            // Only cleanup on a terminal failure state. "disconnected" is transient and actively attempting recovery.
-            if (pc.iceConnectionState === "failed" || pc.iceConnectionState === "closed") {
-                console.log(`[VOICE] peer permanently disconnected: ${targetId} (Reason: ${pc.iceConnectionState})`);
+            if (pc.iceConnectionState === "closed") {
+                console.log(`[VOICE] peer permanently closed: ${targetId}`);
                 closePeerConnection(targetId);
+                return;
+            }
+
+            // Only the initiator restarts ICE to prevent glare
+            const amIInitiator = state.myPlayerId > targetId;
+
+            if (pc.iceConnectionState === "disconnected") {
+                if (amIInitiator) {
+                    setTimeout(async () => {
+                        if (pc.iceConnectionState === "disconnected") {
+                            console.log(`[VOICE] ICE still disconnected for ${targetId}, restarting...`);
+                            await restartIce(pc, targetId);
+                        }
+                    }, 3000);
+                }
+            } else if (pc.iceConnectionState === "failed") {
+                if (amIInitiator) {
+                    console.log(`[VOICE] ICE failed for ${targetId}, restarting...`);
+                    await restartIce(pc, targetId);
+                } else {
+                    console.log(`[VOICE] ICE failed for ${targetId}. Waiting for initiator to restart.`);
+                }
             }
 
             // Log the selected candidate pair once connected or completed
@@ -375,6 +406,21 @@ import { supabase } from './supabase.js';
         }
 
         return pc;
+    }
+
+    async function restartIce(pc, targetId) {
+        try {
+            console.log(`[VOICE] Performing ICE restart for ${targetId}`);
+            const offer = await pc.createOffer({ iceRestart: true });
+            await pc.setLocalDescription(offer);
+            broadcastSignal({
+                type: "offer",
+                targetId: targetId,
+                sdp: pc.localDescription
+            });
+        } catch (err) {
+            console.error(`[VOICE] ICE restart failed for ${targetId}:`, err);
+        }
     }
 
     function closePeerConnection(targetId) {
