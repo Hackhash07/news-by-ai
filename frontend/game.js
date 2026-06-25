@@ -113,11 +113,17 @@ import { supabase } from './supabase.js';
         signalingChannel: null,
         localStream: null,
         peers: {}, // map of targetId -> RTCPeerConnection
+        candidateQueues: {}, // map of targetId -> array of RTCIceCandidate
         isMuted: true
     };
 
     const rtcConfig = {
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+        iceServers: [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" },
+            { urls: "stun:stun2.l.google.com:19302" },
+            { urls: "stun:global.stun.twilio.com:3478" }
+        ]
     };
 
     function getMyTeamId() {
@@ -196,17 +202,41 @@ import { supabase } from './supabase.js';
                     targetId: payload.senderId,
                     sdp: pc.localDescription
                 });
+                
+                // Process queued candidates
+                if (webrtc.candidateQueues[payload.senderId]) {
+                    for (const candidate of webrtc.candidateQueues[payload.senderId]) {
+                        await pc.addIceCandidate(candidate).catch(e => console.error("Ice error", e));
+                    }
+                    webrtc.candidateQueues[payload.senderId] = [];
+                }
             } else if (payload.type === "answer") {
                 console.log("[VOICE] answer received");
                 const pc = webrtc.peers[payload.senderId];
                 if (pc) {
                     await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+                    
+                    // Process queued candidates
+                    if (webrtc.candidateQueues[payload.senderId]) {
+                        for (const candidate of webrtc.candidateQueues[payload.senderId]) {
+                            await pc.addIceCandidate(candidate).catch(e => console.error("Ice error", e));
+                        }
+                        webrtc.candidateQueues[payload.senderId] = [];
+                    }
                 }
             } else if (payload.type === "candidate") {
                 console.log("[VOICE] candidate received");
                 const pc = webrtc.peers[payload.senderId];
-                if (pc && payload.candidate) {
-                    await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+                if (pc) {
+                    if (pc.remoteDescription) {
+                        await pc.addIceCandidate(new RTCIceCandidate(payload.candidate)).catch(e => console.error("Ice error", e));
+                    } else {
+                        if (!webrtc.candidateQueues[payload.senderId]) webrtc.candidateQueues[payload.senderId] = [];
+                        webrtc.candidateQueues[payload.senderId].push(new RTCIceCandidate(payload.candidate));
+                    }
+                } else {
+                    if (!webrtc.candidateQueues[payload.senderId]) webrtc.candidateQueues[payload.senderId] = [];
+                    webrtc.candidateQueues[payload.senderId].push(new RTCIceCandidate(payload.candidate));
                 }
             }
         } catch (err) {
@@ -279,6 +309,9 @@ import { supabase } from './supabase.js';
         if (webrtc.peers[targetId]) {
             webrtc.peers[targetId].close();
             delete webrtc.peers[targetId];
+        }
+        if (webrtc.candidateQueues[targetId]) {
+            delete webrtc.candidateQueues[targetId];
         }
         const audioEl = document.getElementById(`audio-${targetId}`);
         if (audioEl) audioEl.remove();
@@ -1084,6 +1117,9 @@ import { supabase } from './supabase.js';
         dom.results.hidden = true;
         dom.landing.hidden = false;
 
+        const hostControls = $("waiting-room-host-controls");
+        if (hostControls) hostControls.style.display = "none";
+
         $("join-room-btn").disabled = false;
         $("join-room-btn").textContent = "JOIN ROOM";
 
@@ -1197,6 +1233,11 @@ import { supabase } from './supabase.js';
     // ── WAITING ROOM RENDER ──────────────────────────────────────────────────
 
     function renderWaitingRoom() {
+        const hostControls = $("waiting-room-host-controls");
+        if (hostControls) {
+            hostControls.style.display = state.isHost ? "flex" : "none";
+        }
+
         const maxSize = state.maxTeamSize || MAX_TEAM_SIZE;
         const teamA = $("lobby-team-a");
         const teamB = $("lobby-team-b");

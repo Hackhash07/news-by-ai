@@ -2,6 +2,9 @@
    TRADE TRENDS — style.css
    ═══════════════════════════════════════════════════════════ */
 
+/* ── GLOBAL HIDDEN OVERRIDE ─────────────────────────── */
+[hidden] { display: none !important; }
+
 :root {
   --bg:      #0b1020;
   --panel:   #11182b;
