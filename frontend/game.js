@@ -196,10 +196,19 @@ import { supabase } from './supabase.js';
                 // To prevent offer collision (glare), only the peer with the larger ID initiates the offer
                 const shouldInitiate = state.myPlayerId > payload.senderId;
                 console.log(`[VOICE] join received from ${payload.senderId}. Am I initiator? ${shouldInitiate}`);
+                
+                const pcExists = !!webrtc.peers[payload.senderId];
                 if (shouldInitiate) {
                     createPeerConnection(payload.senderId, true);
                 } else {
                     createPeerConnection(payload.senderId, false);
+                    
+                    // If we just created the PC and we are not the initiator, 
+                    // we MUST tell the initiator that we are ready so they can send the offer.
+                    if (!pcExists) {
+                        console.log(`[VOICE] I am non-initiator. Sending join reply to ${payload.senderId}`);
+                        broadcastSignal({ type: "join", targetId: payload.senderId });
+                    }
                 }
             } else if (payload.type === "leave") {
                 closePeerConnection(payload.senderId);
@@ -259,6 +268,7 @@ import { supabase } from './supabase.js';
 
     function createPeerConnection(targetId, isInitiator) {
         if (webrtc.peers[targetId]) {
+            console.log(`[VOICE] peer already exists for ${targetId}`);
             return webrtc.peers[targetId]; // Prevent duplicates
         }
 
