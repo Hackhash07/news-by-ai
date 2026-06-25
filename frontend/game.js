@@ -796,6 +796,13 @@ import { supabase } from './supabase.js';
                 return;
             }
 
+            // Check if I was removed
+            const amIStillInRoom = validated.teams.some(t => t.players.some(p => p.id === state.myPlayerId));
+            if (!amIStillInRoom && state.myPlayerId) {
+                cleanupLocalStateAndUI("You have been removed from the room by the host.");
+                return;
+            }
+
             const prevPhase = state.phase;
             const prevTeamId = getMyTeamId();
 
@@ -1203,15 +1210,56 @@ import { supabase } from './supabase.js';
             const isMe = p.id === state.myPlayerId;
             const isOnline = onlinePlayerIds.has(p.id);
             const statusIndicator = isOnline ? '' : '<span style="color:var(--red);font-size:10px;margin-left:6px;">(Offline)</span>';
-            return `<div class="game-roster-row${isMe ? ' game-roster-active' : ''}"><span class="game-roster-name">${escapeHtml(p.name)}${isMe ? ' (you)' : ''}${p.id === state.hostId ? ' ★' : ''}${statusIndicator}</span></div>`;
+            const removeBtn = (state.isHost && !isMe) ? `<button class="remove-player-btn" data-id="${p.id}" style="background:transparent; border:none; color:var(--red); cursor:pointer; font-size:12px; margin-left:auto;" title="Remove Player">✖</button>` : '';
+            return `<div class="game-roster-row${isMe ? ' game-roster-active' : ''}" style="display:flex; justify-content:space-between; align-items:center;">
+                        <span class="game-roster-name" style="flex:1;">${escapeHtml(p.name)}${isMe ? ' (you)' : ''}${p.id === state.hostId ? ' ★' : ''}${statusIndicator}</span>
+                        ${removeBtn}
+                    </div>`;
         }).join("") || '<div style="color:var(--muted);padding:12px;text-align:center;font-size:13px;">No players yet</div>';
 
         teamB.innerHTML = state.teams[1].players.map(p => {
             const isMe = p.id === state.myPlayerId;
             const isOnline = onlinePlayerIds.has(p.id);
             const statusIndicator = isOnline ? '' : '<span style="color:var(--red);font-size:10px;margin-left:6px;">(Offline)</span>';
-            return `<div class="game-roster-row${isMe ? ' game-roster-active' : ''}"><span class="game-roster-name">${escapeHtml(p.name)}${isMe ? ' (you)' : ''}${p.id === state.hostId ? ' ★' : ''}${statusIndicator}</span></div>`;
+            const removeBtn = (state.isHost && !isMe) ? `<button class="remove-player-btn" data-id="${p.id}" style="background:transparent; border:none; color:var(--red); cursor:pointer; font-size:12px; margin-left:auto;" title="Remove Player">✖</button>` : '';
+            return `<div class="game-roster-row${isMe ? ' game-roster-active' : ''}" style="display:flex; justify-content:space-between; align-items:center;">
+                        <span class="game-roster-name" style="flex:1;">${escapeHtml(p.name)}${isMe ? ' (you)' : ''}${p.id === state.hostId ? ' ★' : ''}${statusIndicator}</span>
+                        ${removeBtn}
+                    </div>`;
         }).join("") || '<div style="color:var(--muted);padding:12px;text-align:center;font-size:13px;">No players yet</div>';
+    }
+
+    // Attach global click listener for dynamic remove buttons
+    document.addEventListener("click", async (e) => {
+        const btn = e.target.closest(".remove-player-btn");
+        if (btn && state.isHost) {
+            const playerId = btn.dataset.id;
+            await removePlayerFromRoom(playerId);
+        }
+    });
+
+    async function removePlayerFromRoom(playerId) {
+        if (!state.isHost || !state.roomId) return;
+        try {
+            const { data: roomData, error: fetchErr } = await supabase.from('rooms').select('*').eq('id', state.roomId).single();
+            if (fetchErr || !roomData) return;
+
+            let modified = false;
+            roomData.teams.forEach(team => {
+                const initLength = team.players.length;
+                team.players = team.players.filter(p => p.id !== playerId);
+                if (team.players.length !== initLength) modified = true;
+            });
+
+            if (modified) {
+                await supabase.from('rooms').update({
+                    teams: roomData.teams,
+                    last_update_time: Date.now()
+                }).eq('id', state.roomId);
+            }
+        } catch (err) {
+            console.error("Error removing player:", err);
+        }
     }
 
     // ── GAME START ────────────────────────────────────────────────────────────
