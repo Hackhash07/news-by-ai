@@ -274,6 +274,15 @@ import { supabase } from './supabase.js';
 
         pc.onicecandidate = (event) => {
             if (event.candidate) {
+                // Determine the protocol from the candidate string if available
+                let protocol = "unknown";
+                if (event.candidate.protocol) {
+                    protocol = event.candidate.protocol;
+                } else if (event.candidate.candidate && typeof event.candidate.candidate === 'string') {
+                    const parts = event.candidate.candidate.split(' ');
+                    if (parts.length > 2) protocol = parts[2].toLowerCase();
+                }
+                console.log(`[VOICE] Gathered candidate type: ${event.candidate.type} (${protocol})`);
                 broadcastSignal({
                     type: "candidate",
                     targetId: targetId,
@@ -303,11 +312,38 @@ import { supabase } from './supabase.js';
             });
         };
 
-        pc.oniceconnectionstatechange = () => {
+        pc.oniceconnectionstatechange = async () => {
             console.log(`[VOICE] ICE connection state change for ${targetId}: ${pc.iceConnectionState}`);
-            if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed" || pc.iceConnectionState === "closed") {
-                console.log(`[VOICE] peer disconnected: ${targetId} (Reason: ${pc.iceConnectionState})`);
+            
+            // Only cleanup on a terminal failure state. "disconnected" is transient and actively attempting recovery.
+            if (pc.iceConnectionState === "failed" || pc.iceConnectionState === "closed") {
+                console.log(`[VOICE] peer permanently disconnected: ${targetId} (Reason: ${pc.iceConnectionState})`);
                 closePeerConnection(targetId);
+            }
+
+            // Log the selected candidate pair once connected or completed
+            if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
+                try {
+                    const stats = await pc.getStats();
+                    let activeCandidatePair = null;
+                    stats.forEach(report => {
+                        if (report.type === 'transport' && report.selectedCandidatePairId) {
+                            activeCandidatePair = stats.get(report.selectedCandidatePairId);
+                        } else if (report.type === 'candidate-pair' && report.state === 'succeeded' && report.nominated) {
+                            activeCandidatePair = report;
+                        }
+                    });
+
+                    if (activeCandidatePair) {
+                        const local = stats.get(activeCandidatePair.localCandidateId);
+                        const remote = stats.get(activeCandidatePair.remoteCandidateId);
+                        if (local && remote) {
+                            console.log(`[VOICE] Selected candidate pair for ${targetId}: Local(${local.candidateType}) <-> Remote(${remote.candidateType}) via ${local.relayProtocol || 'direct/stun'}`);
+                        }
+                    }
+                } catch (e) {
+                    console.error("[VOICE] Error fetching RTC stats:", e);
+                }
             }
         };
 
