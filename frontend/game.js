@@ -122,22 +122,25 @@ import { supabase } from './supabase.js';
         iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
             { urls: "stun:stun1.l.google.com:19302" },
-            { urls: "stun:stun2.l.google.com:19302" },
-            { urls: "stun:global.stun.twilio.com:3478" },
             { 
-                urls: "turn:openrelay.metered.ca:80",
-                username: "openrelayproject",
-                credential: "openrelayproject"
+                urls: "turn:YOUR_SUBDOMAIN.metered.live:80",
+                username: "YOUR_USERNAME",
+                credential: "YOUR_CREDENTIAL"
             },
             { 
-                urls: "turn:openrelay.metered.ca:443",
-                username: "openrelayproject",
-                credential: "openrelayproject"
+                urls: "turn:YOUR_SUBDOMAIN.metered.live:80?transport=tcp",
+                username: "YOUR_USERNAME",
+                credential: "YOUR_CREDENTIAL"
             },
             { 
-                urls: "turns:openrelay.metered.ca:443?transport=tcp",
-                username: "openrelayproject",
-                credential: "openrelayproject"
+                urls: "turn:YOUR_SUBDOMAIN.metered.live:443",
+                username: "YOUR_USERNAME",
+                credential: "YOUR_CREDENTIAL"
+            },
+            { 
+                urls: "turns:YOUR_SUBDOMAIN.metered.live:443?transport=tcp",
+                username: "YOUR_USERNAME",
+                credential: "YOUR_CREDENTIAL"
             }
         ]
     };
@@ -278,8 +281,17 @@ import { supabase } from './supabase.js';
 
     function createPeerConnection(targetId, isInitiator) {
         if (webrtc.peers[targetId]) {
-            console.log(`[VOICE] peer already exists for ${targetId}`);
-            return webrtc.peers[targetId]; // Prevent duplicates
+            const existing = webrtc.peers[targetId];
+            const iceState = existing.iceConnectionState;
+            if (iceState !== 'failed' && iceState !== 'closed') {
+                console.log(`[VOICE] peer already exists for ${targetId} (${iceState})`);
+                return existing;
+            }
+            // Dead peer — replace it
+            console.log(`[VOICE] replacing dead peer for ${targetId} (was: ${iceState})`);
+            existing.close();
+            delete webrtc.peers[targetId];
+            if (webrtc.candidateQueues[targetId]) delete webrtc.candidateQueues[targetId];
         }
 
         console.log("[VOICE] peer created");
@@ -333,6 +345,8 @@ import { supabase } from './supabase.js';
         };
 
         pc.oniceconnectionstatechange = async () => {
+            // Ignore events from superseded peers (prevents closing a fresh replacement peer)
+            if (webrtc.peers[targetId] !== pc) return;
             console.log(`[VOICE] ICE connection state change for ${targetId}: ${pc.iceConnectionState}`);
             
             if (pc.iceConnectionState === "closed") {
@@ -347,7 +361,8 @@ import { supabase } from './supabase.js';
             if (pc.iceConnectionState === "disconnected") {
                 if (amIInitiator) {
                     setTimeout(async () => {
-                        if (pc.iceConnectionState === "disconnected") {
+                        // Safety: only restart if this is still the active peer
+                        if (webrtc.peers[targetId] === pc && pc.iceConnectionState === "disconnected") {
                             console.log(`[VOICE] ICE still disconnected for ${targetId}, restarting...`);
                             await restartIce(pc, targetId);
                         }
@@ -355,10 +370,17 @@ import { supabase } from './supabase.js';
                 }
             } else if (pc.iceConnectionState === "failed") {
                 if (amIInitiator) {
-                    console.log(`[VOICE] ICE failed for ${targetId}, restarting...`);
-                    await restartIce(pc, targetId);
+                    // "failed" is terminal — iceRestart won't help on a dead PC; close and reconnect fresh
+                    console.log(`[VOICE] ICE failed for ${targetId}, closing and reconnecting...`);
+                    closePeerConnection(targetId);
+                    setTimeout(() => {
+                        if (!webrtc.peers[targetId] && !webrtc.isMuted && webrtc.localStream) {
+                            console.log(`[VOICE] Initiating fresh connection to ${targetId}`);
+                            createPeerConnection(targetId, true);
+                        }
+                    }, 1500);
                 } else {
-                    console.log(`[VOICE] ICE failed for ${targetId}. Waiting for initiator to restart.`);
+                    console.log(`[VOICE] ICE failed for ${targetId}. Waiting for initiator to reconnect.`);
                 }
             }
 
