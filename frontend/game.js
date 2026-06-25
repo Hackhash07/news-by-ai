@@ -117,12 +117,18 @@ import { supabase } from './supabase.js';
         isMuted: true
     };
 
+    // Update these servers in production for a dedicated, paid TURN service.
     const rtcConfig = {
         iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
             { urls: "stun:stun1.l.google.com:19302" },
             { urls: "stun:stun2.l.google.com:19302" },
-            { urls: "stun:global.stun.twilio.com:3478" }
+            { urls: "stun:global.stun.twilio.com:3478" },
+            { 
+                urls: "turn:openrelay.metered.ca:80",
+                username: "openrelayproject",
+                credential: "openrelayproject"
+            }
         ]
     };
 
@@ -187,7 +193,14 @@ import { supabase } from './supabase.js';
 
         try {
             if (payload.type === "join") {
-                createPeerConnection(payload.senderId, true);
+                // To prevent offer collision (glare), only the peer with the larger ID initiates the offer
+                const shouldInitiate = state.myPlayerId > payload.senderId;
+                console.log(`[VOICE] join received from ${payload.senderId}. Am I initiator? ${shouldInitiate}`);
+                if (shouldInitiate) {
+                    createPeerConnection(payload.senderId, true);
+                } else {
+                    createPeerConnection(payload.senderId, false);
+                }
             } else if (payload.type === "leave") {
                 closePeerConnection(payload.senderId);
             } else if (payload.type === "offer") {
@@ -270,23 +283,36 @@ import { supabase } from './supabase.js';
         };
 
         pc.ontrack = (event) => {
-            console.log("[VOICE] remote stream attached");
+            console.log(`[VOICE] remote stream attached for ${targetId}`);
             let audioEl = document.getElementById(`audio-${targetId}`);
             if (!audioEl) {
                 audioEl = document.createElement("audio");
                 audioEl.id = `audio-${targetId}`;
                 audioEl.autoplay = true;
+                audioEl.playsInline = true; // Essential for mobile browsers
                 audioEl.style.display = "none";
                 document.body.appendChild(audioEl);
             }
             audioEl.srcObject = event.streams[0];
+            
+            // Explicitly call play to handle strict autoplay policies
+            audioEl.play().then(() => {
+                console.log(`[VOICE] Audio playback started for ${targetId}`);
+            }).catch(e => {
+                console.error(`[VOICE] Audio autoplay blocked for ${targetId}:`, e);
+            });
         };
 
         pc.oniceconnectionstatechange = () => {
+            console.log(`[VOICE] ICE connection state change for ${targetId}: ${pc.iceConnectionState}`);
             if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed" || pc.iceConnectionState === "closed") {
-                console.log("[VOICE] peer disconnected");
+                console.log(`[VOICE] peer disconnected: ${targetId} (Reason: ${pc.iceConnectionState})`);
                 closePeerConnection(targetId);
             }
+        };
+
+        pc.onsignalingstatechange = () => {
+            console.log(`[VOICE] Signaling state change for ${targetId}: ${pc.signalingState}`);
         };
 
         if (isInitiator) {
