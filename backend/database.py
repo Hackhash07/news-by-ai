@@ -41,6 +41,9 @@ def save_article(
     time_horizon=None,
     analysis=None,
     added_at=None,
+    source=None,
+    published_at=None,
+    image_url=None,
 ):
     if not supabase:
         print("Warning: Supabase not configured. Cannot save article.")
@@ -63,7 +66,10 @@ def save_article(
             "directions": directions if directions is not None else {},
             "confidence": confidence,
             "time_horizon": time_horizon,
-            "analysis": analysis or ""
+            "analysis": analysis or "",
+            "source": source,
+            "published_at": published_at,
+            "image_url": image_url
         }
         
         supabase.table("news").insert(data).execute()

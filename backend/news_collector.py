@@ -29,6 +29,16 @@ def collect_news():
 
                 if not title or not link:
                     continue
+                    
+                # Extract optional fields
+                source = getattr(feed.feed, "title", "News")
+                published_at = getattr(entry, "published", None)
+                image_url = None
+                
+                # Try to find an image in media_content
+                media_content = getattr(entry, "media_content", [])
+                if media_content and len(media_content) > 0:
+                    image_url = media_content[0].get("url")
 
                 try:
                     # Transaction safety per article
@@ -45,7 +55,10 @@ def collect_news():
                         directions=intelligence.get("directions"),
                         confidence=intelligence.get("confidence"),
                         time_horizon=intelligence.get("time_horizon"),
-                        analysis=intelligence.get("analysis")
+                        analysis=intelligence.get("analysis"),
+                        source=source,
+                        published_at=published_at,
+                        image_url=image_url
                     )
                     
                     if inserted:

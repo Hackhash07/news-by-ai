@@ -85,13 +85,16 @@ CREATE TABLE IF NOT EXISTS public.news (
     link TEXT UNIQUE NOT NULL,
     category TEXT,
     sentiment TEXT,
-    importance INTEGER,
+    importance INTEGER CHECK (importance BETWEEN 1 AND 10),
     market_impact TEXT,
     assets JSONB DEFAULT '[]'::jsonb,
     directions JSONB DEFAULT '{}'::jsonb,
-    confidence INTEGER,
+    confidence INTEGER CHECK (confidence BETWEEN 0 AND 100),
     time_horizon TEXT,
     analysis TEXT,
+    source TEXT,
+    published_at TIMESTAMP WITH TIME ZONE,
+    image_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -103,6 +106,19 @@ ON public.news FOR SELECT
 USING ( true );
 
 -- Insert/Update restricted to Service Role Key (backend only), so no RLS policies needed for them.
+
+-- Auto-update updated_at trigger
+CREATE OR REPLACE FUNCTION update_modified_column()
+RETURNS TRIGGER AS $$
+BEGIN
+   NEW.updated_at = now();
+   RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_news_modtime
+BEFORE UPDATE ON public.news
+FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
 
 -- ==============================================================================
 -- REFRESH LOGS TABLE
@@ -156,3 +172,12 @@ USING ( true );
 CREATE POLICY "Anyone can insert chat messages" 
 ON public.chat_messages FOR INSERT 
 WITH CHECK ( true );
+
+-- ==============================================================================
+-- INDEXES FOR PERFORMANCE
+-- ==============================================================================
+
+CREATE INDEX IF NOT EXISTS idx_news_created_at ON public.news(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_news_category ON public.news(category);
+CREATE INDEX IF NOT EXISTS idx_chat_room ON public.chat_messages(room_slug);
+CREATE INDEX IF NOT EXISTS idx_chat_created ON public.chat_messages(created_at DESC);
