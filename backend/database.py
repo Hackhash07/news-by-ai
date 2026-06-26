@@ -106,6 +106,24 @@ def get_articles():
         print(f"Error fetching articles: {e}")
         return []
 
+def get_existing_links(links: list) -> set:
+    if not supabase or not links:
+        return set()
+    
+    try:
+        # Supabase in_ requires a comma-separated string or list depending on the client version.
+        # Usually it accepts a list. Let's process in batches of 100 if needed, but 20 is fine.
+        existing = set()
+        # Querying the DB for the links
+        response = supabase.table("news").select("link").in_("link", links).execute()
+        if response.data:
+            for row in response.data:
+                existing.add(row.get("link"))
+        return existing
+    except Exception as e:
+        print(f"Error fetching existing links: {e}")
+        return set()
+
 def save_message(room_slug, username, display_name, message):
     if not supabase:
         return None
