@@ -129,19 +129,44 @@
                         <span class="game-team-label" style="background:rgba(255,255,255,0.08);color:var(--muted);">MATCH SETTINGS</span>
                     </div>
                     <div class="game-settings-row">
-                        <div class="game-field">
-                            <label class="game-label" for="initial-stocks">Initial Stocks/Player</label>
-                            <input id="initial-stocks" type="number" class="game-input game-input-sm" value="5" min="1" max="50" />
-                        </div>
-                        <div class="game-field">
-                            <label class="game-label" for="initial-worth">Initial Stock Price</label>
-                            <input id="initial-worth" type="number" class="game-input game-input-sm" value="100" min="10" max="1000" />
-                        </div>
-                        <div class="game-field">
+                        <div class="game-field" style="flex: 1;">
                             <label class="game-label" for="match-duration">Match Duration (min)</label>
                             <input id="match-duration" type="number" class="game-input game-input-sm" value="5" min="1" max="30" />
                         </div>
+                        <div class="game-field" style="flex: 1; display: flex; align-items: flex-end;">
+                            <button id="quick-match-preset-btn" type="button" class="game-btn" style="width: 100%; height: 38px; border-radius: 6px; font-size: 0.85rem; padding: 0 12px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--text);">Quick Match Preset</button>
+                        </div>
                     </div>
+                    
+                    <details style="margin-top: 16px;">
+                        <summary style="cursor: pointer; color: var(--muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; user-select: none;">Advanced Settings ▼</summary>
+                        <div style="margin-top: 12px; display: grid; gap: 12px;">
+                            <div class="game-settings-row">
+                                <div class="game-field">
+                                    <label class="game-label" for="initial-stocks">Initial Stocks/Player</label>
+                                    <input id="initial-stocks" type="number" class="game-input game-input-sm" value="5" min="1" max="50" />
+                                </div>
+                                <div class="game-field">
+                                    <label class="game-label" for="initial-worth">Initial Stock Price</label>
+                                    <input id="initial-worth" type="number" class="game-input game-input-sm" value="100" min="10" max="1000" />
+                                </div>
+                            </div>
+                            <div class="game-settings-row">
+                                <div class="game-field">
+                                    <label class="game-label" for="max-team-size">Max Players/Team</label>
+                                    <input id="max-team-size" type="number" class="game-input game-input-sm" value="8" min="1" max="50" />
+                                </div>
+                                <div class="game-field">
+                                    <label class="game-label" for="market-volatility">Market Volatility</label>
+                                    <select id="market-volatility" class="game-input game-input-sm">
+                                        <option value="low">Low</option>
+                                        <option value="medium" selected>Medium</option>
+                                        <option value="high">High</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </details>
                 </div>
             </div>
 
@@ -271,6 +296,10 @@
                 <div class="game-status-item">
                     <span class="game-status-label">YOUR TRADES</span>
                     <span id="game-trades-count" class="game-status-value game-mono">0</span>
+                </div>
+                <div class="game-status-item">
+                    <span class="game-status-label">AVAIL. SHARES</span>
+                    <span id="game-available-shares" class="game-status-value game-mono">5000</span>
                 </div>
                 <div class="game-status-item">
                     <span class="game-status-label">STOCK WORTH</span>

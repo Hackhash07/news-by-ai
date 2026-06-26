@@ -518,7 +518,11 @@ import { supabase } from './supabase.js';
         cacheDom();
 
         // Navigation bindings
-        $("landing-host-btn").addEventListener("click", () => { dom.landing.hidden = true; dom.setup.hidden = false; });
+        $("landing-host-btn").addEventListener("click", () => { 
+            dom.landing.hidden = true; 
+            dom.setup.hidden = false; 
+            if ($("quick-match-preset-btn")) $("quick-match-preset-btn").click();
+        });
         $("landing-join-btn").addEventListener("click", () => { dom.landing.hidden = true; dom.join.hidden = false; });
 
         $("host-back-btn").addEventListener("click", () => { dom.setup.hidden = true; dom.landing.hidden = false; });
@@ -526,6 +530,15 @@ import { supabase } from './supabase.js';
 
         $("create-room-btn").addEventListener("click", createRoom);
         $("join-room-btn").addEventListener("click", joinRoom);
+        if ($("quick-match-preset-btn")) {
+            $("quick-match-preset-btn").addEventListener("click", () => {
+                $("initial-stocks").value = "5";
+                $("initial-worth").value = "100";
+                $("max-team-size").value = "8";
+                $("match-duration").value = "5";
+                $("market-volatility").value = "medium";
+            });
+        }
         $("start-game-btn").addEventListener("click", startGame);
 
         if (dom.switchTeamBtn) dom.switchTeamBtn.addEventListener("click", switchTeam);
@@ -742,11 +755,13 @@ import { supabase } from './supabase.js';
             const initialWorth = clamp(parseInt($("initial-worth").value) || 100, 10, 1000);
             const matchDurationMin = clamp(parseInt($("match-duration").value) || 5, 1, 30);
             const matchDuration = matchDurationMin * 60;
+            const maxTeamSize = clamp(parseInt($("max-team-size").value) || 8, 1, 50);
+            const marketVolatility = $("market-volatility").value || "medium";
 
             const targetTeamIdx = teamId === 'a' ? 0 : 1;
             const playerEntry = { id: state.myPlayerId, name: playerName };
 
-            const initialCash = initialWorth * 2;
+            const initialCash = initialWorth * initialStocks;
 
             const teams = [
                 { id: "a", name: "Alpha", players: [] },
@@ -762,14 +777,15 @@ import { supabase } from './supabase.js';
                 initial_stocks: initialStocks,
                 initial_worth: initialWorth,
                 match_duration: matchDuration,
-                max_team_size: MAX_TEAM_SIZE,
+                max_team_size: maxTeamSize,
                 created_at: new Date().toISOString(),
                 phase: "waiting",
                 teams: teams,
-                match_settings: { voice_mode: "team" },
+                match_settings: { voice_mode: "team", market_volatility: marketVolatility },
                 match: {
                     gameStartTime: 0,
                     stockWorth: initialWorth,
+                    availableShares: 5000,
                     worthHistory: [initialWorth],
                     totalBuys: 0,
                     totalSells: 0,
@@ -930,7 +946,7 @@ import { supabase } from './supabase.js';
     // ── PLAYER STATE FACTORY ─────────────────────────────────────────────────
 
     function createPlayerState(playerId, initialStocks, initialWorth) {
-        const initialCash = initialWorth * 2;
+        const initialCash = initialStocks * initialWorth;
         return {
             id: playerId,
             cash: initialCash,
@@ -1622,6 +1638,12 @@ import { supabase } from './supabase.js';
             let worthHistory = [...(roomData.match.worthHistory || [])];
             let totalBuys = roomData.match.totalBuys || 0;
             let totalSells = roomData.match.totalSells || 0;
+            let availableShares = roomData.match.availableShares !== undefined ? roomData.match.availableShares : 5000;
+            
+            const volatilitySetting = (roomData.match_settings && roomData.match_settings.market_volatility) || 'medium';
+            let volMultiplier = 1.0;
+            if (volatilitySetting === 'low') volMultiplier = 0.5;
+            else if (volatilitySetting === 'high') volMultiplier = 2.0;
 
             if (isCorrect) {
                 myState.correct += 1;
@@ -1634,9 +1656,10 @@ import { supabase } from './supabase.js';
                         myState.trades += 1;
                         myState.buys += 1;
                         totalBuys += 1;
-                        const volatility = 1.5 + Math.random() * 2.5;
+                        availableShares = Math.max(0, availableShares - 1);
+                        const volatility = (1.5 + Math.random() * 2.5) * volMultiplier;
                         stockWorth += volatility;
-                        stockWorth += (Math.random() - 0.5) * 1.5;
+                        stockWorth += ((Math.random() - 0.5) * 1.5) * volMultiplier;
                         if (stockWorth < 1) stockWorth = 1;
                         stockWorth = Math.round(stockWorth * 100) / 100;
                         worthHistory.push(stockWorth);
@@ -1659,9 +1682,10 @@ import { supabase } from './supabase.js';
                         myState.trades += 1;
                         myState.shorts += 1;
                         totalSells += 1;
-                        const volatility = 1.5 + Math.random() * 2.5;
+                        availableShares += 1;
+                        const volatility = (1.5 + Math.random() * 2.5) * volMultiplier;
                         stockWorth -= volatility;
-                        stockWorth += (Math.random() - 0.5) * 1.5;
+                        stockWorth += ((Math.random() - 0.5) * 1.5) * volMultiplier;
                         if (stockWorth < 1) stockWorth = 1;
                         stockWorth = Math.round(stockWorth * 100) / 100;
                         worthHistory.push(stockWorth);
@@ -1711,6 +1735,7 @@ import { supabase } from './supabase.js';
                 ...roomData.match,
                 stockWorth,
                 worthHistory,
+                availableShares,
                 totalBuys,
                 totalSells,
                 playerStates: {
@@ -1872,6 +1897,11 @@ import { supabase } from './supabase.js';
 
         if (dom.tradesDisplay) {
             dom.tradesDisplay.textContent = myState ? `${myState.trades}` : "0";
+        }
+
+        const availableSharesSpan = $("game-available-shares");
+        if (availableSharesSpan && state.match) {
+            availableSharesSpan.textContent = state.match.availableShares !== undefined ? state.match.availableShares : 5000;
         }
 
         dom.worthDisplay.textContent = (state.match.stockWorth || 0).toFixed(2);
