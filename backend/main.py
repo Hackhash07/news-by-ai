@@ -16,7 +16,7 @@ app = Flask(__name__)
 app.config["JSON_SORT_KEYS"] = False
 CORS(app)
 
-UPDATE_SECRET = os.getenv("UPDATE_SECRET", "changeme")
+ADMIN_SECRET = os.getenv("ADMIN_SECRET", "ChinnuU07")
 
 CHAT_ROOMS = [
     {
@@ -129,14 +129,32 @@ def news():
     return jsonify(articles)
 
 
-@app.route("/update-news")
-def update_news():
-    key = request.args.get("key", "")
-    if key != UPDATE_SECRET:
+@app.route("/api/admin/refresh-news", methods=["POST", "GET"])
+def refresh_news():
+    # Support both Bearer token and ?secret= parameter
+    auth_header = request.headers.get("Authorization", "")
+    secret_param = request.args.get("secret", "")
+    
+    provided_secret = ""
+    if auth_header.startswith("Bearer "):
+        provided_secret = auth_header.split(" ")[1]
+    elif secret_param:
+        provided_secret = secret_param
+        
+    if not provided_secret or provided_secret != ADMIN_SECRET:
         return jsonify({"error": "Unauthorized"}), 401
 
-    collect_news()
-    return jsonify({"status": "updated", "articles": len(get_articles())})
+    result = collect_news()
+    
+    if result.get("status") == "conflict":
+        return jsonify(result), 409
+        
+    return jsonify(result), 200
+
+# Keep the old endpoint for backwards compatibility, but secure it with the new secret
+@app.route("/update-news")
+def update_news():
+    return refresh_news()
 
 
 @app.route("/api/chat/rooms")

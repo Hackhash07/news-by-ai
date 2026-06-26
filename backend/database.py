@@ -1,20 +1,17 @@
 import json
-import sqlite3
+import os
 from datetime import datetime
-from pathlib import Path
+from supabase import create_client, Client
 
-DATABASE_PATH = Path("database/news.db")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
 
-
-def _connect():
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
+supabase: Client = None
+if SUPABASE_URL and SUPABASE_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def _utc_now_text():
     return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-
 
 def _safe_json_loads(value, default):
     if value is None:
@@ -28,76 +25,8 @@ def _safe_json_loads(value, default):
             return default
     return default
 
-
-def _ensure_news_columns(conn):
-    cursor = conn.cursor()
-    cursor.execute("PRAGMA table_info(news)")
-    columns = {row[1] for row in cursor.fetchall()}
-
-    if "analysis" not in columns:
-        cursor.execute("ALTER TABLE news ADD COLUMN analysis TEXT DEFAULT ''")
-    if "added_at" not in columns:
-        cursor.execute("ALTER TABLE news ADD COLUMN added_at TEXT DEFAULT ''")
-
-
-def _ensure_chat_columns(conn):
-    cursor = conn.cursor()
-    cursor.execute("PRAGMA table_info(chat_messages)")
-    columns = {row[1] for row in cursor.fetchall()}
-
-    if "room_slug" not in columns:
-        cursor.execute("ALTER TABLE chat_messages ADD COLUMN room_slug TEXT DEFAULT 'global'")
-    if "display_name" not in columns:
-        cursor.execute("ALTER TABLE chat_messages ADD COLUMN display_name TEXT DEFAULT 'Anonymous'")
-    if "created_at" not in columns:
-        cursor.execute("ALTER TABLE chat_messages ADD COLUMN created_at TEXT DEFAULT ''")
-
-
 def create_database():
-    Path("database").mkdir(exist_ok=True)
-
-    conn = _connect()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS news (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT,
-            link TEXT UNIQUE,
-            category TEXT,
-            sentiment TEXT,
-            importance INTEGER,
-            market_impact TEXT,
-            assets TEXT,
-            directions TEXT,
-            confidence INTEGER,
-            time_horizon TEXT,
-            analysis TEXT DEFAULT '',
-            added_at TEXT DEFAULT ''
-        )
-        """
-    )
-
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS chat_messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            room_slug TEXT NOT NULL DEFAULT 'global',
-            username TEXT NOT NULL,
-            display_name TEXT NOT NULL,
-            message TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-
-    _ensure_news_columns(conn)
-    _ensure_chat_columns(conn)
-
-    conn.commit()
-    conn.close()
-
+    pass
 
 def save_article(
     title,
@@ -113,86 +42,67 @@ def save_article(
     analysis=None,
     added_at=None,
 ):
-    create_database()
-
-    conn = _connect()
-    cursor = conn.cursor()
-
+    if not supabase:
+        print("Warning: Supabase not configured. Cannot save article.")
+        return False
+    
     try:
-        cursor.execute(
-            """
-            INSERT INTO news
-            (
-                title,
-                link,
-                category,
-                sentiment,
-                importance,
-                market_impact,
-                assets,
-                directions,
-                confidence,
-                time_horizon,
-                analysis,
-                added_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                title,
-                link,
-                category,
-                sentiment,
-                importance,
-                market_impact,
-                json.dumps(assets or []),
-                json.dumps(directions or {}),
-                confidence,
-                time_horizon,
-                analysis or "",
-                added_at or "",
-            ),
-        )
-        conn.commit()
-    except sqlite3.IntegrityError:
-        pass
-    finally:
-        conn.close()
-
+        # Check if already exists (duplicate protection)
+        existing = supabase.table("news").select("id").eq("link", link).execute()
+        if existing.data:
+            return False # Duplicate skipped
+            
+        data = {
+            "title": title,
+            "link": link,
+            "category": category,
+            "sentiment": sentiment,
+            "importance": importance,
+            "market_impact": market_impact,
+            "assets": assets if assets is not None else [],
+            "directions": directions if directions is not None else {},
+            "confidence": confidence,
+            "time_horizon": time_horizon,
+            "analysis": analysis or ""
+        }
+        
+        supabase.table("news").insert(data).execute()
+        return True
+    except Exception as e:
+        print(f"Error saving article {link}: {e}")
+        raise e
 
 def get_articles():
-    create_database()
-
-    conn = _connect()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM news ORDER BY id DESC")
-    rows = cursor.fetchall()
-    conn.close()
-
-    articles = []
-    for row in rows:
-        articles.append(
-            {
-                "id": row["id"],
-                "title": row["title"],
-                "link": row["link"],
-                "category": row["category"],
-                "sentiment": row["sentiment"],
-                "importance": row["importance"],
-                "market_impact": row["market_impact"],
-                "assets": _safe_json_loads(row["assets"], []),
-                "directions": _safe_json_loads(row["directions"], {}),
-                "confidence": row["confidence"],
-                "time_horizon": row["time_horizon"],
-                "analysis": row["analysis"],
-                "added_at": row["added_at"],
-            }
-        )
-    return articles
-
+    if not supabase:
+        return []
+    
+    try:
+        response = supabase.table("news").select("*").order("id", desc=True).execute()
+        articles = []
+        for row in response.data:
+            articles.append({
+                "id": row.get("id"),
+                "title": row.get("title"),
+                "link": row.get("link"),
+                "category": row.get("category"),
+                "sentiment": row.get("sentiment"),
+                "importance": row.get("importance"),
+                "market_impact": row.get("market_impact"),
+                "assets": _safe_json_loads(row.get("assets"), []),
+                "directions": _safe_json_loads(row.get("directions"), {}),
+                "confidence": row.get("confidence"),
+                "time_horizon": row.get("time_horizon"),
+                "analysis": row.get("analysis"),
+                "added_at": row.get("created_at") or row.get("added_at"),
+            })
+        return articles
+    except Exception as e:
+        print(f"Error fetching articles: {e}")
+        return []
 
 def save_message(room_slug, username, display_name, message):
-    create_database()
+    if not supabase:
+        return None
 
     room_slug = (room_slug or "global").strip() or "global"
     username = (username or "Anonymous").strip()[:40] or "Anonymous"
@@ -202,67 +112,71 @@ def save_message(room_slug, username, display_name, message):
     if not message:
         return None
 
-    conn = _connect()
-    cursor = conn.cursor()
-    created_at = _utc_now_text()
-
-    cursor.execute(
-        """
-        INSERT INTO chat_messages
-        (room_slug, username, display_name, message, created_at)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (room_slug, username, display_name, message, created_at),
-    )
-    conn.commit()
-
-    cursor.execute("SELECT * FROM chat_messages WHERE id = ?", (cursor.lastrowid,))
-    row = cursor.fetchone()
-    conn.close()
-
-    if not row:
+    data = {
+        "room_slug": room_slug,
+        "username": username,
+        "display_name": display_name,
+        "message": message
+    }
+    
+    try:
+        response = supabase.table("chat_messages").insert(data).execute()
+        if response.data:
+            return response.data[0]
+        return None
+    except Exception as e:
+        print(f"Error saving message: {e}")
         return None
 
-    return {
-        "id": row["id"],
-        "room_slug": row["room_slug"],
-        "username": row["username"],
-        "display_name": row["display_name"],
-        "message": row["message"],
-        "created_at": row["created_at"],
-    }
-
-
 def get_messages(room_slug="global", limit=100):
-    create_database()
+    if not supabase:
+        return []
 
     room_slug = (room_slug or "global").strip() or "global"
+    try:
+        response = supabase.table("chat_messages").select("*").eq("room_slug", room_slug).order("id", desc=True).limit(int(limit)).execute()
+        return list(reversed(response.data))
+    except Exception as e:
+        print(f"Error fetching messages: {e}")
+        return []
 
-    conn = _connect()
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT *
-        FROM chat_messages
-        WHERE room_slug = ?
-        ORDER BY id DESC
-        LIMIT ?
-        """,
-        (room_slug, int(limit)),
-    )
-    rows = cursor.fetchall()
-    conn.close()
+def acquire_refresh_lock():
+    if not supabase:
+        return True
+    try:
+        response = supabase.table("refresh_locks").select("is_locked").eq("id", 1).execute()
+        if not response.data:
+            supabase.table("refresh_locks").insert({"id": 1, "is_locked": True, "locked_at": _utc_now_text()}).execute()
+            return True
+            
+        if response.data[0].get("is_locked"):
+            return False
+            
+        supabase.table("refresh_locks").update({"is_locked": True, "locked_at": _utc_now_text()}).eq("id", 1).execute()
+        return True
+    except Exception as e:
+        print(f"Error acquiring lock: {e}")
+        return False
 
-    messages = []
-    for row in reversed(rows):
-        messages.append(
-            {
-                "id": row["id"],
-                "room_slug": row["room_slug"],
-                "username": row["username"],
-                "display_name": row["display_name"],
-                "message": row["message"],
-                "created_at": row["created_at"],
-            }
-        )
-    return messages
+def release_refresh_lock():
+    if not supabase:
+        return
+    try:
+        supabase.table("refresh_locks").update({"is_locked": False, "locked_at": None}).eq("id", 1).execute()
+    except Exception as e:
+        print(f"Error releasing lock: {e}")
+
+def log_refresh(duration_seconds, inserted_count, duplicate_count, failed_count):
+    if not supabase:
+        return
+    try:
+        data = {
+            "duration_seconds": duration_seconds,
+            "inserted_count": inserted_count,
+            "duplicate_count": duplicate_count,
+            "failed_count": failed_count
+        }
+        supabase.table("refresh_logs").insert(data).execute()
+    except Exception as e:
+        print(f"Error logging refresh: {e}")
+
