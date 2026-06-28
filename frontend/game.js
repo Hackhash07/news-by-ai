@@ -106,26 +106,7 @@ import { supabase } from './supabase.js';
         dom.resultChart        = $("game-result-chart-canvas");
         dom.playAgainBtn       = $("play-again-btn");
         dom.shareVictoryBtn    = $("share-victory-btn");
-
-        // Victory Card elements
-        dom.victoryModal       = $("victory-modal");
-        dom.victoryModalClose  = $("victory-modal-close");
-        dom.victoryCardElement = $("victory-card-element");
-        dom.victoryDate        = $("victory-date");
-        dom.victoryWinnerTitle = $("victory-winner-title");
-        dom.victoryWinnerName  = $("victory-winner-name");
-        dom.victoryWinnerNw    = $("victory-winner-nw");
-        dom.victoryWinnerPnl   = $("victory-winner-pnl");
-        dom.victoryLoserName   = $("victory-loser-name");
-        dom.victoryLoserNw     = $("victory-loser-nw");
-        dom.victoryLoserPnl    = $("victory-loser-pnl");
-        dom.victoryMvpUsername = $("victory-mvp-username");
-        dom.victoryMvpPnl      = $("victory-mvp-pnl");
-        dom.victoryDownloadBtn = $("victory-download-btn");
-        dom.victoryShareBtn    = $("victory-share-btn");
     }
-    
-    let lastMatchStats = null;
 
     // ── WEBRTC VOICE CHAT ─────────────────────────────────────────────────────
 
@@ -583,11 +564,6 @@ import { supabase } from './supabase.js';
                 resetForNextMatch();
             }
         });
-        
-        if (dom.shareVictoryBtn) dom.shareVictoryBtn.addEventListener("click", showVictoryCard);
-        if (dom.victoryModalClose) dom.victoryModalClose.addEventListener("click", () => dom.victoryModal.hidden = true);
-        if (dom.victoryDownloadBtn) dom.victoryDownloadBtn.addEventListener("click", downloadVictoryCard);
-        if (dom.victoryShareBtn) dom.victoryShareBtn.addEventListener("click", shareToTwitter);
 
         window.addEventListener("resize", () => {
             if (!dom.arena.hidden) drawChart(dom.chartCanvas);
@@ -2077,20 +2053,20 @@ import { supabase } from './supabase.js';
         const loserInitial = isTie ? initialWorthB : (teamAData.totalWorth >= teamBData.totalWorth ? initialWorthB : initialWorthA);
         const loserData = isTie ? teamBData : (teamAData.totalWorth >= teamBData.totalWorth ? teamBData : teamAData);
 
-        lastMatchStats = {
-            isTie,
-            winnerName: isTie ? "TIE" : winnerName,
-            loserName: isTie ? "TIE" : state.teams[teamAData.totalWorth >= teamBData.totalWorth ? 1 : 0].name,
-            winnerWorth: winner.totalWorth,
-            loserWorth: loserData.totalWorth,
-            winnerPnl: winner.totalWorth - winnerInitial,
-            winnerPnlPct: (winner.totalWorth - winnerInitial) / (winnerInitial || 1) * 100,
-            loserPnl: loserData.totalWorth - loserInitial,
-            loserPnlPct: (loserData.totalWorth - loserInitial) / (loserInitial || 1) * 100,
-            mvpName: mvp ? mvp.name : "—",
-            mvpPnl: mvp ? (mvp.worth - 10000) : 0,
-            duration: state.settings ? (state.settings.duration || 5) : 5
+        const matchData = {
+            date: new Date().toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }),
+            winner_team: isTie ? "TIE" : winnerName,
+            loser_team: isTie ? "TIE" : state.teams[teamAData.totalWorth >= teamBData.totalWorth ? 1 : 0].name,
+            winner_worth: formatINR(winner.totalWorth),
+            loser_worth: formatINR(loserData.totalWorth),
+            margin: formatINR(winner.totalWorth - loserData.totalWorth),
+            loser_loss: formatINR(loserInitial - loserData.totalWorth),
+            mvp: mvp ? mvp.name.replace(/\s+/g, '_').toLowerCase() : "none"
         };
+        
+        if (dom.shareVictoryBtn) {
+            dom.shareVictoryBtn.onclick = () => showShareCard(matchData);
+        }
     }
 
     function renderResultRoster(container, players) {
@@ -2379,114 +2355,87 @@ import { supabase } from './supabase.js';
     }
     function clamp(val, min, max) { return Math.max(min, Math.min(max, val)); }
 
-    // ── VICTORY CARD LOGIC ────────────────────────────────────────────────
-    
     function formatINR(number) {
         return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(number);
     }
     
-    function showVictoryCard() {
-        if (!lastMatchStats) return;
-        
-        const dateStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-        dom.victoryDate.textContent = `${dateStr} • ${lastMatchStats.duration} min`;
-        
-        dom.victoryWinnerTitle.textContent = lastMatchStats.isTie ? "IT'S A TIE" : `${lastMatchStats.winnerName.toUpperCase()} WINS`;
-        dom.victoryWinnerName.textContent = lastMatchStats.winnerName.toUpperCase();
-        dom.victoryLoserName.textContent = lastMatchStats.loserName.toUpperCase();
-        
-        // Formatter for signs
-        const formatPnl = (val, pct) => {
-            const sign = val >= 0 ? '+' : '-';
-            return `${sign}₹${formatINR(Math.abs(val))} (${sign}${Math.abs(pct).toFixed(1)}%)`;
+    function showShareCard(matchData) {
+        // Build card HTML with real data
+        const card = document.createElement('div');
+        card.id = 'share-overlay';
+        card.innerHTML = `
+          <div id="share-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:16px;">
+            <div id="victory-card" style="width:480px;height:480px;background:#07101E;border-radius:12px;overflow:hidden;display:flex;flex-direction:column;font-family:monospace;">
+              <!-- top bar -->
+              <div style="display:flex;justify-content:space-between;padding:13px 18px;border-bottom:1px solid rgba(255,255,255,0.05);">
+                <span style="font-size:11px;font-weight:700;letter-spacing:2px;color:#C9913A;text-transform:uppercase;">⚡ Trading IQ Battle</span>
+                <span style="font-size:10px;color:rgba(255,255,255,0.3);">${matchData.date}</span>
+              </div>
+              <!-- winner -->
+              <div style="text-align:center;padding:16px 20px 10px;">
+                <div style="font-size:9px;letter-spacing:3px;color:rgba(255,255,255,0.3);text-transform:uppercase;margin-bottom:6px;">Match Winner</div>
+                <div style="font-size:34px;font-weight:800;color:#C9913A;letter-spacing:2px;text-transform:uppercase;">${matchData.winner_team}</div>
+                <div style="font-size:9px;color:rgba(255,255,255,0.22);letter-spacing:3px;margin-top:7px;text-transform:uppercase;">OutThought · OutTraded</div>
+              </div>
+              <!-- teams -->
+              <div style="display:flex;margin:6px 18px 0;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,0.06);">
+                <div style="flex:1;background:rgba(201,145,58,0.1);border-right:1px solid rgba(201,145,58,0.18);padding:13px 15px;">
+                  <div style="font-size:9px;letter-spacing:2px;color:#C9913A;text-transform:uppercase;margin-bottom:9px;">🏆 Winner</div>
+                  <div style="font-size:10px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;">${matchData.winner_team}</div>
+                  <div style="font-size:28px;font-weight:700;color:#fff;line-height:1;margin-bottom:4px;">₹${matchData.winner_worth}</div>
+                  <div style="font-size:12px;color:#27C47A;font-weight:600;">Better by ₹${matchData.margin}</div>
+                </div>
+                <div style="flex:1;background:rgba(0,0,0,0.2);padding:13px 15px;opacity:0.5;">
+                  <div style="font-size:9px;letter-spacing:2px;color:rgba(255,255,255,0.3);text-transform:uppercase;margin-bottom:9px;">Defeated</div>
+                  <div style="font-size:10px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;">${matchData.loser_team}</div>
+                  <div style="font-size:28px;font-weight:700;color:rgba(255,255,255,0.4);line-height:1;margin-bottom:4px;">₹${matchData.loser_worth}</div>
+                  <div style="font-size:12px;color:#FF5252;font-weight:600;">–₹${matchData.loser_loss}</div>
+                </div>
+              </div>
+              <!-- mvp row -->
+              <div style="display:flex;gap:8px;margin:10px 18px 0;">
+                <div style="flex:2;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:6px;padding:9px 13px;">
+                  <div style="font-size:9px;letter-spacing:2px;color:rgba(255,255,255,0.28);text-transform:uppercase;margin-bottom:3px;">MVP</div>
+                  <div style="font-size:14px;font-weight:600;color:#fff;">@${matchData.mvp}</div>
+                </div>
+                <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:6px;padding:9px 13px;">
+                  <div style="font-size:9px;letter-spacing:2px;color:rgba(255,255,255,0.28);text-transform:uppercase;margin-bottom:3px;">Margin</div>
+                  <div style="font-size:14px;font-weight:600;color:#27C47A;">+₹${matchData.margin}</div>
+                </div>
+              </div>
+              <!-- footer -->
+              <div style="display:flex;justify-content:space-between;padding:11px 18px;border-top:1px solid rgba(255,255,255,0.05);margin-top:auto;">
+                <span style="font-size:10px;color:rgba(255,255,255,0.2);">news-by-ai-pi.vercel.app</span>
+                <span style="font-size:10px;color:rgba(255,255,255,0.2);">#TradingIQBattle</span>
+              </div>
+            </div>
+            <!-- buttons -->
+            <div style="display:flex;gap:10px;">
+              <button id="btn-download" style="padding:10px 20px;background:#C9913A;color:#000;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;letter-spacing:1px;">DOWNLOAD CARD</button>
+              <button id="btn-tweet" style="padding:10px 20px;background:#fff;color:#000;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;letter-spacing:1px;">SHARE TO X</button>
+              <button id="btn-close" style="padding:10px 20px;background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:8px;font-size:13px;cursor:pointer;">CLOSE</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(card);
+      
+        document.getElementById('btn-download').onclick = () => {
+          html2canvas(document.getElementById('victory-card'), { scale: 2 }).then(canvas => {
+            const a = document.createElement('a');
+            a.download = 'trading-iq-victory.png';
+            a.href = canvas.toDataURL();
+            a.click();
+          });
         };
-        
-        // Reset classes
-        dom.victoryWinnerPnl.className = 'victory-value ' + (lastMatchStats.winnerPnl >= 0 ? 'victory-green' : 'victory-red');
-        dom.victoryLoserPnl.className = 'victory-value ' + (lastMatchStats.loserPnl >= 0 ? 'victory-green' : 'victory-red');
-        
-        dom.victoryMvpUsername.textContent = `@${lastMatchStats.mvpName.replace(/\s+/g, '_').toLowerCase()}`;
-        
-        const mvpSign = lastMatchStats.mvpPnl >= 0 ? '+' : '-';
-        dom.victoryMvpPnl.textContent = `${mvpSign}₹${formatINR(Math.abs(lastMatchStats.mvpPnl))}`;
-        
-        dom.victoryModal.hidden = false;
-        
-        // Animate numbers up
-        animateValue(dom.victoryWinnerNw, 0, lastMatchStats.winnerWorth, 1500, '₹');
-        animateValue(dom.victoryLoserNw, 0, lastMatchStats.loserWorth, 1500, '₹');
-        
-        // We just set PnL text directly after a delay to match the count up finish
-        dom.victoryWinnerPnl.textContent = "...";
-        dom.victoryLoserPnl.textContent = "...";
-        setTimeout(() => {
-            dom.victoryWinnerPnl.textContent = formatPnl(lastMatchStats.winnerPnl, lastMatchStats.winnerPnlPct);
-            dom.victoryLoserPnl.textContent = formatPnl(lastMatchStats.loserPnl, lastMatchStats.loserPnlPct);
-        }, 1500);
-    }
-    
-    function animateValue(obj, start, end, duration, prefix = '') {
-        let startTimestamp = null;
-        const step = (timestamp) => {
-            if (!startTimestamp) startTimestamp = timestamp;
-            const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-            // Ease out cubic
-            const easeProgress = 1 - Math.pow(1 - progress, 3);
-            const current = start + easeProgress * (end - start);
-            obj.innerHTML = prefix + formatINR(current);
-            if (progress < 1) {
-                window.requestAnimationFrame(step);
-            } else {
-                obj.innerHTML = prefix + formatINR(end);
-            }
+      
+        document.getElementById('btn-tweet').onclick = () => {
+          const text = encodeURIComponent(
+            `Just crushed Trading IQ Battle 🏆\n\n${matchData.winner_team}: ₹${matchData.winner_worth}\n${matchData.loser_team}: ₹${matchData.loser_worth}\nMargin: +₹${matchData.margin}\nMVP: @${matchData.mvp}\n\nThink you can beat this? 👇\nnews-by-ai-pi.vercel.app\n\n#TradingIQBattle #TradeSmarter`
+          );
+          window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
         };
-        window.requestAnimationFrame(step);
-    }
-    
-    function downloadVictoryCard() {
-        const cardElement = dom.victoryCardElement;
-        
-        // html2canvas requires elements to be visible, but we can temporarily remove the CSS scale
-        // to capture it at full 1080x1080 resolution, then restore it.
-        const originalTransform = cardElement.style.transform;
-        const originalMargin = cardElement.style.marginBottom;
-        
-        cardElement.style.transform = 'none';
-        cardElement.style.marginBottom = '0';
-        
-        html2canvas(cardElement, {
-            scale: 1, // 1:1 pixel mapping for 1080x1080
-            backgroundColor: '#0a0a0a',
-            logging: false,
-            useCORS: true
-        }).then(canvas => {
-            // Restore scale
-            cardElement.style.transform = originalTransform || '';
-            cardElement.style.marginBottom = originalMargin || '';
-            
-            const link = document.createElement('a');
-            link.download = `TradingIQ_Victory_${Date.now()}.png`;
-            link.href = canvas.toDataURL('image/png');
-            link.click();
-        }).catch(err => {
-            console.error("Error generating canvas:", err);
-            cardElement.style.transform = originalTransform || '';
-            cardElement.style.marginBottom = originalMargin || '';
-            alert("Failed to generate image. Please try again.");
-        });
-    }
-    
-    function shareToTwitter() {
-        if (!lastMatchStats) return;
-        
-        const winnerStr = `${lastMatchStats.winnerName}: ₹${formatINR(lastMatchStats.winnerWorth)} (${lastMatchStats.winnerPnl >= 0 ? '+' : ''}${lastMatchStats.winnerPnlPct.toFixed(1)}%)`;
-        const loserStr = `${lastMatchStats.loserName}: ₹${formatINR(lastMatchStats.loserWorth)}`;
-        const mvpStr = `@${lastMatchStats.mvpName.replace(/\s+/g, '_').toLowerCase()}`;
-        
-        const text = `I just crushed Trading IQ Battle 🏆\n\n${winnerStr}\n${loserStr}\nMVP: ${mvpStr}\n\nThink you can beat this? 👇\nnews-by-ai-pi.vercel.app\n#TradingIQBattle`;
-        
-        const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
-        window.open(url, '_blank', 'noopener,noreferrer');
+      
+        document.getElementById('btn-close').onclick = () => card.remove();
     }
 
     document.addEventListener("DOMContentLoaded", initApp);
