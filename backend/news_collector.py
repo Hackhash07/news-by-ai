@@ -100,6 +100,10 @@ def collect_news():
                 
             try:
                 if is_high_importance(title, summary):
+                    if articles_sent_to_ai >= 2:
+                        print(f"Skipping '{title}' to prevent worker timeout (max 2 AI calls per run)")
+                        continue
+                        
                     articles_sent_to_ai += 1
                     intelligence = build_intelligence(title, summary)
                 else:
