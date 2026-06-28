@@ -105,7 +105,27 @@ import { supabase } from './supabase.js';
         dom.resultTeamBRoster  = $("result-team-b-roster");
         dom.resultChart        = $("game-result-chart-canvas");
         dom.playAgainBtn       = $("play-again-btn");
+        dom.shareVictoryBtn    = $("share-victory-btn");
+
+        // Victory Card elements
+        dom.victoryModal       = $("victory-modal");
+        dom.victoryModalClose  = $("victory-modal-close");
+        dom.victoryCardElement = $("victory-card-element");
+        dom.victoryDate        = $("victory-date");
+        dom.victoryWinnerTitle = $("victory-winner-title");
+        dom.victoryWinnerName  = $("victory-winner-name");
+        dom.victoryWinnerNw    = $("victory-winner-nw");
+        dom.victoryWinnerPnl   = $("victory-winner-pnl");
+        dom.victoryLoserName   = $("victory-loser-name");
+        dom.victoryLoserNw     = $("victory-loser-nw");
+        dom.victoryLoserPnl    = $("victory-loser-pnl");
+        dom.victoryMvpUsername = $("victory-mvp-username");
+        dom.victoryMvpPnl      = $("victory-mvp-pnl");
+        dom.victoryDownloadBtn = $("victory-download-btn");
+        dom.victoryShareBtn    = $("victory-share-btn");
     }
+
+    let lastMatchStats = null;
 
     // ── WEBRTC VOICE CHAT ─────────────────────────────────────────────────────
 
@@ -513,89 +533,7 @@ import { supabase } from './supabase.js';
         console.log("[VOICE] cleanup complete");
     }
 
-    // ── INITIALIZATION ────────────────────────────────────────────────────────
-    function initApp() {
-        cacheDom();
 
-        // Navigation bindings
-        $("landing-host-btn").addEventListener("click", () => { 
-            dom.landing.hidden = true; 
-            dom.setup.hidden = false; 
-            if ($("quick-match-preset-btn")) $("quick-match-preset-btn").click();
-        });
-        $("landing-join-btn").addEventListener("click", () => { dom.landing.hidden = true; dom.join.hidden = false; });
-
-        $("host-back-btn").addEventListener("click", () => { dom.setup.hidden = true; dom.landing.hidden = false; });
-        $("join-back-btn").addEventListener("click", () => { dom.join.hidden = true; dom.landing.hidden = false; });
-
-        $("create-room-btn").addEventListener("click", createRoom);
-        $("join-room-btn").addEventListener("click", joinRoom);
-        if ($("quick-match-preset-btn")) {
-            $("quick-match-preset-btn").addEventListener("click", () => {
-                $("initial-stocks").value = "5";
-                $("initial-worth").value = "100";
-                $("max-team-size").value = "8";
-                $("match-duration").value = "5";
-                $("market-volatility").value = "medium";
-            });
-        }
-        $("start-game-btn").addEventListener("click", startGame);
-
-        if (dom.switchTeamBtn) dom.switchTeamBtn.addEventListener("click", switchTeam);
-        if (dom.leaveRoomBtn) dom.leaveRoomBtn.addEventListener("click", leaveRoom);
-        
-        const disbandRoomBtn = $("disband-room-btn");
-        const arenaDisbandBtn = $("arena-disband-btn");
-        if (disbandRoomBtn) disbandRoomBtn.addEventListener("click", initiateDisbandVote);
-        if (arenaDisbandBtn) arenaDisbandBtn.addEventListener("click", initiateDisbandVote);
-
-        const disbandAgreeBtn = $("disband-agree-btn");
-        const disbandDisagreeBtn = $("disband-disagree-btn");
-        if (disbandAgreeBtn) disbandAgreeBtn.addEventListener("click", () => castDisbandVote("agree"));
-        if (disbandDisagreeBtn) disbandDisagreeBtn.addEventListener("click", () => castDisbandVote("disagree"));
-
-        dom.answerForm.addEventListener("submit", handleAnswer);
-
-        // Play Again — return to waiting room, NOT reload
-        dom.playAgainBtn.addEventListener("click", resetForNextMatch);
-
-        window.addEventListener("resize", () => {
-            if (!dom.arena.hidden) drawChart(dom.chartCanvas);
-            if (!dom.results.hidden) drawChart(dom.resultChart);
-        });
-
-        const voiceToggleBtn = $("voice-toggle-btn");
-        if (voiceToggleBtn) voiceToggleBtn.addEventListener("click", toggleMic);
-
-        window.addEventListener("beforeunload", () => {
-            cleanupVoice(true);
-        });
-
-        // ── Auto-rejoin on page load ──
-        tryAutoRejoin();
-
-        // Ensure presence drops cleanly on unload
-        window.addEventListener("beforeunload", () => {
-            if (presenceChannel) {
-                presenceChannel.untrack();
-                supabase.removeChannel(presenceChannel);
-            }
-        });
-
-        // If host navigates away via logo, delete the room
-        const brandLink = document.querySelector('.brand a');
-        if (brandLink) {
-            brandLink.addEventListener('click', async (e) => {
-                if (state.roomId && state.isHost) {
-                    e.preventDefault();
-                    if (confirm("Leaving will close the room. Are you sure?")) {
-                        await supabase.from('rooms').delete().eq('id', state.roomId);
-                        window.location.href = brandLink.href;
-                    }
-                }
-            });
-        }
-    }
 
     // ── PLAYER IDENTITY ──────────────────────────────────────────────────────
 
@@ -752,7 +690,7 @@ import { supabase } from './supabase.js';
             state.myPlayerName = playerName;
 
             const initialStocks = clamp(parseInt($("initial-stocks").value) || 5, 1, 50);
-            const initialWorth = clamp(parseInt($("initial-worth").value) || 100, 10, 1000);
+            const initialWorth = clamp(parseInt($("initial-worth").value) || 100, 1, 1000);
             const matchDurationMin = clamp(parseInt($("match-duration").value) || 5, 1, 30);
             const matchDuration = matchDurationMin * 60;
             const maxTeamSize = clamp(parseInt($("max-team-size").value) || 8, 1, 50);
@@ -2039,6 +1977,28 @@ import { supabase } from './supabase.js';
             dom.playAgainBtn.textContent = state.isHost ? "PLAY AGAIN" : "WAITING FOR HOST...";
             dom.playAgainBtn.disabled = !state.isHost;
         }
+
+        // Cache stats for Victory Card
+        const initialWorthA = teamAData.players.length * 10000;
+        const initialWorthB = teamBData.players.length * 10000;
+        const winnerInitial = isTie ? initialWorthA : (teamAData.totalWorth >= teamBData.totalWorth ? initialWorthA : initialWorthB);
+        const loserInitial = isTie ? initialWorthB : (teamAData.totalWorth >= teamBData.totalWorth ? initialWorthB : initialWorthA);
+        const loserData = isTie ? teamBData : (teamAData.totalWorth >= teamBData.totalWorth ? teamBData : teamAData);
+
+        lastMatchStats = {
+            isTie,
+            winnerName: isTie ? "TIE" : winnerName,
+            loserName: isTie ? "TIE" : state.teams[teamAData.totalWorth >= teamBData.totalWorth ? 1 : 0].name,
+            winnerWorth: winner.totalWorth,
+            loserWorth: loserData.totalWorth,
+            winnerPnl: winner.totalWorth - winnerInitial,
+            winnerPnlPct: (winner.totalWorth - winnerInitial) / (winnerInitial || 1) * 100,
+            loserPnl: loserData.totalWorth - loserInitial,
+            loserPnlPct: (loserData.totalWorth - loserInitial) / (loserInitial || 1) * 100,
+            mvpName: mvp ? mvp.name : "—",
+            mvpPnl: mvp ? (mvp.worth - 10000) : 0,
+            duration: state.settings ? (state.settings.duration || 5) : 5
+        };
     }
 
     function renderResultRoster(container, players) {
@@ -2326,6 +2286,116 @@ import { supabase } from './supabase.js';
         return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
     function clamp(val, min, max) { return Math.max(min, Math.min(max, val)); }
+
+    // ── VICTORY CARD LOGIC ────────────────────────────────────────────────
+    
+    function formatINR(number) {
+        return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(number);
+    }
+    
+    function showVictoryCard() {
+        if (!lastMatchStats) return;
+        
+        const dateStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+        dom.victoryDate.textContent = `${dateStr} • ${lastMatchStats.duration} min`;
+        
+        dom.victoryWinnerTitle.textContent = lastMatchStats.isTie ? "IT'S A TIE" : `${lastMatchStats.winnerName.toUpperCase()} WINS`;
+        dom.victoryWinnerName.textContent = lastMatchStats.winnerName.toUpperCase();
+        dom.victoryLoserName.textContent = lastMatchStats.loserName.toUpperCase();
+        
+        // Formatter for signs
+        const formatPnl = (val, pct) => {
+            const sign = val >= 0 ? '+' : '-';
+            return `${sign}₹${formatINR(Math.abs(val))} (${sign}${Math.abs(pct).toFixed(1)}%)`;
+        };
+        
+        // Reset classes
+        dom.victoryWinnerPnl.className = 'victory-value ' + (lastMatchStats.winnerPnl >= 0 ? 'victory-green' : 'victory-red');
+        dom.victoryLoserPnl.className = 'victory-value ' + (lastMatchStats.loserPnl >= 0 ? 'victory-green' : 'victory-red');
+        
+        dom.victoryMvpUsername.textContent = `@${lastMatchStats.mvpName.replace(/\s+/g, '_').toLowerCase()}`;
+        
+        const mvpSign = lastMatchStats.mvpPnl >= 0 ? '+' : '-';
+        dom.victoryMvpPnl.textContent = `${mvpSign}₹${formatINR(Math.abs(lastMatchStats.mvpPnl))}`;
+        
+        dom.victoryModal.hidden = false;
+        
+        // Animate numbers up
+        animateValue(dom.victoryWinnerNw, 0, lastMatchStats.winnerWorth, 1500, '₹');
+        animateValue(dom.victoryLoserNw, 0, lastMatchStats.loserWorth, 1500, '₹');
+        
+        // We just set PnL text directly after a delay to match the count up finish
+        dom.victoryWinnerPnl.textContent = "...";
+        dom.victoryLoserPnl.textContent = "...";
+        setTimeout(() => {
+            dom.victoryWinnerPnl.textContent = formatPnl(lastMatchStats.winnerPnl, lastMatchStats.winnerPnlPct);
+            dom.victoryLoserPnl.textContent = formatPnl(lastMatchStats.loserPnl, lastMatchStats.loserPnlPct);
+        }, 1500);
+    }
+    
+    function animateValue(obj, start, end, duration, prefix = '') {
+        let startTimestamp = null;
+        const step = (timestamp) => {
+            if (!startTimestamp) startTimestamp = timestamp;
+            const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+            // Ease out cubic
+            const easeProgress = 1 - Math.pow(1 - progress, 3);
+            const current = start + easeProgress * (end - start);
+            obj.innerHTML = prefix + formatINR(current);
+            if (progress < 1) {
+                window.requestAnimationFrame(step);
+            } else {
+                obj.innerHTML = prefix + formatINR(end);
+            }
+        };
+        window.requestAnimationFrame(step);
+    }
+    
+    function downloadVictoryCard() {
+        const cardElement = dom.victoryCardElement;
+        
+        // html2canvas requires elements to be visible, but we can temporarily remove the CSS scale
+        // to capture it at full 1080x1080 resolution, then restore it.
+        const originalTransform = cardElement.style.transform;
+        const originalMargin = cardElement.style.marginBottom;
+        
+        cardElement.style.transform = 'none';
+        cardElement.style.marginBottom = '0';
+        
+        html2canvas(cardElement, {
+            scale: 1, // 1:1 pixel mapping for 1080x1080
+            backgroundColor: '#0a0a0a',
+            logging: false,
+            useCORS: true
+        }).then(canvas => {
+            // Restore scale
+            cardElement.style.transform = originalTransform || '';
+            cardElement.style.marginBottom = originalMargin || '';
+            
+            const link = document.createElement('a');
+            link.download = `TradingIQ_Victory_${Date.now()}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }).catch(err => {
+            console.error("Error generating canvas:", err);
+            cardElement.style.transform = originalTransform || '';
+            cardElement.style.marginBottom = originalMargin || '';
+            alert("Failed to generate image. Please try again.");
+        });
+    }
+    
+    function shareToTwitter() {
+        if (!lastMatchStats) return;
+        
+        const winnerStr = `${lastMatchStats.winnerName}: ₹${formatINR(lastMatchStats.winnerWorth)} (${lastMatchStats.winnerPnl >= 0 ? '+' : ''}${lastMatchStats.winnerPnlPct.toFixed(1)}%)`;
+        const loserStr = `${lastMatchStats.loserName}: ₹${formatINR(lastMatchStats.loserWorth)}`;
+        const mvpStr = `@${lastMatchStats.mvpName.replace(/\s+/g, '_').toLowerCase()}`;
+        
+        const text = `I just crushed Trading IQ Battle 🏆\n\n${winnerStr}\n${loserStr}\nMVP: ${mvpStr}\n\nThink you can beat this? 👇\nnews-by-ai-pi.vercel.app\n#TradingIQBattle`;
+        
+        const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+        window.open(url, '_blank', 'noopener,noreferrer');
+    }
 
     document.addEventListener("DOMContentLoaded", initApp);
 })();

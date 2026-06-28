@@ -18,6 +18,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="style.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
 
@@ -464,10 +465,16 @@
                 </div>
             </div>
 
-            <button id="play-again-btn" type="button" class="game-start-btn" style="margin-top:24px;">
-                PLAY AGAIN
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-            </button>
+            <div class="game-results-actions" style="display:flex; gap:12px; margin-top:24px;">
+                <button id="play-again-btn" type="button" class="game-start-btn" style="flex:1;">
+                    PLAY AGAIN
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                </button>
+                <button id="share-victory-btn" type="button" class="game-start-btn" style="flex:1; background:var(--accent); color:#000;">
+                    SHARE VICTORY
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                </button>
+            </div>
         </section>
 
     </main>
@@ -481,6 +488,85 @@
             <div style="display:flex; gap:16px;">
                 <button id="disband-agree-btn" class="game-start-btn" style="flex:1; background:transparent; border:1px solid rgba(239,68,68,0.5); color:#fca5a5; transition:all 0.2s;">AGREE</button>
                 <button id="disband-disagree-btn" class="game-start-btn" style="flex:1; background:var(--accent); color:#000; transition:all 0.2s;">DISAGREE</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ VICTORY CARD MODAL ═══ -->
+    <div id="victory-modal" class="modal-overlay" hidden>
+        <div class="victory-modal-content">
+            <button id="victory-modal-close" class="victory-modal-close" title="Close">×</button>
+            
+            <!-- The actual card that gets rendered to canvas -->
+            <div id="victory-card-element" class="victory-card">
+                <div class="victory-bg-grid"></div>
+                
+                <!-- Top Bar -->
+                <div class="victory-top-bar">
+                    <div class="victory-logo">⚡ TRADING IQ BATTLE</div>
+                    <div class="victory-date" id="victory-date">28 Jun 2026 • 10 min</div>
+                </div>
+
+                <!-- Headline -->
+                <div class="victory-headline">
+                    <h1 id="victory-winner-title">TEAM ALPHA WINS</h1>
+                    <p>OutThought. OutTraded.</p>
+                </div>
+
+                <!-- Score Section -->
+                <div class="victory-scores">
+                    <!-- Winner Column -->
+                    <div class="victory-col victory-winner-col">
+                        <div class="victory-badge">🏆 WINNER</div>
+                        <h2 id="victory-winner-name">TEAM ALPHA</h2>
+                        <div class="victory-stat">
+                            <div class="victory-label">Final Net Worth</div>
+                            <div class="victory-value" id="victory-winner-nw">₹1,24,500</div>
+                        </div>
+                        <div class="victory-stat">
+                            <div class="victory-label">P&L</div>
+                            <div class="victory-value victory-green" id="victory-winner-pnl">+₹24,500 (+24.5%)</div>
+                        </div>
+                    </div>
+
+                    <!-- Loser Column -->
+                    <div class="victory-col victory-loser-col">
+                        <div class="victory-badge victory-badge-loser">💀 DEFEATED</div>
+                        <h2 id="victory-loser-name">TEAM BETA</h2>
+                        <div class="victory-stat">
+                            <div class="victory-label">Final Net Worth</div>
+                            <div class="victory-value" id="victory-loser-nw">₹98,200</div>
+                        </div>
+                        <div class="victory-stat">
+                            <div class="victory-label">P&L</div>
+                            <div class="victory-value victory-red" id="victory-loser-pnl">-₹1,800 (-1.8%)</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MVP Strip -->
+                <div class="victory-mvp-strip">
+                    <div class="victory-mvp-label">🎯 MVP: <span id="victory-mvp-username">@rk_trades</span></div>
+                    <div class="victory-mvp-trade">Total P&L: <span id="victory-mvp-pnl">+₹12,400</span></div>
+                </div>
+
+                <!-- Bottom Bar -->
+                <div class="victory-bottom-bar">
+                    <div>Play at <span class="victory-highlight">news-by-ai-pi.vercel.app</span></div>
+                    <div>#TradingIQBattle #TradeSmarter</div>
+                </div>
+            </div>
+
+            <!-- Modal Action Buttons -->
+            <div class="victory-actions">
+                <button id="victory-download-btn" class="victory-action-btn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download Card
+                </button>
+                <button id="victory-share-btn" class="victory-action-btn victory-x-btn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l11.733 16h4.267l-11.733-16z"/><path d="M4 20l6.768-6.768m2.46-2.46l6.772-6.772"/></svg>
+                    Share to X
+                </button>
             </div>
         </div>
     </div>
