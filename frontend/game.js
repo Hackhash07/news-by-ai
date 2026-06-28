@@ -2060,8 +2060,11 @@ import { supabase } from './supabase.js';
             winner_worth: formatINR(winner.totalWorth),
             loser_worth: formatINR(loserData.totalWorth),
             margin: formatINR(winner.totalWorth - loserData.totalWorth),
-            loser_loss: formatINR(loserInitial - loserData.totalWorth),
-            mvp: mvp ? mvp.name.replace(/\s+/g, '_').toLowerCase() : "none"
+            loser_loss: formatINR(Math.abs(loserInitial - loserData.totalWorth)),
+            mvp: mvp ? mvp.name.replace(/\s+/g, '_').toLowerCase() : "none",
+            total_trades: teamAData.players.reduce((sum, p) => sum + (p.trades || 0), 0) + teamBData.players.reduce((sum, p) => sum + (p.trades || 0), 0),
+            duration: state.settings ? (state.settings.duration || 5) : 5,
+            players: teamAData.players.length + teamBData.players.length
         };
         
         if (dom.shareVictoryBtn) {
@@ -2403,6 +2406,11 @@ import { supabase } from './supabase.js';
                   <div style="font-size:14px;font-weight:600;color:#27C47A;">+₹${matchData.margin}</div>
                 </div>
               </div>
+              <!-- match stats -->
+              <div style="margin:10px 18px 0;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:6px;padding:9px 13px;">
+                <div style="font-size:9px;letter-spacing:2px;color:rgba(255,255,255,0.28);text-transform:uppercase;margin-bottom:6px;">Match Stats</div>
+                <div style="font-size:12px;color:rgba(255,255,255,0.5);">${matchData.total_trades} total trades · ${matchData.duration} min · ${matchData.players} players</div>
+              </div>
               <!-- footer -->
               <div style="display:flex;justify-content:space-between;padding:11px 18px;border-top:1px solid rgba(255,255,255,0.05);margin-top:auto;">
                 <span style="font-size:10px;color:rgba(255,255,255,0.2);">news-by-ai-pi.vercel.app</span>
@@ -2433,6 +2441,11 @@ import { supabase } from './supabase.js';
             `Just crushed Trading IQ Battle 🏆\n\n${matchData.winner_team}: ₹${matchData.winner_worth}\n${matchData.loser_team}: ₹${matchData.loser_worth}\nMargin: +₹${matchData.margin}\nMVP: @${matchData.mvp}\n\nThink you can beat this? 👇\nnews-by-ai-pi.vercel.app\n\n#TradingIQBattle #TradeSmarter`
           );
           window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+          
+          const tweetBtn = document.getElementById('btn-tweet');
+          tweetBtn.textContent = 'SHARED ✓';
+          tweetBtn.style.background = '#27C47A';
+          tweetBtn.style.color = '#000';
         };
       
         document.getElementById('btn-close').onclick = () => card.remove();
