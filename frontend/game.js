@@ -2368,7 +2368,7 @@ import { supabase } from './supabase.js';
         card.id = 'share-overlay';
         card.innerHTML = `
           <div id="share-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:16px;">
-            <div id="victory-card" style="width:480px;height:480px;background:#07101E;border-radius:12px;overflow:hidden;display:flex;flex-direction:column;font-family:monospace;">
+            <div id="victory-card" style="width:480px;min-height:400px;height:auto;background:#07101E;border-radius:12px;overflow:hidden;display:flex;flex-direction:column;font-family:monospace;">
               <!-- top bar -->
               <div style="display:flex;justify-content:space-between;padding:13px 18px;border-bottom:1px solid rgba(255,255,255,0.05);">
                 <span style="font-size:11px;font-weight:700;letter-spacing:2px;color:#C9913A;text-transform:uppercase;">⚡ Trading IQ Battle</span>
@@ -2392,7 +2392,7 @@ import { supabase } from './supabase.js';
                   <div style="font-size:9px;letter-spacing:2px;color:rgba(255,255,255,0.3);text-transform:uppercase;margin-bottom:9px;">Defeated</div>
                   <div style="font-size:10px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;">${matchData.loser_team}</div>
                   <div style="font-size:28px;font-weight:700;color:rgba(255,255,255,0.4);line-height:1;margin-bottom:4px;">₹${matchData.loser_worth}</div>
-                  <div style="font-size:12px;color:#FF5252;font-weight:600;">–₹${matchData.loser_loss}</div>
+                  <div style="font-size:12px;color:rgba(255,255,255,0.35);">Final standing</div>
                 </div>
               </div>
               <!-- mvp row -->
