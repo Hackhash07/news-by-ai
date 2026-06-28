@@ -637,6 +637,40 @@ button, input { font: inherit; }
   color: #c8d6e8;
 }
 
+.ai-chip.basic {
+  background: rgba(148, 163, 184, 0.12);
+  border-color: rgba(148, 163, 184, 0.28);
+  color: var(--muted);
+}
+
+.ai-accordion {
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding: 8px 0;
+}
+
+.ai-accordion:last-child {
+  border-bottom: none;
+}
+
+.ai-accordion summary {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  outline: none;
+  margin-bottom: 6px;
+}
+
+.ai-accordion summary::marker {
+  color: var(--accent);
+}
+
+.ai-accordion[open] summary {
+  margin-bottom: 10px;
+}
+
 /* Card footer */
 .card-footer {
   display: flex;

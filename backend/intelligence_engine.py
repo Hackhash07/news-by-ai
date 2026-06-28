@@ -1,74 +1,8 @@
+import json
 from datetime import datetime, timezone
 
 from backend.news_analyzer import classify_article
-from backend.asset_mapper import map_assets
-from backend.impact_engine import determine_direction
 from backend.confidence_engine import calculate_confidence
-from backend.time_engine import estimate_horizon
-
-
-# -----------------------------
-# Market Impact Logic
-# -----------------------------
-def classify_market_impact(category, sentiment, importance, assets):
-    category = str(category or "").lower()
-
-    if category == "geopolitics":
-        if sentiment == "Negative" and importance >= 7:
-            return "High Volatility"
-        return "Neutral"
-
-    if category == "finance":
-        if sentiment == "Positive":
-            return "Bullish"
-        if sentiment == "Negative":
-            return "Bearish"
-        return "Neutral"
-
-    if category == "technology":
-        return "Neutral"
-
-    if any(a in assets for a in ["gold", "crude oil", "defense stocks"]):
-        if sentiment == "Negative":
-            return "High Volatility"
-        return "Neutral"
-
-    if importance <= 4:
-        return "Low Impact"
-
-    return "Neutral"
-
-
-# -----------------------------
-# AI Analysis Paragraph
-# -----------------------------
-def build_analysis_paragraph(title, category, sentiment, assets, directions, confidence):
-
-    asset_text = ", ".join(assets) if assets else "broader markets"
-
-    direction_text = (
-        ", ".join([f"{k}: {v}" for k, v in (directions or {}).items()])
-        if directions else "no strong directional bias"
-    )
-
-    if category == "Geopolitics":
-        opening = "This geopolitical development could influence global risk sentiment and safe-haven flows."
-    elif category == "Finance":
-        opening = "This financial headline may impact liquidity, interest rates, and market positioning."
-    elif category == "Technology":
-        opening = "This technology-related news may affect growth stocks and innovation sentiment."
-    else:
-        opening = "This news may influence broader market sentiment indirectly."
-
-    middle = f"It is classified as {sentiment} with a confidence score of {confidence}%."
-
-    ending = (
-        f"Key exposed assets include {asset_text}. "
-        f"Directional signals suggest {direction_text}. "
-        "Traders should watch follow-up price action for confirmation."
-    )
-
-    return f"{opening} {middle} {ending}"
 
 
 # -----------------------------
@@ -77,45 +11,101 @@ def build_analysis_paragraph(title, category, sentiment, assets, directions, con
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
+# -----------------------------
+# Deterministic Preprocessing
+# -----------------------------
+def guess_category(title, summary):
+    text = (title + " " + summary).lower()
+    if any(x in text for x in ["war", "strike", "attack", "israel", "lebanon", "ukraine", "russia", "china", "taiwan", "election", "sanction"]):
+        return "Geopolitics"
+    if any(x in text for x in ["fed", "inflation", "cpi", "ppi", "rate", "interest", "earnings", "gdp", "employment", "jobs"]):
+        return "Finance"
+    if any(x in text for x in ["crypto", "bitcoin", "ethereum"]):
+        return "Crypto"
+    return "General"
+
+
+def extract_initial_assets(title, summary):
+    text = (title + " " + summary).lower()
+    assets = []
+    if any(x in text for x in ["oil", "opec", "crude"]):
+        assets.append("Crude Oil")
+    if "gold" in text:
+        assets.append("Gold")
+    if any(x in text for x in ["fed", "rate", "inflation"]):
+        assets.append("USD")
+        assets.append("Treasury Yields")
+    if any(x in text for x in ["bitcoin", "crypto"]):
+        assets.append("Bitcoin")
+    return assets
+
 
 # -----------------------------
 # Main Intelligence Builder
 # -----------------------------
-def build_intelligence(title):
-    analysis = classify_article(title)
+def build_intelligence(title, summary):
+    initial_category = guess_category(title, summary)
+    initial_assets = extract_initial_assets(title, summary)
+    
+    analysis = classify_article(title, summary, initial_category, initial_assets)
 
-    category = analysis["category"]
-    sentiment = analysis["sentiment"]
-    importance = analysis["importance"]
-
-    assets = map_assets(category, analysis.get("market_impact", "Neutral"))
-    directions = determine_direction(category, sentiment)
-    confidence = calculate_confidence(importance, sentiment, category)
-    time_horizon = estimate_horizon(category, importance)
-
-    market_impact = classify_market_impact(
-        category,
-        sentiment,
-        importance,
-        assets
+    category = analysis.get("category", initial_category)
+    sentiment = analysis.get("sentiment", "Neutral")
+    
+    # Python assigns importance based on keyword hits implicitly or we can use the LLM's assessment
+    # The user wanted Importance determined by Python, but it's hard to give a 1-10 score reliably without AI.
+    # We will use a baseline Python score and let AI adjust it.
+    importance = analysis.get("importance", 7)
+    
+    # Calculate deterministic confidence
+    ai_probs = []
+    for asset in analysis.get("affected_assets", []):
+        if "probability" in asset:
+            ai_probs.append(asset["probability"])
+            
+    confidence = calculate_confidence(
+        importance=importance,
+        source="News Source", # We don't have source explicitly here, could pass it, but defaulting
+        ai_probabilities=ai_probs
     )
 
     return {
         "category": category,
         "sentiment": sentiment,
         "importance": importance,
-        "market_impact": market_impact,
-        "assets": assets,
-        "directions": directions,
+        "market_impact": analysis.get("market_interpretation", "High Volatility"),
+        "assets": [a.get("name") for a in analysis.get("affected_assets", [])],
+        "directions": {a.get("name"): a.get("direction") for a in analysis.get("affected_assets", [])},
         "confidence": confidence,
-        "time_horizon": time_horizon,
-        "analysis": build_analysis_paragraph(
-            title,
-            category,
-            sentiment,
-            assets,
-            directions,
-            confidence
-        ),
+        "time_horizon": "Variable",
+        "analysis": analysis.get("summary", ""),
+        "structured_analysis": analysis,
+        "added_at": now_iso()
+    }
+
+# -----------------------------
+# Basic Intelligence Builder (Low Importance)
+# -----------------------------
+def build_basic_intelligence(title, summary):
+    category = guess_category(title, summary)
+    assets = extract_initial_assets(title, summary)
+    
+    return {
+        "category": category,
+        "sentiment": "Neutral",
+        "importance": 3,
+        "market_impact": "Low Impact",
+        "assets": assets,
+        "directions": {},
+        "confidence": 40,
+        "time_horizon": "Unknown",
+        "analysis": summary or "This article was saved for context but did not meet the importance threshold for deep AI analysis.",
+        "structured_analysis": {
+            "summary": summary,
+            "market_interpretation": "Low immediate market impact anticipated.",
+            "affected_assets": [],
+            "historical_context": None,
+            "invalidation_criteria": []
+        },
         "added_at": now_iso()
     }

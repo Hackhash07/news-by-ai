@@ -5,38 +5,20 @@ import re
 from google import genai
 
 
-def fallback(title):
-    title = title.lower()
-
-    if any(x in title for x in [
-        "war", "missile", "attack",
-        "strike", "russia", "iran",
-        "israel", "china"
-    ]):
-        return {
-            "category": "Geopolitics",
-            "sentiment": "Negative",
-            "importance": 8,
-            "market_impact": "Unknown"
-        }
-
-    if any(x in title for x in [
-        "inflation", "fed", "rates",
-        "market", "stocks", "economy",
-        "bank", "bond"
-    ]):
-        return {
-            "category": "Finance",
-            "sentiment": "Neutral",
-            "importance": 6,
-            "market_impact": "Unknown"
-        }
-
+def fallback(title, summary, initial_category, initial_assets):
     return {
-        "category": "General",
+        "event_type": "Unknown",
+        "category": initial_category,
         "sentiment": "Neutral",
         "importance": 5,
-        "market_impact": "Unknown"
+        "summary": summary or title,
+        "market_interpretation": "Basic context saved. AI analysis was unavailable.",
+        "affected_assets": [
+            {"name": a, "direction": "Neutral", "probability": 50, "reason": "Default mapping due to AI fallback.", "timeframe": "Unknown"} 
+            for a in initial_assets
+        ],
+        "historical_context": None,
+        "invalidation_criteria": []
     }
 
 
@@ -61,97 +43,74 @@ def _extract_json(text):
         return None
 
 
-def classify_article(title):
+def classify_article(title, summary, initial_category, initial_assets):
     api_key = os.getenv("GEMINI_API_KEY")
-    print("DEBUG: API KEY PRESENT =", bool(api_key))
 
     if not api_key:
         print("Gemini API key missing")
-        return fallback(title)
+        return fallback(title, summary, initial_category, initial_assets)
 
     try:
         client = genai.Client(api_key=api_key)
 
         prompt = f"""
-Analyze this news headline.
+You are a top-tier macro strategist at a firm like Goldman Sachs or Bridgewater.
+Your job is to explain WHY markets react to the following breaking news.
 
-Headline:
-{title}
+Headline: {title}
+Summary: {summary}
+Initial Category Estimate: {initial_category}
+Initial Extracted Assets: {initial_assets}
 
-Return ONLY valid JSON.
+Return ONLY a highly structured JSON object.
 
 Rules:
+1. Explain causality. Why does this matter to specific assets?
+2. Estimate probabilities for asset directions.
+3. Provide historical context (a similar past event).
+4. State explicitly what would invalidate this view.
+5. Provide an importance score (1-10) and an overall sentiment (Positive, Negative, Neutral).
 
-1. category must be exactly one of:
-Geopolitics
-Finance
-Technology
-General
-
-2. sentiment must be exactly one of:
-Positive
-Negative
-Neutral
-
-3. importance must be an integer from 1 to 10
-
-Return JSON only.
-
-Example:
-
+JSON Schema:
 {{
-    "category":"Geopolitics",
-    "sentiment":"Negative",
-    "importance":8
+  "event_type": "string (e.g. War, Earnings, Central Bank, Election)",
+  "category": "Geopolitics, Finance, Technology, or General",
+  "sentiment": "Positive, Negative, or Neutral",
+  "importance": int (1-10),
+  "summary": "string (1-2 sentences summarizing the event)",
+  "market_interpretation": "string (Macro view on the market reaction)",
+  "affected_assets": [
+    {{
+      "name": "string (e.g. Gold, Oil, NVIDIA, NIFTY)",
+      "direction": "Bullish, Bearish, or Neutral",
+      "probability": int (0-100),
+      "reason": "string (Causal explanation)",
+      "timeframe": "string (Immediate, 1-7 days, 1-3 months)"
+    }}
+  ],
+  "historical_context": {{
+    "similar_event": "string",
+    "market_reaction": "string",
+    "relevance": "string"
+  }},
+  "invalidation_criteria": [
+    "string"
+  ]
 }}
 """
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
+            model='gemini-2.5-flash',
+            contents=prompt,
         )
 
-        text = (getattr(response, "text", "") or "").strip()
-        result = _extract_json(text)
-
-        if not isinstance(result, dict):
-            raise ValueError(f"Invalid JSON from Gemini: {text}")
-
-        category = result.get("category", "General")
-        if category not in [
-            "Geopolitics",
-            "Finance",
-            "Technology",
-            "General"
-        ]:
-            category = "General"
-
-        sentiment = result.get("sentiment", "Neutral")
-        if sentiment not in [
-            "Positive",
-            "Negative",
-            "Neutral"
-        ]:
-            sentiment = "Neutral"
-
-        importance = result.get("importance", 5)
-        try:
-            importance = int(importance)
-        except Exception:
-            importance = 5
-
-        if importance < 1:
-            importance = 1
-        if importance > 10:
-            importance = 10
-
-        return {
-            "category": category,
-            "sentiment": sentiment,
-            "importance": importance,
-            "market_impact": "Unknown"
-        }
+        parsed = _extract_json(response.text)
+        if parsed:
+            return parsed
+        else:
+            print("Failed to parse JSON from Gemini")
+            return fallback(title, summary, initial_category, initial_assets)
 
     except Exception as e:
-        print("Gemini Error:", repr(e))
-        return fallback(title)
+        print(f"Gemini API Error: {e}")
+        return fallback(title, summary, initial_category, initial_assets)

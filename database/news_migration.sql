@@ -25,9 +25,22 @@ CREATE TABLE IF NOT EXISTS public.news (
     source TEXT,
     published_at TIMESTAMP WITH TIME ZONE,
     image_url TEXT,
+    structured_analysis JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Safely add structured_analysis column if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'news' AND column_name = 'structured_analysis'
+    ) THEN
+        ALTER TABLE public.news ADD COLUMN structured_analysis JSONB DEFAULT '{}'::jsonb;
+    END IF;
+END $$;
+
 
 ALTER TABLE public.news ENABLE ROW LEVEL SECURITY;
 

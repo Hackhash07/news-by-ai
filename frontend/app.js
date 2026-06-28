@@ -146,6 +146,7 @@ function safeJsonParse(value, fallback) {
 function normalizeArticle(article) {
     const assets = safeJsonParse(article.assets, []);
     const directions = safeJsonParse(article.directions, {});
+    const structured_analysis = safeJsonParse(article.structured_analysis, null);
     const importance = Number(article.importance) || 0;
     const confidence = Number(article.confidence) || 0;
     let category = String(article.category || "General").trim();
@@ -160,6 +161,7 @@ function normalizeArticle(article) {
         importance,
         confidence,
         analysis: article.analysis || "",
+        structured_analysis: structured_analysis,
         added_at: article.added_at || "",
         ai_score: importance * confidence
     };
@@ -417,8 +419,51 @@ function renderCards(articles) {
                     <div><div class="data-label">Market Impact</div><div class="data-val">${escapeHtml(a.market_impact || "Neutral")}</div></div>
                 </div>
                 <div class="ai-note">
-                    <div class="ai-note-header"><span class="ai-chip">AI Analysis</span></div>
-                    <p class="ai-note-text">${escapeHtml(aiNote)}</p>
+                    ${(() => {
+                        if (a.structured_analysis && a.structured_analysis.market_interpretation) {
+                            const sa = a.structured_analysis;
+                            const assetTags = (sa.affected_assets || []).map(ast => {
+                                const color = ast.direction === "Bullish" ? "var(--green)" : (ast.direction === "Bearish" ? "var(--red)" : "var(--muted)");
+                                return `<div style="border-left: 2px solid ${color}; padding-left: 8px; margin-bottom: 8px;">
+                                    <strong>${escapeHtml(ast.name)}</strong> <span style="color:${color}">(${escapeHtml(ast.direction)} ${ast.probability || 50}%)</span><br>
+                                    <span style="font-size:12px; color:var(--muted);">${escapeHtml(ast.reason || "")}</span>
+                                </div>`;
+                            }).join("");
+                            
+                            return `
+                                <div class="ai-note-header"><span class="ai-chip">Pro Analysis</span></div>
+                                <details class="ai-accordion" open>
+                                    <summary>Market Interpretation</summary>
+                                    <p class="ai-note-text">${escapeHtml(sa.market_interpretation || sa.summary || a.analysis)}</p>
+                                </details>
+                                <details class="ai-accordion">
+                                    <summary>Asset Impact Reasoning</summary>
+                                    <div class="ai-note-text">${assetTags || "No specific assets targeted."}</div>
+                                </details>
+                                ${sa.historical_context && sa.historical_context.similar_event ? `
+                                <details class="ai-accordion">
+                                    <summary>Historical Context</summary>
+                                    <div class="ai-note-text">
+                                        <strong>Similar Event:</strong> ${escapeHtml(sa.historical_context.similar_event)}<br>
+                                        <strong>Reaction:</strong> ${escapeHtml(sa.historical_context.market_reaction)}<br>
+                                        <strong>Relevance:</strong> ${escapeHtml(sa.historical_context.relevance)}
+                                    </div>
+                                </details>` : ""}
+                                ${sa.invalidation_criteria && sa.invalidation_criteria.length ? `
+                                <details class="ai-accordion">
+                                    <summary>Risks & Invalidation</summary>
+                                    <ul class="ai-note-text" style="margin:0; padding-left: 15px;">
+                                        ${sa.invalidation_criteria.map(i => `<li>${escapeHtml(i)}</li>`).join("")}
+                                    </ul>
+                                </details>` : ""}
+                            `;
+                        } else {
+                            return `
+                                <div class="ai-note-header"><span class="ai-chip basic">Basic Analysis</span></div>
+                                <p class="ai-note-text">${escapeHtml(a.analysis || fallbackAnalysis(a))}</p>
+                            `;
+                        }
+                    })()}
                 </div>
                 <div class="card-footer">
                     <div class="asset-tags">${assetTagsHtml}</div>

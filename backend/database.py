@@ -40,6 +40,7 @@ def save_article(
     confidence=None,
     time_horizon=None,
     analysis=None,
+    structured_analysis=None,
     added_at=None,
     source=None,
     published_at=None,
@@ -67,6 +68,7 @@ def save_article(
             "confidence": confidence,
             "time_horizon": time_horizon,
             "analysis": analysis or "",
+            "structured_analysis": structured_analysis if structured_analysis is not None else {},
             "source": source,
             "published_at": published_at,
             "image_url": image_url
@@ -99,6 +101,7 @@ def get_articles():
                 "confidence": row.get("confidence"),
                 "time_horizon": row.get("time_horizon"),
                 "analysis": row.get("analysis"),
+                "structured_analysis": _safe_json_loads(row.get("structured_analysis"), {}),
                 "added_at": row.get("created_at") or row.get("added_at"),
             })
         return articles

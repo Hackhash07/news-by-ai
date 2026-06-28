@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS public.news (
     source TEXT,
     published_at TIMESTAMP WITH TIME ZONE,
     image_url TEXT,
+    structured_analysis JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
