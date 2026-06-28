@@ -124,7 +124,7 @@ import { supabase } from './supabase.js';
         dom.victoryDownloadBtn = $("victory-download-btn");
         dom.victoryShareBtn    = $("victory-share-btn");
     }
-
+    
     let lastMatchStats = null;
 
     // ── WEBRTC VOICE CHAT ─────────────────────────────────────────────────────
@@ -533,7 +533,99 @@ import { supabase } from './supabase.js';
         console.log("[VOICE] cleanup complete");
     }
 
+    // ── INITIALIZATION ────────────────────────────────────────────────────────
+    function initApp() {
+        cacheDom();
 
+        // Navigation bindings
+        $("landing-host-btn").addEventListener("click", () => { 
+            dom.landing.hidden = true; 
+            dom.setup.hidden = false; 
+            if ($("quick-match-preset-btn")) $("quick-match-preset-btn").click();
+        });
+        $("landing-join-btn").addEventListener("click", () => { dom.landing.hidden = true; dom.join.hidden = false; });
+
+        $("host-back-btn").addEventListener("click", () => { dom.setup.hidden = true; dom.landing.hidden = false; });
+        $("join-back-btn").addEventListener("click", () => { dom.join.hidden = true; dom.landing.hidden = false; });
+
+        $("create-room-btn").addEventListener("click", createRoom);
+        $("join-room-btn").addEventListener("click", joinRoom);
+        if ($("quick-match-preset-btn")) {
+            $("quick-match-preset-btn").addEventListener("click", () => {
+                $("initial-stocks").value = "5";
+                $("initial-worth").value = "100";
+                $("max-team-size").value = "8";
+                $("match-duration").value = "5";
+                $("market-volatility").value = "medium";
+            });
+        }
+        $("start-game-btn").addEventListener("click", startGame);
+
+        if (dom.switchTeamBtn) dom.switchTeamBtn.addEventListener("click", switchTeam);
+        if (dom.leaveRoomBtn) dom.leaveRoomBtn.addEventListener("click", leaveRoom);
+        
+        const disbandRoomBtn = $("disband-room-btn");
+        const arenaDisbandBtn = $("arena-disband-btn");
+        if (disbandRoomBtn) disbandRoomBtn.addEventListener("click", initiateDisbandVote);
+        if (arenaDisbandBtn) arenaDisbandBtn.addEventListener("click", initiateDisbandVote);
+
+        const disbandAgreeBtn = $("disband-agree-btn");
+        const disbandDisagreeBtn = $("disband-disagree-btn");
+        if (disbandAgreeBtn) disbandAgreeBtn.addEventListener("click", () => castDisbandVote("agree"));
+        if (disbandDisagreeBtn) disbandDisagreeBtn.addEventListener("click", () => castDisbandVote("disagree"));
+
+        dom.answerForm.addEventListener("submit", handleAnswer);
+
+        // Play Again — return to waiting room, NOT reload
+        dom.playAgainBtn.addEventListener("click", () => {
+            if (state.isHost) {
+                broadcastSignal({ type: "playAgain" });
+                resetForNextMatch();
+            }
+        });
+        
+        if (dom.shareVictoryBtn) dom.shareVictoryBtn.addEventListener("click", showVictoryCard);
+        if (dom.victoryModalClose) dom.victoryModalClose.addEventListener("click", () => dom.victoryModal.hidden = true);
+        if (dom.victoryDownloadBtn) dom.victoryDownloadBtn.addEventListener("click", downloadVictoryCard);
+        if (dom.victoryShareBtn) dom.victoryShareBtn.addEventListener("click", shareToTwitter);
+
+        window.addEventListener("resize", () => {
+            if (!dom.arena.hidden) drawChart(dom.chartCanvas);
+            if (!dom.results.hidden) drawChart(dom.resultChart);
+        });
+
+        const voiceToggleBtn = $("voice-toggle-btn");
+        if (voiceToggleBtn) voiceToggleBtn.addEventListener("click", toggleMic);
+
+        window.addEventListener("beforeunload", () => {
+            cleanupVoice(true);
+        });
+
+        // ── Auto-rejoin on page load ──
+        tryAutoRejoin();
+
+        // Ensure presence drops cleanly on unload
+        window.addEventListener("beforeunload", () => {
+            if (presenceChannel) {
+                presenceChannel.untrack();
+                supabase.removeChannel(presenceChannel);
+            }
+        });
+
+        // If host navigates away via logo, delete the room
+        const brandLink = document.querySelector('.brand a');
+        if (brandLink) {
+            brandLink.addEventListener('click', async (e) => {
+                if (state.roomId && state.isHost) {
+                    e.preventDefault();
+                    if (confirm("Leaving will close the room. Are you sure?")) {
+                        await supabase.from('rooms').delete().eq('id', state.roomId);
+                        window.location.href = brandLink.href;
+                    }
+                }
+            });
+        }
+    }
 
     // ── PLAYER IDENTITY ──────────────────────────────────────────────────────
 
@@ -690,7 +782,7 @@ import { supabase } from './supabase.js';
             state.myPlayerName = playerName;
 
             const initialStocks = clamp(parseInt($("initial-stocks").value) || 5, 1, 50);
-            const initialWorth = clamp(parseInt($("initial-worth").value) || 100, 1, 1000);
+            const initialWorth = clamp(parseInt($("initial-worth").value) || 100, 10, 1000);
             const matchDurationMin = clamp(parseInt($("match-duration").value) || 5, 1, 30);
             const matchDuration = matchDurationMin * 60;
             const maxTeamSize = clamp(parseInt($("max-team-size").value) || 8, 1, 50);
