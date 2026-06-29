@@ -1368,7 +1368,7 @@ import { supabase } from "./supabase.js";
                 phase: "playing",
                 match: {
                   ...state.match,
-                  gameStartTime: Date.now()
+                  gameStartTime: Date.now(),
                 },
                 last_update_time: Date.now(),
               })
@@ -2014,10 +2014,6 @@ import { supabase } from "./supabase.js";
         .eq("id", state.roomId);
 
       if (updateErr) throw new Error(updateErr.message);
-
-      if (state.isHost) {
-        scheduleNextEvent();
-      }
     } catch (err) {
       console.error("[Game] Start game failed:", err);
       alert(err.message || "Failed to start game.");
