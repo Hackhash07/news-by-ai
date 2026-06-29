@@ -2137,15 +2137,19 @@ import { supabase } from './supabase.js';
         if (!localStorage.getItem(matchKey)) {
             localStorage.setItem(matchKey, "true");
             supabase.auth.getSession().then(async ({ data: { session } }) => {
-                if (session && session.user) {
-                    try {
-                        const userId = session.user.id;
-                        const { data: profile, error: profileErr } = await supabase.from('profiles').select('elo_score, peak_elo, matches_played, matches_won').eq('id', userId).single();
-                        
-                        if (profileErr) {
-                            alert(`Failed to fetch profile: ${profileErr.message}`);
-                            return;
-                        }
+                if (!session || !session.user) {
+                    alert("Debug: No authenticated session found. ELO will not be updated. Please sign in on the Live Desk tab.");
+                    return;
+                }
+                
+                try {
+                    const userId = session.user.id;
+                    const { data: profile, error: profileErr } = await supabase.from('profiles').select('elo_score, peak_elo, matches_played, matches_won').eq('id', userId).single();
+                    
+                    if (profileErr) {
+                        alert(`Debug: Failed to fetch profile from DB: ${profileErr.message}`);
+                        return;
+                    }
                         
                         if (profile) {
                             let currentElo = profile.elo_score || 1000;
@@ -2173,19 +2177,22 @@ import { supabase } from './supabase.js';
                             }).eq('id', userId).select();
                             
                             if (updateError) {
-                                alert(`Failed to update ELO: ${updateError.message}`);
+                                alert(`Debug: Supabase Update Error: ${updateError.message}`);
                                 console.error(`Failed to update ELO: ${updateError.message}`);
                             } else if (!updateData || updateData.length === 0) {
-                                alert("Failed to update ELO: Row not found or RLS blocked it.");
+                                alert("Debug: Update succeeded but returned 0 rows. RLS blocked it or user missing.");
                             } else {
+                                alert(`Debug: ELO Updated Successfully!\nResult: ${isTie ? 'TIE' : (wonParam ? 'WIN' : 'LOSS')}\nELO Change: ${eloChange}\nNew ELO: ${newElo}`);
                                 console.log(`Updated ELO for ${userId}: ${currentElo} -> ${newElo}`);
                             }
                         }
                     } catch (e) {
-                        alert("Failed to update ELO logic error: " + e.message);
+                        alert("Debug: Exception in ELO logic: " + e.message);
                         console.error("Failed to update ELO", e);
                     }
                 }
+            }).catch(e => {
+                alert("Debug: session fetch rejected: " + e.message);
             });
         }
     }
