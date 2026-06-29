@@ -1393,6 +1393,9 @@ import { supabase } from "./supabase.js";
         }
 
         startCountdown();
+        if (state.isHost) {
+          scheduleNextEvent();
+        }
         const myTeamId = state.teams[0].players.some(
           (p) => p.id === state.myPlayerId,
         )
