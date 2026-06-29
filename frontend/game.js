@@ -3009,27 +3009,51 @@ import { supabase } from "./supabase.js";
   }
 
   function renderVolatilityMeter() {
-    const streak = Math.abs((state.match && state.match.momentumStreak) || 0);
+    function getRealVolatility() {
+      const history = (state.match && state.match.worthHistory) || [];
+      if (history.length < 4) return "LOW";
 
-    let level, color, pct, hint;
+      // Look at last 8 price points
+      const recent = history.slice(-8);
+      const max = Math.max(...recent);
+      const min = Math.min(...recent);
+      const swing = (max - min) / min; // actual % price swing
 
-    if (streak >= 7) {
-      level = "EXTREME";
+      if (swing > 0.25) return "EXTREME";
+      if (swing > 0.12) return "HIGH";
+      if (swing > 0.05) return "MEDIUM";
+      return "LOW";
+    }
+
+    const level = getRealVolatility();
+    const streak = (state.match && state.match.momentumStreak) || 0;
+    const dir = streak > 0 ? "BUY" : streak < 0 ? "SELL" : null;
+
+    let color, pct, hint;
+
+    if (level === "EXTREME") {
       color = "#FF5252";
       pct = 95;
-      hint = "Peak volatility — maximum trade impact";
-    } else if (streak >= 5) {
-      level = "HIGH";
+      if (dir === "SELL") {
+        hint = "Heavy sell pressure — one buy has massive counter impact";
+      } else if (dir === "BUY") {
+        hint = "Heavy buy pressure — one sell reverses the market";
+      } else {
+        hint = "Peak volatility — maximum trade impact";
+      }
+    } else if (level === "HIGH") {
       color = "#FF8C00";
       pct = 70;
-      hint = "High impact — large trades move market";
-    } else if (streak >= 3) {
-      level = "MEDIUM";
+      if (dir) {
+        hint = `${dir} momentum — counter-trade for amplified impact`;
+      } else {
+        hint = "High impact — large trades move market";
+      }
+    } else if (level === "MEDIUM") {
       color = "#C9913A";
       pct = 40;
       hint = "Momentum building — size up carefully";
     } else {
-      level = "LOW";
       color = "#888888";
       pct = 15;
       hint = "Low impact window — build position";
