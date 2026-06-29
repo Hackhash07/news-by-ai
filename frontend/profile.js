@@ -39,6 +39,15 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function bindEvents() {
+    document.getElementById("profile-login-btn")?.addEventListener("click", async () => {
+        document.getElementById("profile-login-btn").innerHTML = "Signing in...";
+        const { error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: { redirectTo: window.location.href }
+        });
+        if (error) alert("Sign-in failed: " + error.message);
+    });
+
     document.getElementById("signout-btn")?.addEventListener("click", async () => {
         if (confirm("Sign out?")) {
             await supabase.auth.signOut();
