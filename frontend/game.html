@@ -377,6 +377,23 @@
                             <span class="game-question-tag" style="color:var(--accent);">QUESTION #<span id="game-question-num">1</span></span>
                         </div>
                         <div id="game-question-text" class="game-question-text">Press START to begin</div>
+                        <div id="difficulty-selector" style="display:flex; gap:6px; margin-bottom:8px;">
+                          <button type="button" data-diff="easy" class="diff-btn diff-active" 
+                            style="flex:1; padding:4px 8px; font-size:11px; border-radius:4px; 
+                            cursor:pointer; font-weight:600; letter-spacing:1px;
+                            background:rgba(39,196,122,0.15); border:1px solid rgba(39,196,122,0.4); 
+                            color:#27C47A;">EASY</button>
+                          <button type="button" data-diff="medium" class="diff-btn"
+                            style="flex:1; padding:4px 8px; font-size:11px; border-radius:4px; 
+                            cursor:pointer; font-weight:600; letter-spacing:1px;
+                            background:rgba(250,204,21,0.1); border:1px solid rgba(250,204,21,0.3); 
+                            color:#FACC15;">MEDIUM 1.5x</button>
+                          <button type="button" data-diff="hard" class="diff-btn"
+                            style="flex:1; padding:4px 8px; font-size:11px; border-radius:4px; 
+                            cursor:pointer; font-weight:600; letter-spacing:1px;
+                            background:rgba(255,82,82,0.1); border:1px solid rgba(255,82,82,0.3); 
+                            color:#FF5252;">HARD 2x</button>
+                        </div>
                         <form id="game-answer-form" class="game-answer-row">
                             <input id="game-answer-input" type="text" class="game-input game-answer-input" placeholder="e.g. 150 b (buy) or 150 s (sell)" autocomplete="off" />
                             <button type="submit" class="game-submit-btn">SUBMIT</button>
