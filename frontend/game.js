@@ -1063,7 +1063,7 @@ import { supabase } from "./supabase.js";
         match: {
           gameStartTime: 0,
           stockWorth: initialWorth,
-          availableShares: 5000,
+          availableShares: 200,
           worthHistory: [initialWorth],
           totalBuys: 0,
           totalSells: 0,
@@ -1961,7 +1961,7 @@ import { supabase } from "./supabase.js";
             playerStates,
             momentumStreak: 0,
             lastTradeDir: null,
-            activeEvent: null
+            activeEvent: null,
           },
           match_number: (roomData.match_number || 0) + 1,
           last_update_time: Date.now(),
@@ -2022,7 +2022,7 @@ import { supabase } from "./supabase.js";
             playerStates,
             momentumStreak: 0,
             lastTradeDir: null,
-            activeEvent: null
+            activeEvent: null,
           },
           last_update_time: Date.now(),
         })
@@ -2238,11 +2238,11 @@ import { supabase } from "./supabase.js";
             totalBuys += 1;
             availableShares = Math.max(0, availableShares - 1);
             const diffMult = myState.currentQuestion.mult || 1.0;
-            const availShares = roomData.match.availableShares || 5000;
+            const availShares = roomData.match.availableShares || 200;
             let scarcityMult = 1.0;
-            if (availShares < 100) scarcityMult = 4.0;
-            else if (availShares < 500) scarcityMult = 2.5;
-            else if (availShares < 1000) scarcityMult = 1.5;
+            if (availShares < 10) scarcityMult = 4.0;
+            else if (availShares < 25) scarcityMult = 2.5;
+            else if (availShares < 50) scarcityMult = 1.5;
 
             let momentumStreak = roomData.match.momentumStreak || 0;
             let lastTradeDir = roomData.match.lastTradeDir;
@@ -2291,11 +2291,11 @@ import { supabase } from "./supabase.js";
             totalSells += 1;
             availableShares += 1;
             const diffMult = myState.currentQuestion.mult || 1.0;
-            const availShares = roomData.match.availableShares || 5000;
+            const availShares = roomData.match.availableShares || 200;
             let scarcityMult = 1.0;
-            if (availShares < 100) scarcityMult = 4.0;
-            else if (availShares < 500) scarcityMult = 2.5;
-            else if (availShares < 1000) scarcityMult = 1.5;
+            if (availShares < 10) scarcityMult = 4.0;
+            else if (availShares < 25) scarcityMult = 2.5;
+            else if (availShares < 50) scarcityMult = 1.5;
 
             let momentumStreak = roomData.match.momentumStreak || 0;
             let lastTradeDir = roomData.match.lastTradeDir;
