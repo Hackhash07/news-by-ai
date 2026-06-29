@@ -131,6 +131,7 @@ import { supabase } from "./supabase.js";
   let isJoiningRoom = false;
   let isSubmitting = false;
   let countdownInterval = null;
+  let lastSeenEventStartedAt = 0;
 
   let presenceChannel = null;
   let onlinePlayerIds = new Set();
@@ -2665,7 +2666,50 @@ import { supabase } from "./supabase.js";
         `;
   }
 
+  function showEventToast(ae) {
+    const toast = document.createElement("div");
+    toast.innerHTML = `
+        <div style="font-size: 48px; margin-bottom: 12px; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5));">${ae.emoji}</div>
+        <div style="font-size: 24px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; text-shadow: 0 2px 8px rgba(0,0,0,0.6);">${ae.label}</div>
+        <div style="font-size: 15px; margin-top: 8px; opacity: 0.95; font-weight: 500;">${ae.description}</div>
+    `;
+    toast.style.cssText = `
+        position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.5);
+        background: linear-gradient(135deg, ${ae.color}E6, ${ae.color}B3); color: #fff; 
+        padding: 32px 56px; border-radius: 20px; text-align: center; 
+        box-shadow: 0 20px 50px rgba(0,0,0,0.6), inset 0 2px 4px rgba(255,255,255,0.3); 
+        border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(8px);
+        z-index: 9999; opacity: 0; pointer-events: none; 
+        transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    `;
+    document.body.appendChild(toast);
+
+    // Animate in
+    setTimeout(() => {
+      toast.style.opacity = "1";
+      toast.style.transform = "translate(-50%, -50%) scale(1.1)";
+    }, 50);
+
+    setTimeout(() => {
+      toast.style.transform = "translate(-50%, -50%) scale(1)";
+    }, 550);
+
+    // Animate out
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      toast.style.transform = "translate(-50%, -50%) scale(0.8)";
+      setTimeout(() => toast.remove(), 500);
+    }, 3500);
+  }
+
   function renderArena() {
+    if (
+      state.match.activeEvent &&
+      state.match.activeEvent.startedAt > lastSeenEventStartedAt
+    ) {
+      lastSeenEventStartedAt = state.match.activeEvent.startedAt;
+      showEventToast(state.match.activeEvent);
+    }
     const myState = findMyPlayerState();
     const teamAData = getTeamComputedData(0);
     const teamBData = getTeamComputedData(1);
