@@ -2956,7 +2956,96 @@ import { supabase } from "./supabase.js";
       dom.feedback.className = "game-feedback";
     }
 
+    renderDirectionBars();
+    renderVolatilityMeter();
+
     drawChart(dom.chartCanvas);
+  }
+
+  function renderDirectionBars() {
+    const myTeamIdx = state.teams[0].players.some(
+      (p) => p.id === state.myPlayerId,
+    )
+      ? 0
+      : 1;
+    const oppTeamIdx = myTeamIdx === 0 ? 1 : 0;
+
+    [0, 1].forEach((idx) => {
+      const data = getTeamComputedData(idx);
+      const teamBuys = data.players.reduce((s, p) => s + (p.buys || 0), 0);
+      const teamSells = data.players.reduce((s, p) => s + (p.shorts || 0), 0);
+      const total = teamBuys + teamSells;
+      const buyRatio = total > 0 ? teamBuys / total : 0.5;
+
+      const prefix = idx === 0 ? "team-a" : "team-b";
+      const bar = document.getElementById(`${prefix}-direction-bar`);
+      const label = document.getElementById(`${prefix}-direction-label`);
+      const panel = document.querySelector(
+        idx === 0 ? ".game-team-a-panel" : ".game-team-b-panel",
+      );
+
+      if (!bar || !label) return;
+
+      const color =
+        buyRatio > 0.6 ? "#27C47A" : buyRatio < 0.4 ? "#FF5252" : "#C9913A";
+      const pct = Math.round(buyRatio * 100);
+      const dirText =
+        buyRatio > 0.55
+          ? `${pct}% BUY`
+          : buyRatio < 0.45
+            ? `${100 - pct}% SELL`
+            : "BALANCED";
+
+      bar.style.width = `${buyRatio * 100}%`;
+      bar.style.background = color;
+      label.textContent = total === 0 ? "—" : dirText;
+      label.style.color = color;
+
+      // Dim own team, highlight opponent
+      if (panel) {
+        panel.style.opacity = idx === myTeamIdx ? "0.65" : "1";
+      }
+    });
+  }
+
+  function renderVolatilityMeter() {
+    const streak = Math.abs((state.match && state.match.momentumStreak) || 0);
+
+    let level, color, pct, hint;
+
+    if (streak >= 7) {
+      level = "EXTREME";
+      color = "#FF5252";
+      pct = 95;
+      hint = "Peak volatility — maximum trade impact";
+    } else if (streak >= 5) {
+      level = "HIGH";
+      color = "#FF8C00";
+      pct = 70;
+      hint = "High impact — large trades move market";
+    } else if (streak >= 3) {
+      level = "MEDIUM";
+      color = "#C9913A";
+      pct = 40;
+      hint = "Momentum building — size up carefully";
+    } else {
+      level = "LOW";
+      color = "#888888";
+      pct = 15;
+      hint = "Low impact window — build position";
+    }
+
+    const fill = document.getElementById("vol-meter-fill");
+    const label = document.getElementById("vol-level-label");
+    const hintEl = document.getElementById("vol-hint");
+
+    if (!fill || !label || !hintEl) return;
+
+    fill.style.width = pct + "%";
+    fill.style.background = color;
+    label.textContent = level;
+    label.style.color = color;
+    hintEl.textContent = hint;
   }
 
   function renderRoster(container, players) {

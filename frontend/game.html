@@ -376,6 +376,16 @@
                         <span class="game-panel-stat-label">P/L %</span>
                         <span id="team-a-pl" class="game-panel-stat-value game-mono">0.0%</span>
                     </div>
+                    <div class="game-panel-stat" style="flex-direction:column; align-items:stretch; gap:4px; padding-top:8px;">
+                      <div style="display:flex; justify-content:space-between;">
+                        <span style="font-size:9px; letter-spacing:1.5px; color:rgba(255,82,82,0.7); text-transform:uppercase;">Sell</span>
+                        <span id="team-a-direction-label" style="font-size:10px; font-weight:600; color:#C9913A;">—</span>
+                        <span style="font-size:9px; letter-spacing:1.5px; color:rgba(39,196,122,0.7); text-transform:uppercase;">Buy</span>
+                      </div>
+                      <div style="height:6px; background:rgba(255,255,255,0.06); border-radius:3px; overflow:hidden;">
+                        <div id="team-a-direction-bar" style="height:100%; width:50%; background:#C9913A; border-radius:3px; transition:width 0.6s ease, background 0.6s ease;"></div>
+                      </div>
+                    </div>
                     <div class="game-panel-divider"></div>
                     <div id="team-a-roster" class="game-roster"></div>
                 </div>
@@ -411,6 +421,19 @@
                             <button type="submit" class="game-submit-btn">SUBMIT</button>
                         </form>
                         <div id="game-feedback" class="game-feedback"></div>
+                    </div>
+
+                    <div id="volatility-meter" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:8px; padding:12px 16px; margin-bottom:12px;">
+                      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span style="font-size:9px; letter-spacing:2px; color:rgba(255,255,255,0.3); text-transform:uppercase; font-weight:600;">Market volatility</span>
+                        <span id="vol-level-label" style="font-size:11px; font-weight:700; letter-spacing:1.5px; color:#888888; text-transform:uppercase;">LOW</span>
+                      </div>
+                      <div style="height:6px; background:rgba(255,255,255,0.06); border-radius:3px; overflow:hidden; margin-bottom:8px;">
+                        <div id="vol-meter-fill" style="height:100%; width:15%; background:#888888; border-radius:3px; transition:width 0.8s ease, background 0.8s ease;"></div>
+                      </div>
+                      <div id="vol-hint" style="font-size:11px; color:rgba(255,255,255,0.35); text-align:center; letter-spacing:0.5px;">
+                        Low impact window — build position
+                      </div>
                     </div>
 
                     <!-- Chart Panel -->
@@ -449,6 +472,16 @@
                     <div class="game-panel-stat">
                         <span class="game-panel-stat-label">P/L %</span>
                         <span id="team-b-pl" class="game-panel-stat-value game-mono">0.0%</span>
+                    </div>
+                    <div class="game-panel-stat" style="flex-direction:column; align-items:stretch; gap:4px; padding-top:8px;">
+                      <div style="display:flex; justify-content:space-between;">
+                        <span style="font-size:9px; letter-spacing:1.5px; color:rgba(255,82,82,0.7); text-transform:uppercase;">Sell</span>
+                        <span id="team-b-direction-label" style="font-size:10px; font-weight:600; color:#C9913A;">—</span>
+                        <span style="font-size:9px; letter-spacing:1.5px; color:rgba(39,196,122,0.7); text-transform:uppercase;">Buy</span>
+                      </div>
+                      <div style="height:6px; background:rgba(255,255,255,0.06); border-radius:3px; overflow:hidden;">
+                        <div id="team-b-direction-bar" style="height:100%; width:50%; background:#C9913A; border-radius:3px; transition:width 0.6s ease, background 0.6s ease;"></div>
+                      </div>
                     </div>
                     <div class="game-panel-divider"></div>
                     <div id="team-b-roster" class="game-roster"></div>
