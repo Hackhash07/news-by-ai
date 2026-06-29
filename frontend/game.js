@@ -2132,49 +2132,62 @@ import { supabase } from './supabase.js';
             dom.shareVictoryBtn.onclick = () => showShareCard(matchData);
         }
 
-        // Update ELO stats
-        supabase.auth.getSession().then(async ({ data: { session } }) => {
-            if (session && session.user) {
-                try {
-                    const userId = session.user.id;
-                    const { data: profile } = await supabase.from('profiles').select('elo_score, peak_elo, matches_played, matches_won').eq('id', userId).single();
-                    
-                    if (profile) {
-                        let currentElo = profile.elo_score || 1000;
-                        let currentPeak = profile.peak_elo || 1000;
-                        let played = (profile.matches_played || 0) + 1;
-                        let won = profile.matches_won || 0;
+        // Update ELO stats exactly once per match
+        const matchKey = `match_elo_updated_${state.roomId}`;
+        if (!localStorage.getItem(matchKey)) {
+            localStorage.setItem(matchKey, "true");
+            supabase.auth.getSession().then(async ({ data: { session } }) => {
+                if (session && session.user) {
+                    try {
+                        const userId = session.user.id;
+                        const { data: profile, error: profileErr } = await supabase.from('profiles').select('elo_score, peak_elo, matches_played, matches_won').eq('id', userId).single();
                         
-                        const myTeamData = teamAData.players.some(p => p.id === state.myPlayerId) ? teamAData : teamBData;
-                        
-                        let eloChange = 0;
-                        let wonParam = false;
-                        if (!isTie) {
-                            wonParam = (winner === myTeamData);
-                            eloChange = wonParam ? 25 : -15;
-                            if (wonParam) won += 1;
+                        if (profileErr) {
+                            alert(`Failed to fetch profile: ${profileErr.message}`);
+                            return;
                         }
-                        const newElo = Math.max(0, currentElo + eloChange);
-                        const newPeak = Math.max(newElo, currentPeak);
                         
-                        const { error: updateError } = await supabase.from('profiles').update({
-                            elo_score: newElo,
-                            peak_elo: newPeak,
-                            matches_played: played,
-                            matches_won: won
-                        }).eq('id', userId);
-                        
-                        if (updateError) {
-                            console.error(`Failed to update ELO: ${updateError.message}`);
-                        } else {
-                            console.log(`Updated ELO for ${userId}: ${currentElo} -> ${newElo}`);
+                        if (profile) {
+                            let currentElo = profile.elo_score || 1000;
+                            let currentPeak = profile.peak_elo || 1000;
+                            let played = (profile.matches_played || 0) + 1;
+                            let won = profile.matches_won || 0;
+                            
+                            const myTeamData = teamAData.players.some(p => p.id === state.myPlayerId) ? teamAData : teamBData;
+                            
+                            let eloChange = 0;
+                            let wonParam = false;
+                            if (!isTie) {
+                                wonParam = (winner.players === myTeamData.players);
+                                eloChange = wonParam ? 25 : -15;
+                                if (wonParam) won += 1;
+                            }
+                            const newElo = Math.max(0, currentElo + eloChange);
+                            const newPeak = Math.max(newElo, currentPeak);
+                            
+                            const { data: updateData, error: updateError } = await supabase.from('profiles').update({
+                                elo_score: newElo,
+                                peak_elo: newPeak,
+                                matches_played: played,
+                                matches_won: won
+                            }).eq('id', userId).select();
+                            
+                            if (updateError) {
+                                alert(`Failed to update ELO: ${updateError.message}`);
+                                console.error(`Failed to update ELO: ${updateError.message}`);
+                            } else if (!updateData || updateData.length === 0) {
+                                alert("Failed to update ELO: Row not found or RLS blocked it.");
+                            } else {
+                                console.log(`Updated ELO for ${userId}: ${currentElo} -> ${newElo}`);
+                            }
                         }
+                    } catch (e) {
+                        alert("Failed to update ELO logic error: " + e.message);
+                        console.error("Failed to update ELO", e);
                     }
-                } catch (e) {
-                    console.error("Failed to update ELO", e);
                 }
-            }
-        });
+            });
+        }
     }
 
     function renderResultRoster(container, players) {
