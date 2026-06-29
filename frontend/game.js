@@ -1969,6 +1969,10 @@ import { supabase } from "./supabase.js";
         .eq("id", state.roomId);
 
       if (updateErr) throw new Error(updateErr.message);
+
+      if (state.isHost) {
+        scheduleNextEvent();
+      }
     } catch (err) {
       console.error("[Game] Start game failed:", err);
       alert(err.message || "Failed to start game.");
