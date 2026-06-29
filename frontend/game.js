@@ -570,6 +570,33 @@ import { supabase } from './supabase.js';
             if (!dom.results.hidden) drawChart(dom.resultChart);
         });
 
+        const leaveRoomResultBtn = $("leave-room-result-btn");
+        if (leaveRoomResultBtn) {
+            leaveRoomResultBtn.addEventListener("click", async () => {
+                if (!state.roomId) return;
+                
+                if (state.isHost) {
+                    if (confirm("Leaving will close the room for everyone. Are you sure?")) {
+                        await supabase.from('rooms').delete().eq('id', state.roomId);
+                        clearSession();
+                        window.location.reload();
+                    }
+                } else {
+                    if (confirm("Are you sure you want to leave the room?")) {
+                        const { data: roomData } = await supabase.from('rooms').select('*').eq('id', state.roomId).single();
+                        if (roomData) {
+                            for (let i = 0; i < roomData.teams.length; i++) {
+                                roomData.teams[i].players = roomData.teams[i].players.filter(p => p.id !== state.myPlayerId);
+                            }
+                            await supabase.from('rooms').update({ teams: roomData.teams, last_update_time: Date.now() }).eq('id', state.roomId);
+                        }
+                        clearSession();
+                        window.location.reload();
+                    }
+                }
+            });
+        }
+
         const voiceToggleBtn = $("voice-toggle-btn");
         if (voiceToggleBtn) voiceToggleBtn.addEventListener("click", toggleMic);
 
@@ -671,7 +698,7 @@ import { supabase } from './supabase.js';
             // Rejoin
             state.roomId = savedRoomId;
             state.myPlayerId = savedPlayerId;
-            state.isHost = savedIsHost && roomData.host_id === savedPlayerId;
+            state.isHost = roomData.host_id === savedPlayerId;
             state.myPlayerName = sessionStorage.getItem(SESSION_KEYS.PLAYER_NAME) || "Player";
 
             listenToRoom(savedRoomId);
