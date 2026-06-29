@@ -1344,11 +1344,51 @@ import { supabase } from "./supabase.js";
         dom.switchTeamBtn.hidden = state.phase !== "waiting";
       }
 
-      // WAITING → PLAYING
+      // ANY → READY CHECK
+      if (prevPhase !== "ready_check" && state.phase === "ready_check") {
+        dom.waitingRoom.hidden = true;
+        dom.results.hidden = true;
+        dom.arena.hidden = false;
+      }
+      if (state.phase === "ready_check" && !dom.arena.hidden) {
+        renderReadyCheck();
+        const readyPlayers = state.match_settings?.ready_players || {};
+        const totalPlayers = state.teams.reduce(
+          (acc, t) => acc + t.players.length,
+          0,
+        );
+        if (
+          totalPlayers > 0 &&
+          Object.keys(readyPlayers).length >= totalPlayers
+        ) {
+          if (state.isHost) {
+            supabase
+              .from("rooms")
+              .update({
+                phase: "playing",
+                "match.gameStartTime": Date.now(),
+                last_update_time: Date.now(),
+              })
+              .eq("id", state.roomId)
+              .then();
+          }
+        }
+      }
+
+      // ANY → PLAYING
       if (prevPhase !== "playing" && state.phase === "playing") {
         dom.waitingRoom.hidden = true;
         dom.results.hidden = true;
         dom.arena.hidden = false;
+
+        let splash = document.getElementById("start-splash");
+        if (splash) splash.remove();
+        if (dom.answerInput) {
+          dom.answerInput.disabled = false;
+          dom.answerInput.placeholder = "e.g. 150 b (buy) or 150 s (sell)";
+          dom.answerInput.focus();
+        }
+
         startCountdown();
         const myTeamId = state.teams[0].players.some(
           (p) => p.id === state.myPlayerId,
@@ -1947,14 +1987,15 @@ import { supabase } from "./supabase.js";
         : "team";
       if (!roomData.match_settings) roomData.match_settings = {};
       roomData.match_settings.voice_mode = voiceMode;
+      roomData.match_settings.ready_players = {};
 
       const { error: updateErr } = await supabase
         .from("rooms")
         .update({
-          phase: "playing",
+          phase: "ready_check",
           match_settings: roomData.match_settings,
           match: {
-            gameStartTime,
+            gameStartTime: 0,
             stockWorth: initialWorth,
             worthHistory: [initialWorth],
             totalBuys: 0,
@@ -2579,7 +2620,6 @@ import { supabase } from "./supabase.js";
       if (dom.countdownDisplay) {
         dom.countdownDisplay.textContent = formatTime(remaining);
       }
-      renderSplash();
       if (remaining <= 0) {
         if (state.isHost) {
           endGameByTime();
@@ -2713,49 +2753,61 @@ import { supabase } from "./supabase.js";
     }, 3500);
   }
 
-  function renderSplash() {
-    const elapsed = state.match.gameStartTime
-      ? (Date.now() - state.match.gameStartTime) / 1000
-      : 0;
+  function renderReadyCheck() {
     let splash = document.getElementById("start-splash");
-    if (elapsed >= 0 && elapsed < 6 && state.match.gameStartTime) {
-      if (!splash) {
-        splash = document.createElement("div");
-        splash.id = "start-splash";
-        splash.style.cssText =
-          "position:fixed;inset:0;background:rgba(7,16,30,0.95);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;backdrop-filter:blur(10px);text-align:center;";
-        document.body.appendChild(splash);
-      }
-      const countdown = Math.ceil(6 - Math.max(0, elapsed));
-      splash.innerHTML = `
-        <h1 style="font-size:32px;color:#C9913A;margin-bottom:24px;text-transform:uppercase;letter-spacing:3px;">Market Events</h1>
-        <div style="font-size:16px;line-height:1.6;background:rgba(255,255,255,0.03);padding:32px 40px;border-radius:12px;border:1px solid rgba(255,255,255,0.06);max-width:600px;text-align:left;">
-          <p style="margin-bottom:16px;color:rgba(255,255,255,0.8);">Random events will occur every 30-45 seconds that drastically change the market dynamics:</p>
-          <div style="margin-bottom:12px;">📈 <strong style="color:#C9913A">Bull Run:</strong> All buys are amplified 3x for 20s.</div>
-          <div style="margin-bottom:12px;">📉 <strong style="color:#C9913A">Flash Crash:</strong> Instant 20% drop in stock price.</div>
-          <div style="margin-bottom:12px;">💸 <strong style="color:#C9913A">Dividend:</strong> Instant cash payout for holding 3+ stocks.</div>
-          <div style="margin-bottom:12px;">🚀 <strong style="color:#C9913A">Earnings Surprise:</strong> Price instantly doubles.</div>
-          <div style="margin-bottom:12px;">🌪️ <strong style="color:#C9913A">Volatility Spike:</strong> All trades move the price 4x for 15s.</div>
-          <div>🛑 <strong style="color:#C9913A">Circuit Breaker:</strong> Trading halts completely for 15s.</div>
-        </div>
-        <div style="margin-top:40px;font-size:64px;font-weight:800;font-family:monospace;color:#C9913A;text-shadow:0 0 20px rgba(201,145,58,0.5);">${countdown}</div>
-      `;
-      // Lock input while splash is up
-      if (dom.answerInput && !dom.answerInput.disabled) {
-        dom.answerInput.disabled = true;
-        dom.answerInput.placeholder = "GET READY...";
-      }
-    } else if (splash) {
-      splash.remove();
-      if (
-        dom.answerInput &&
-        dom.answerInput.disabled &&
-        dom.answerInput.placeholder === "GET READY..."
-      ) {
-        dom.answerInput.disabled = false;
-        dom.answerInput.placeholder = "e.g. 150 b (buy) or 150 s (sell)";
-        dom.answerInput.focus();
-      }
+    if (!splash) {
+      splash = document.createElement("div");
+      splash.id = "start-splash";
+      splash.style.cssText =
+        "position:fixed;inset:0;background:rgba(7,16,30,0.95);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;backdrop-filter:blur(10px);text-align:center;";
+      document.body.appendChild(splash);
+    }
+
+    const readyPlayers = state.match_settings?.ready_players || {};
+    const totalPlayers = state.teams
+      ? state.teams.reduce((acc, t) => acc + t.players.length, 0)
+      : 0;
+    const readyCount = Object.keys(readyPlayers).length;
+    const amIReady = readyPlayers[state.myPlayerId];
+
+    splash.innerHTML = `
+      <h1 style="font-size:32px;color:#C9913A;margin-bottom:24px;text-transform:uppercase;letter-spacing:3px;">Market Events</h1>
+      <div style="font-size:16px;line-height:1.6;background:rgba(255,255,255,0.03);padding:32px 40px;border-radius:12px;border:1px solid rgba(255,255,255,0.06);max-width:600px;text-align:left;margin-bottom:32px;">
+        <p style="margin-bottom:16px;color:rgba(255,255,255,0.8);">Random events will occur every 30-45 seconds that drastically change the market dynamics:</p>
+        <div style="margin-bottom:12px;">📈 <strong style="color:#C9913A">Bull Run:</strong> All buys are amplified 3x for 20s.</div>
+        <div style="margin-bottom:12px;">📉 <strong style="color:#C9913A">Flash Crash:</strong> Instant 20% drop in stock price.</div>
+        <div style="margin-bottom:12px;">💸 <strong style="color:#C9913A">Dividend:</strong> Instant cash payout for holding 3+ stocks.</div>
+        <div style="margin-bottom:12px;">🚀 <strong style="color:#C9913A">Earnings Surprise:</strong> Price instantly doubles.</div>
+        <div style="margin-bottom:12px;">🌪️ <strong style="color:#C9913A">Volatility Spike:</strong> All trades move the price 4x for 15s.</div>
+        <div>🛑 <strong style="color:#C9913A">Circuit Breaker:</strong> Trading halts completely for 15s.</div>
+      </div>
+      
+      <div style="font-size:18px;margin-bottom:20px;color:rgba(255,255,255,0.7);">
+        Players Ready: <strong style="color:#fff">${readyCount} / ${totalPlayers}</strong>
+      </div>
+      
+      <button id="btn-ready-check" style="padding:16px 40px;background:${amIReady ? "#27C47A" : "#C9913A"};color:#000;border:none;border-radius:8px;font-weight:800;font-size:18px;cursor:${amIReady ? "default" : "pointer"};letter-spacing:2px;text-transform:uppercase;transition:all 0.2s;">
+        ${amIReady ? "WAITING FOR OTHERS..." : "I AM READY"}
+      </button>
+    `;
+
+    if (!amIReady) {
+      document.getElementById("btn-ready-check").onclick = async () => {
+        document.getElementById("btn-ready-check").disabled = true;
+        document.getElementById("btn-ready-check").textContent =
+          "MARKING READY...";
+        const newReady = { ...readyPlayers, [state.myPlayerId]: true };
+
+        await supabase
+          .from("rooms")
+          .update({
+            match_settings: {
+              ...state.match_settings,
+              ready_players: newReady,
+            },
+          })
+          .eq("id", state.roomId);
+      };
     }
   }
 
