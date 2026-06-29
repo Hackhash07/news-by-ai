@@ -2507,7 +2507,7 @@ import { supabase } from "./supabase.js";
   // ── TIME-BASED GAME END ───────────────────────────────────────────────────
 
   function scheduleNextEvent() {
-    const delay = 30000 + Math.random() * 30000;
+    const delay = 30000 + Math.random() * 15000;
     setTimeout(async () => {
       if (state.phase !== "playing" || !state.roomId) return;
 
@@ -2612,7 +2612,16 @@ import { supabase } from "./supabase.js";
 
     if (!ae || (ae.expiresAt > 0 && ae.expiresAt <= Date.now())) {
       if (banner) banner.remove();
+      if (dom.answerInput && !isSubmitting) {
+        dom.answerInput.disabled = false;
+        dom.answerInput.placeholder = "e.g. 150 b (buy) or 150 s (sell)";
+      }
       return;
+    }
+
+    if (ae.type === "circuit_breaker" && dom.answerInput) {
+      dom.answerInput.disabled = true;
+      dom.answerInput.placeholder = "TRADING HALTED";
     }
 
     if (!banner) {
