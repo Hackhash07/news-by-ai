@@ -3026,8 +3026,11 @@ import { supabase } from "./supabase.js";
     }
 
     const level = getRealVolatility();
-    const streak = (state.match && state.match.momentumStreak) || 0;
-    const dir = streak > 0 ? "BUY" : streak < 0 ? "SELL" : null;
+    const totalBuys = state.match.totalBuys || 0;
+    const totalSells = state.match.totalSells || 0;
+    const total = totalBuys + totalSells;
+    const buyRatio = total > 0 ? totalBuys / total : 0.5;
+    const dir = buyRatio > 0.6 ? "BUY" : buyRatio < 0.4 ? "SELL" : null;
 
     let color, pct, hint;
 
