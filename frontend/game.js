@@ -2123,13 +2123,17 @@ import { supabase } from './supabase.js';
                     }
                     const newElo = Math.max(0, currentElo + eloChange);
                     
-                    await fetch('https://news-by-ai.onrender.com/api/profile/update-stats', {
+                    const res = await fetch('https://news-by-ai.onrender.com/api/profile/update-stats', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ user_id: userId, won: wonParam, new_elo: newElo })
                     });
                     
-                    console.log(`Updated ELO for ${userId}: ${currentElo} -> ${newElo}`);
+                    if (!res.ok) {
+                        console.error(`Failed to update ELO on backend. Status: ${res.status}`);
+                    } else {
+                        console.log(`Updated ELO for ${userId}: ${currentElo} -> ${newElo}`);
+                    }
                 } catch (e) {
                     console.error("Failed to update ELO", e);
                 }
