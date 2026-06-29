@@ -114,3 +114,47 @@ JSON Schema:
     except Exception as e:
         print(f"Gemini API Error: {e}")
         return fallback(title, summary, initial_category, initial_assets)
+
+def generate_morning_brief(top_news_items):
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return {"error": "Gemini API key missing"}
+        
+    try:
+        client = genai.Client(api_key=api_key)
+        
+        headlines_text = ""
+        for item in top_news_items:
+            title = item.get("title", "Unknown")
+            sentiment = item.get("sentiment", "Neutral")
+            importance = item.get("importance", 5)
+            headlines_text += f"- {title} (Sentiment: {sentiment}, Importance: {importance})\n"
+            
+        prompt = f"""
+You are a market intelligence analyst. Here are today's top 5 market-moving headlines with their AI analysis. Generate a concise morning brief in exactly this JSON format:
+{{
+  "headline": "one punchy 8-word market summary for today",
+  "summary": "2-3 sentence overview of key market themes today, mentioning specific assets and directional bias. Be direct and confident, not vague.",
+  "top_assets": ["NIFTY", "BTC", "Gold"],
+  "overall_sentiment": "Bullish|Bearish|Mixed|Cautious"
+}}
+
+Headlines:
+{headlines_text}
+
+Return ONLY the JSON, no other text.
+"""
+
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+        )
+        
+        parsed = _extract_json(response.text)
+        if parsed:
+            return parsed
+        return {"error": "Failed to parse JSON from Gemini for morning brief"}
+    except Exception as e:
+        print(f"Gemini API Error in morning brief: {e}")
+        return {"error": str(e)}
+

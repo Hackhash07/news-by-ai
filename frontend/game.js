@@ -579,6 +579,23 @@ import { supabase } from './supabase.js';
 
         // ── Auto-rejoin on page load ──
         tryAutoRejoin();
+        
+        // ── Deep Link Challenge Parsing ──
+        const urlParams = new URLSearchParams(window.location.search);
+        const challengeCode = urlParams.get('challenge');
+        const challengeHost = urlParams.get('host');
+        if (challengeCode && !sessionStorage.getItem(SESSION_KEYS.ROOM_ID)) {
+            dom.landing.hidden = true;
+            dom.join.hidden = false;
+            $("join-room-code").value = challengeCode.toUpperCase();
+            if (challengeHost) {
+                const banner = document.createElement("div");
+                banner.style = "background: rgba(216,177,91,0.15); border: 1px solid var(--accent); padding: 12px; border-radius: 12px; color: var(--accent); text-align: center; margin-bottom: 18px; font-weight: 700; font-size: 14px;";
+                banner.innerHTML = `⚡ @${challengeHost.replace(/</g, "&lt;")} challenged you!`;
+                $("join-room-code").closest(".game-setup-card-wide").insertBefore(banner, $("join-room-code").closest(".game-settings-row"));
+            }
+            setTimeout(() => $("join-player-name").focus(), 100);
+        }
 
         // Ensure presence drops cleanly on unload
         window.addEventListener("beforeunload", () => {
@@ -836,6 +853,23 @@ import { supabase } from './supabase.js';
             const hostControls = $("waiting-room-host-controls");
             if (hostControls) {
                 hostControls.style.display = state.isHost ? "flex" : "none";
+            }
+            
+            const shareControls = $("waiting-room-share-controls");
+            if (shareControls) {
+                shareControls.style.display = state.isHost ? "flex" : "none";
+                
+                const shareUrl = `${window.location.origin}${window.location.pathname}?challenge=${code}&host=${encodeURIComponent(state.myPlayerName)}`;
+                
+                $("copy-challenge-btn").onclick = () => {
+                    navigator.clipboard.writeText(shareUrl);
+                    const btn = $("copy-challenge-btn");
+                    btn.textContent = "COPIED ✓";
+                    setTimeout(() => btn.innerHTML = "📋 COPY CHALLENGE LINK", 3000);
+                };
+                
+                const waText = `I challenged you to a Trading IQ Battle! Join my room here: ${shareUrl}`;
+                $("wa-challenge-btn").href = `https://wa.me/?text=${encodeURIComponent(waText)}`;
             }
             
             $("start-game-btn").hidden = false;
@@ -2070,6 +2104,37 @@ import { supabase } from './supabase.js';
         if (dom.shareVictoryBtn) {
             dom.shareVictoryBtn.onclick = () => showShareCard(matchData);
         }
+
+        // Update ELO stats
+        supabase.auth.getSession().then(async ({ data: { session } }) => {
+            if (session && session.user) {
+                try {
+                    const userId = session.user.id;
+                    const { data: profile } = await supabase.from('profiles').select('elo_score').eq('id', userId).single();
+                    let currentElo = profile?.elo_score || 1000;
+                    
+                    const myTeamData = teamAData.players.some(p => p.id === state.myPlayerId) ? teamAData : teamBData;
+                    
+                    let eloChange = 0;
+                    let wonParam = false;
+                    if (!isTie) {
+                        wonParam = (winner === myTeamData);
+                        eloChange = wonParam ? 25 : -15;
+                    }
+                    const newElo = Math.max(0, currentElo + eloChange);
+                    
+                    await fetch('https://news-by-ai.onrender.com/api/profile/update-stats', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user_id: userId, won: wonParam, new_elo: newElo })
+                    });
+                    
+                    console.log(`Updated ELO for ${userId}: ${currentElo} -> ${newElo}`);
+                } catch (e) {
+                    console.error("Failed to update ELO", e);
+                }
+            }
+        });
     }
 
     function renderResultRoster(container, players) {

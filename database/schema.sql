@@ -182,3 +182,51 @@ CREATE INDEX IF NOT EXISTS idx_news_created_at ON public.news(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_news_category ON public.news(category);
 CREATE INDEX IF NOT EXISTS idx_chat_room ON public.chat_messages(room_slug);
 CREATE INDEX IF NOT EXISTS idx_chat_created ON public.chat_messages(created_at DESC);
+
+-- ==============================================================================
+-- PREDICTION MARKET (Feature 1)
+-- ==============================================================================
+ALTER TABLE public.news 
+ADD COLUMN IF NOT EXISTS bullish_votes INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS bearish_votes INTEGER DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS public.news_votes (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id),
+  news_id BIGINT REFERENCES public.news(id),
+  vote TEXT CHECK (vote IN ('bullish', 'bearish')),
+  created_at TIMESTAMP DEFAULT now(),
+  UNIQUE(user_id, news_id)
+);
+
+ALTER TABLE public.news_votes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public read for vote counts" ON public.news_votes FOR SELECT USING (true);
+CREATE POLICY "Auth insert own votes" ON public.news_votes FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+
+-- ==============================================================================
+-- PROFILES EXTENSION (Feature 3 - ELO & Streaks)
+-- ==============================================================================
+ALTER TABLE public.profiles
+ADD COLUMN IF NOT EXISTS elo_score INTEGER DEFAULT 1000,
+ADD COLUMN IF NOT EXISTS peak_elo INTEGER DEFAULT 1000,
+ADD COLUMN IF NOT EXISTS matches_played INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS matches_won INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS streak_days INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS last_active DATE DEFAULT CURRENT_DATE;
+
+-- ==============================================================================
+-- DAILY BRIEFS (Feature 4)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.daily_briefs (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  brief_date DATE UNIQUE DEFAULT CURRENT_DATE,
+  headline TEXT,
+  summary TEXT,
+  top_assets TEXT[],
+  overall_sentiment TEXT,
+  created_at TIMESTAMP DEFAULT now()
+);
+
+ALTER TABLE public.daily_briefs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public read daily briefs" ON public.daily_briefs FOR SELECT USING (true);
+

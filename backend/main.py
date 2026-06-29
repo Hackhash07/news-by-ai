@@ -5,9 +5,14 @@ from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
-from backend.database import create_database, get_articles, get_messages, save_message
+from backend.database import (
+    create_database, get_articles, get_messages, save_message,
+    vote_on_news, update_profile_stats, update_profile_streak,
+    get_top_recent_news, save_morning_brief, get_morning_brief
+)
 from backend.market_data import get_market_data
 from backend.news_collector import collect_news
+from backend.news_analyzer import generate_morning_brief
 
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = BASE_DIR.parent / "frontend"
@@ -193,6 +198,92 @@ def api_chat_messages():
     )
 
     return jsonify({"message": saved}), 201
+
+@app.route("/api/news/<int:news_id>/vote", methods=["POST"])
+def api_news_vote(news_id):
+    payload = request.get_json(silent=True) or {}
+    vote = payload.get("vote")
+    user_id = payload.get("user_id")
+    if not vote or vote not in ['bullish', 'bearish'] or not user_id:
+        return jsonify({"error": "Invalid payload"}), 400
+    
+    result = vote_on_news(news_id, user_id, vote)
+    if "error" in result:
+        return jsonify(result), 400
+    return jsonify(result)
+
+@app.route("/api/profile/update-stats", methods=["POST"])
+def api_update_stats():
+    payload = request.get_json(silent=True) or {}
+    user_id = payload.get("user_id")
+    won = payload.get("won")
+    new_elo = payload.get("new_elo")
+    if not user_id or new_elo is None:
+        return jsonify({"error": "Invalid payload"}), 400
+        
+    success = update_profile_stats(user_id, won, new_elo)
+    return jsonify({"success": success})
+
+@app.route("/api/profile/streak", methods=["PATCH"])
+def api_update_streak():
+    payload = request.get_json(silent=True) or {}
+    user_id = payload.get("user_id")
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+        
+    result = update_profile_streak(user_id)
+    if not result:
+        return jsonify({"error": "Failed to update streak"}), 500
+    return jsonify(result)
+
+@app.route("/api/admin/morning-brief", methods=["POST", "GET"])
+def api_morning_brief():
+    auth_header = request.headers.get("Authorization", "")
+    secret_param = request.args.get("secret", "")
+    
+    provided_secret = ""
+    if auth_header.startswith("Bearer "):
+        provided_secret = auth_header.split(" ")[1]
+    elif secret_param:
+        provided_secret = secret_param
+        
+    if not provided_secret or provided_secret != ADMIN_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    top_news = get_top_recent_news(hours=18, limit=5)
+    if not top_news:
+        return jsonify({"error": "No recent news found"}), 404
+        
+    brief = generate_morning_brief(top_news)
+    if not brief or "error" in brief:
+        return jsonify({"error": "Failed to generate brief"}), 500
+        
+    from datetime import datetime
+    today_str = datetime.utcnow().date().isoformat()
+    
+    success = save_morning_brief(
+        today_str, 
+        brief.get("headline"), 
+        brief.get("summary"), 
+        brief.get("top_assets", []), 
+        brief.get("overall_sentiment")
+    )
+    
+    if not success:
+        return jsonify({"error": "Failed to save brief to database"}), 500
+        
+    return jsonify(brief), 200
+
+@app.route("/api/daily-brief")
+def api_get_daily_brief():
+    from datetime import datetime
+    today_str = datetime.utcnow().date().isoformat()
+    brief = get_morning_brief(today_str)
+    if not brief:
+        return jsonify({"error": "No brief found for today"}), 404
+    return jsonify(brief)
+
+
 
 
 if __name__ == "__main__":

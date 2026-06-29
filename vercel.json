@@ -1,5 +1,17 @@
 {
   "framework": null,
   "buildCommand": "mkdir -p public && cp -r frontend/* public/",
-  "outputDirectory": "public"
+  "outputDirectory": "public",
+  "rewrites": [
+    {
+      "source": "/api/admin/morning-brief",
+      "destination": "https://news-by-ai.onrender.com/api/admin/morning-brief"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/admin/morning-brief",
+      "schedule": "0 2 * * *"
+    }
+  ]
 }

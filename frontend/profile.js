@@ -102,6 +102,23 @@ async function loadProfile() {
     }
 
     state.profile = data;
+    
+    // Call PATCH streak endpoint
+    try {
+        const response = await fetch('https://news-by-ai.onrender.com/api/profile/streak', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: state.user.id })
+        });
+        const streakData = await response.json();
+        if (streakData && streakData.streak_days !== undefined) {
+            state.profile.streak_days = streakData.streak_days;
+            state.profile.elo_score = streakData.elo_score;
+        }
+    } catch (e) {
+        console.error("Failed to update streak", e);
+    }
+    
     renderHeader();
 }
 
@@ -141,6 +158,26 @@ function renderHeader() {
     const p = state.profile;
     document.getElementById("profile-display-name").textContent = p.display_name;
     document.getElementById("profile-handle").textContent = "@" + p.username;
+    
+    const elo = p.elo_score || 1000;
+    const streak = p.streak_days || 0;
+    
+    document.getElementById("profile-elo").textContent = elo;
+    document.getElementById("profile-streak").textContent = `${streak} 🔥`;
+    
+    let tier = "BRONZE";
+    let tierColor = "#cd7f32";
+    if (elo >= 2500) { tier = "GRANDMASTER"; tierColor = "#ff007f"; }
+    else if (elo >= 2000) { tier = "MASTER"; tierColor = "#b9f2ff"; }
+    else if (elo >= 1500) { tier = "GOLD"; tierColor = "#ffd700"; }
+    else if (elo >= 1200) { tier = "SILVER"; tierColor = "#c0c0c0"; }
+    
+    const tierEl = document.getElementById("profile-tier");
+    if (tierEl) {
+        tierEl.textContent = tier;
+        tierEl.style.color = tierColor;
+        tierEl.style.border = `1px solid ${tierColor}`;
+    }
     
     const avatarContent = p.photo_url 
         ? `<img src="${p.photo_url}" style="width:100%;height:100%;border-radius:50%;" referrerpolicy="no-referrer" />`

@@ -17,6 +17,8 @@ const state = {
     chatActive: false,
 };
 
+const profileCache = new Map();
+
 const refs = {};
 
 // ── BOOTSTRAP ─────────────────────────────────────────────────────────
@@ -280,7 +282,7 @@ async function sendMessage() {
     }
 }
 
-function renderMessages() {
+async function renderMessages() {
     if (!refs.chatMessages) return;
 
     if (!state.messages.length) {
@@ -288,18 +290,42 @@ function renderMessages() {
         return;
     }
 
+    // Batch fetch missing profiles
+    const missingIds = [...new Set(state.messages.map(m => m.user_id).filter(id => id && !profileCache.has(id)))];
+    if (missingIds.length > 0) {
+        const { data } = await supabase.from('profiles').select('id, elo_score, streak_days').in('id', missingIds);
+        if (data) {
+            data.forEach(p => profileCache.set(p.id, p));
+        }
+        missingIds.forEach(id => {
+            if (!profileCache.has(id)) profileCache.set(id, { elo_score: 1000, streak_days: 0 });
+        });
+    }
+
     const myUid = state.user?.id;
 
     refs.chatMessages.innerHTML = state.messages.map((msg) => {
         const isMine = msg.user_id === myUid;
         const avatarContent = initials(msg.username || "U");
+        const pStats = profileCache.get(msg.user_id) || { elo_score: 1000, streak_days: 0 };
+        
+        let tier = "BRONZE";
+        let tierColor = "#cd7f32";
+        if (pStats.elo_score >= 2500) { tier = "GRANDMASTER"; tierColor = "#ff007f"; }
+        else if (pStats.elo_score >= 2000) { tier = "MASTER"; tierColor = "#b9f2ff"; }
+        else if (pStats.elo_score >= 1500) { tier = "GOLD"; tierColor = "#ffd700"; }
+        else if (pStats.elo_score >= 1200) { tier = "SILVER"; tierColor = "#c0c0c0"; }
+        
+        const streakHtml = pStats.streak_days > 0 ? `<span style="font-size: 11px; margin-left: 6px;" title="${pStats.streak_days} Day Streak">🔥${pStats.streak_days}</span>` : "";
 
         return `<article class="chat-row ${isMine ? "mine" : ""}">
             <div class="msg-avatar">${avatarContent}</div>
             <div class="msg-bubble">
-                <div class="msg-meta">
+                <div class="msg-meta" style="display: flex; align-items: center; width: 100%;">
                     <strong>@${escapeHtml(msg.username || "user")}</strong>
-                    <span>${formatRelativeTime(msg.created_at)}</span>
+                    <span style="font-size: 9px; color: ${tierColor}; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 999px; margin-left: 6px; border: 1px solid ${tierColor}; font-weight: 800;">${tier}</span>
+                    ${streakHtml}
+                    <span style="margin-left: auto;">${formatRelativeTime(msg.created_at)}</span>
                 </div>
                 <div class="msg-text">${escapeHtml(msg.message || "")}</div>
             </div>

@@ -103,6 +103,8 @@ def get_articles():
                 "analysis": row.get("analysis"),
                 "structured_analysis": _safe_json_loads(row.get("structured_analysis"), {}),
                 "added_at": row.get("created_at") or row.get("added_at"),
+                "bullish_votes": row.get("bullish_votes") or 0,
+                "bearish_votes": row.get("bearish_votes") or 0,
             })
         return articles
     except Exception as e:
@@ -207,3 +209,160 @@ def log_refresh(duration_seconds, inserted_count, duplicate_count, failed_count)
     except Exception as e:
         print(f"Error logging refresh: {e}")
 
+# ==============================================================================
+# FEATURE 1: Prediction Market Voting
+# ==============================================================================
+def vote_on_news(news_id, user_id, vote_type):
+    if not supabase:
+        return {"error": "Supabase not configured"}
+    
+    try:
+        # Check if user already voted
+        existing = supabase.table("news_votes").select("vote").eq("user_id", user_id).eq("news_id", news_id).execute()
+        if existing.data:
+            return {"error": "User has already voted"}
+            
+        # Insert vote
+        supabase.table("news_votes").insert({
+            "user_id": user_id,
+            "news_id": news_id,
+            "vote": vote_type
+        }).execute()
+        
+        # Increment news counter (unfortunately supabase-py doesn't have an increment RPC by default)
+        # So we fetch current and update. 
+        news_row = supabase.table("news").select("bullish_votes, bearish_votes").eq("id", news_id).execute()
+        if not news_row.data:
+            return {"error": "News not found"}
+            
+        current = news_row.data[0]
+        bullish = current.get("bullish_votes") or 0
+        bearish = current.get("bearish_votes") or 0
+        
+        if vote_type == 'bullish':
+            bullish += 1
+        else:
+            bearish += 1
+            
+        supabase.table("news").update({
+            "bullish_votes": bullish,
+            "bearish_votes": bearish
+        }).eq("id", news_id).execute()
+        
+        return {"bullish_votes": bullish, "bearish_votes": bearish}
+    except Exception as e:
+        print(f"Error voting on news: {e}")
+        return {"error": str(e)}
+
+# ==============================================================================
+# FEATURE 3: ELO and Streak Updates
+# ==============================================================================
+def update_profile_stats(user_id, won, new_elo):
+    if not supabase:
+        return False
+        
+    try:
+        profile = supabase.table("profiles").select("peak_elo, matches_played, matches_won").eq("id", user_id).execute()
+        if not profile.data:
+            return False
+            
+        current = profile.data[0]
+        peak = max(new_elo, current.get("peak_elo") or 0)
+        played = (current.get("matches_played") or 0) + 1
+        wins = (current.get("matches_won") or 0) + (1 if won else 0)
+        
+        supabase.table("profiles").update({
+            "elo_score": new_elo,
+            "peak_elo": peak,
+            "matches_played": played,
+            "matches_won": wins
+        }).eq("id", user_id).execute()
+        return True
+    except Exception as e:
+        print(f"Error updating profile stats: {e}")
+        return False
+
+def update_profile_streak(user_id):
+    if not supabase:
+        return False
+        
+    try:
+        profile = supabase.table("profiles").select("last_active, streak_days").eq("id", user_id).execute()
+        if not profile.data:
+            return False
+            
+        current = profile.data[0]
+        last_active_str = current.get("last_active")
+        streak = current.get("streak_days") or 0
+        
+        today = datetime.utcnow().date()
+        
+        if last_active_str:
+            last_active = datetime.strptime(last_active_str, "%Y-%m-%d").date()
+            diff = (today - last_active).days
+            
+            if diff == 1:
+                streak += 1
+            elif diff > 1:
+                streak = 1
+            elif diff == 0:
+                pass # Already updated today
+        else:
+            streak = 1
+            
+        supabase.table("profiles").update({
+            "streak_days": streak,
+            "last_active": today.isoformat()
+        }).eq("id", user_id).execute()
+        
+        return {"streak_days": streak, "last_active": today.isoformat()}
+    except Exception as e:
+        print(f"Error updating streak: {e}")
+        return False
+
+# ==============================================================================
+# FEATURE 4: Daily Brief
+# ==============================================================================
+def save_morning_brief(brief_date, headline, summary, top_assets, overall_sentiment):
+    if not supabase:
+        return False
+        
+    try:
+        data = {
+            "brief_date": brief_date,
+            "headline": headline,
+            "summary": summary,
+            "top_assets": top_assets,
+            "overall_sentiment": overall_sentiment
+        }
+        supabase.table("daily_briefs").upsert(data, on_conflict="brief_date").execute()
+        return True
+    except Exception as e:
+        print(f"Error saving morning brief: {e}")
+        return False
+
+def get_morning_brief(brief_date):
+    if not supabase:
+        return None
+        
+    try:
+        response = supabase.table("daily_briefs").select("*").eq("brief_date", brief_date).execute()
+        if response.data:
+            return response.data[0]
+        return None
+    except Exception as e:
+        print(f"Error fetching morning brief: {e}")
+        return None
+
+def get_top_recent_news(hours=18, limit=5):
+    if not supabase:
+        return []
+    
+    try:
+        from datetime import timedelta
+        cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+        response = supabase.table("news").select("*").gte("created_at", cutoff).order("importance", desc=True).limit(limit).execute()
+        return response.data
+    except Exception as e:
+        print(f"Error fetching top recent news: {e}")
+        return []

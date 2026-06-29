@@ -115,7 +115,43 @@ document.addEventListener("DOMContentLoaded", () => {
     // Load market ticker from Flask API on Render
     loadTicker();
     setInterval(loadTicker, 60000);
+
+    // Load Daily Brief
+    loadDailyBrief();
 });
+
+async function loadDailyBrief() {
+    try {
+        const response = await fetch("https://news-by-ai.onrender.com/api/daily-brief");
+        if (!response.ok) return;
+        const brief = await response.json();
+        
+        const banner = document.getElementById("daily-brief-banner");
+        if (banner && !brief.error) {
+            let color = "var(--muted)";
+            if (brief.overall_sentiment.toLowerCase().includes("bullish")) color = "var(--green)";
+            else if (brief.overall_sentiment.toLowerCase().includes("bearish")) color = "var(--red)";
+            
+            const assetsHtml = (brief.top_assets || []).map(a => `<span class="brief-asset-pill">${escapeHtml(a)}</span>`).join("");
+            
+            banner.innerHTML = `
+                <div class="brief-banner-content">
+                    <div class="brief-banner-header">
+                        <span style="color: var(--gold); font-weight: bold; margin-right: 8px;">TODAY'S BRIEF</span> 
+                        <span style="color: ${color}; font-size: 12px;">● ${escapeHtml(brief.overall_sentiment)}</span>
+                    </div>
+                    <div class="brief-banner-headline">${escapeHtml(brief.headline)}</div>
+                    <div class="brief-banner-summary">${escapeHtml(brief.summary)}</div>
+                    <div class="brief-banner-assets">${assetsHtml}</div>
+                </div>
+            `;
+            banner.style.display = "block";
+        }
+    } catch (e) {
+        console.error("Failed to load daily brief", e);
+    }
+}
+
 
 function updateClock() {
     if (!refs.tickerTime) return;
@@ -287,6 +323,51 @@ window.toggleBookmark = async function(articleId) {
     }
 };
 
+// ── PREDICTION MARKET ────────────────────────────────────────────────
+window.voteOnNews = async function(articleId, voteType) {
+    if (!state.user) {
+        alert("Please sign in to vote.");
+        return;
+    }
+    
+    // Optimistic UI update
+    const cardEl = document.getElementById(`news-card-${articleId}`);
+    if (cardEl) {
+        const marketEl = cardEl.querySelector('.prediction-market');
+        if (marketEl) {
+            marketEl.innerHTML = `<div style="text-align:center; padding: 10px; color: var(--gold);">Voting...</div>`;
+        }
+    }
+    
+    try {
+        const response = await fetch(`https://news-by-ai.onrender.com/api/news/${articleId}/vote`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: state.user.id, vote: voteType })
+        });
+        
+        const data = await response.json();
+        if (response.ok) {
+            localStorage.setItem(`voted_${articleId}`, voteType);
+            // Update local state
+            const article = state.articles.find(a => String(a.id) === String(articleId));
+            if (article) {
+                article.bullish_votes = data.bullish_votes;
+                article.bearish_votes = data.bearish_votes;
+            }
+            renderDashboard();
+        } else {
+            alert(data.error || "Failed to vote");
+            renderDashboard(); // Revert
+        }
+    } catch (e) {
+        console.error("Vote error", e);
+        alert("Failed to cast vote");
+        renderDashboard(); // Revert
+    }
+};
+
+
 // ── RENDER: HERO / SIGNALS ───────────────────────────────────────────
 function renderHero(articles) {
     const top = getTopStory(articles);
@@ -397,6 +478,7 @@ function renderCards(articles) {
             : `<span style="font-size:11px;color:var(--muted)">No mapped assets</span>`;
 
         const card = document.createElement("article");
+        card.id = `news-card-${a.id}`;
         card.className = `news-card ${sc}`;
         card.innerHTML = `
             <div class="card-stripe"></div>
@@ -465,6 +547,40 @@ function renderCards(articles) {
                         }
                     })()}
                 </div>
+                ${(() => {
+                    const bullish = a.bullish_votes || 0;
+                    const bearish = a.bearish_votes || 0;
+                    const total = bullish + bearish;
+                    const hasVoted = localStorage.getItem(`voted_${a.id}`);
+                    
+                    if (!hasVoted && total < 10) {
+                        return `
+                        <div class="prediction-market">
+                            <div class="pm-title">What's your read?</div>
+                            <div class="pm-actions">
+                                <button class="pm-btn bullish" onclick="voteOnNews('${a.id}', 'bullish')">🐂 BULLISH</button>
+                                <button class="pm-btn bearish" onclick="voteOnNews('${a.id}', 'bearish')">🐻 BEARISH</button>
+                            </div>
+                        </div>`;
+                    } else {
+                        const bullPct = total > 0 ? Math.round((bullish / total) * 100) : 50;
+                        const bearPct = 100 - bullPct;
+                        const isAiBullish = a.structured_analysis?.market_interpretation?.toLowerCase().includes("bullish") || a.sentiment?.toLowerCase().includes("positive");
+                        const aiMatched = (isAiBullish && bullPct >= 50) || (!isAiBullish && bearPct >= 50);
+                        
+                        return `
+                        <div class="prediction-market revealed">
+                            <div class="pm-reveal-text">
+                                <span class="ai-side">AI: ${isAiBullish ? 'Bullish' : 'Bearish'}</span>
+                                <span class="crowd-side">· Crowd: ${bullPct}% ${bullPct >= 50 ? 'Bullish' : 'Bearish'}</span>
+                            </div>
+                            <div class="pm-bar-container">
+                                <div class="pm-bar bullish" style="width: ${bullPct}%"></div>
+                                <div class="pm-bar bearish" style="width: ${bearPct}%"></div>
+                            </div>
+                        </div>`;
+                    }
+                })()}
                 <div class="card-footer">
                     <div class="asset-tags">${assetTagsHtml}</div>
                     <div style="display:flex;gap:8px;align-items:center;">

@@ -671,6 +671,91 @@ button, input { font: inherit; }
   margin-bottom: 10px;
 }
 
+/* Daily Brief Banner */
+.daily-brief-banner {
+  background: rgba(17,24,43,0.92);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-left: 3px solid var(--gold, #d8b15b);
+  border-radius: 14px;
+  padding: 16px 20px;
+  margin: 24px auto 0;
+  max-width: 1440px;
+  width: calc(100% - 48px);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+}
+.brief-banner-header { margin-bottom: 8px; font-size: 11px; letter-spacing: 0.1em; }
+.brief-banner-headline { font-size: 18px; font-weight: 800; color: var(--text); margin-bottom: 6px; }
+.brief-banner-summary { font-size: 13px; color: var(--muted); margin-bottom: 10px; line-height: 1.5; }
+.brief-banner-assets { display: flex; gap: 8px; flex-wrap: wrap; }
+.brief-asset-pill { font-size: 11px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 999px; }
+
+/* Prediction Market */
+.prediction-market {
+  background: rgba(15,22,40,0.6);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+  padding: 14px;
+  margin-top: 6px;
+}
+.pm-title {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  margin-bottom: 10px;
+  text-align: center;
+}
+.pm-actions {
+  display: flex;
+  gap: 10px;
+}
+.pm-btn {
+  flex: 1;
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+.pm-btn.bullish {
+  background: rgba(16,185,129,0.1);
+  color: var(--green);
+  border-color: rgba(16,185,129,0.2);
+}
+.pm-btn.bearish {
+  background: rgba(239,68,68,0.1);
+  color: var(--red);
+  border-color: rgba(239,68,68,0.2);
+}
+.pm-btn.bullish:hover { background: rgba(16,185,129,0.2); }
+.pm-btn.bearish:hover { background: rgba(239,68,68,0.2); }
+
+.prediction-market.revealed {
+  text-align: center;
+}
+.pm-reveal-text {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.ai-side { color: var(--accent); }
+.crowd-side { color: var(--muted); }
+.pm-bar-container {
+  display: flex;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.05);
+}
+.pm-bar { height: 100%; transition: width 0.5s ease; }
+.pm-bar.bullish { background: var(--green); }
+.pm-bar.bearish { background: var(--red); }
+
 /* Card footer */
 .card-footer {
   display: flex;
