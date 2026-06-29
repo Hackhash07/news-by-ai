@@ -2007,6 +2007,7 @@ import { supabase } from "./supabase.js";
             momentumStreak: 0,
             lastTradeDir: null,
             activeEvent: null,
+            hasHadCircuitBreaker: false,
           },
           match_number: (roomData.match_number || 0) + 1,
           last_update_time: Date.now(),
@@ -2068,6 +2069,7 @@ import { supabase } from "./supabase.js";
             momentumStreak: 0,
             lastTradeDir: null,
             activeEvent: null,
+            hasHadCircuitBreaker: false,
           },
           last_update_time: Date.now(),
         })
@@ -2267,6 +2269,10 @@ import { supabase } from "./supabase.js";
             .from("rooms")
             .update({ match: roomData.match, last_update_time: Date.now() })
             .eq("id", state.roomId);
+          dom.answerInput.value = "";
+          dom.answerInput.disabled = false;
+          isSubmitting = false;
+          setTimeout(() => dom.answerInput.focus(), 50);
           return;
         }
         if (
@@ -2580,9 +2586,19 @@ import { supabase } from "./supabase.js";
         return;
       }
 
+      let availableEvents = MARKET_EVENTS;
+      if (roomData.match.hasHadCircuitBreaker) {
+        availableEvents = MARKET_EVENTS.filter(
+          (e) => e.type !== "circuit_breaker",
+        );
+      }
       const event =
-        MARKET_EVENTS[Math.floor(Math.random() * MARKET_EVENTS.length)];
+        availableEvents[Math.floor(Math.random() * availableEvents.length)];
       const updatedMatch = JSON.parse(JSON.stringify(roomData.match));
+
+      if (event.type === "circuit_breaker") {
+        updatedMatch.hasHadCircuitBreaker = true;
+      }
 
       if (event.apply) event.apply(updatedMatch);
 
@@ -2619,6 +2635,7 @@ import { supabase } from "./supabase.js";
       if (dom.countdownDisplay) {
         dom.countdownDisplay.textContent = formatTime(remaining);
       }
+      renderEventBanner();
       if (remaining <= 0) {
         if (state.isHost) {
           endGameByTime();
