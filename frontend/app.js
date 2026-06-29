@@ -5,136 +5,170 @@ const API_URL = "https://news-by-ai.onrender.com/news";
 const MARKET_API_URL = "https://news-by-ai.onrender.com/market-data";
 
 const state = {
-    articles: [],
-    activeCategory: "All",
-    search: "",
-    user: null,
-    savedArticles: new Set()
+  articles: [],
+  activeCategory: "All",
+  search: "",
+  user: null,
+  savedArticles: new Set(),
 };
 
 const refs = {};
 
 // ── INIT ──────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
-    refs.briefPanel      = document.getElementById("brief-panel");
-    refs.searchInput     = document.getElementById("search-input");
-    refs.categoryFilters = document.getElementById("category-filters");
-    refs.refreshBtn      = document.getElementById("refresh-btn");
-    refs.newsContainer   = document.getElementById("news-container");
-    refs.lastUpdated     = document.getElementById("last-updated");
-    refs.tickerTime      = document.getElementById("ticker-time");
-    refs.marketDot       = document.getElementById("market-dot");
-    refs.marketText      = document.getElementById("market-status-text");
-    refs.navAvatar       = document.getElementById("nav-avatar");
+  refs.briefPanel = document.getElementById("brief-panel");
+  refs.searchInput = document.getElementById("search-input");
+  refs.categoryFilters = document.getElementById("category-filters");
+  refs.refreshBtn = document.getElementById("refresh-btn");
+  refs.newsContainer = document.getElementById("news-container");
+  refs.lastUpdated = document.getElementById("last-updated");
+  refs.tickerTime = document.getElementById("ticker-time");
+  refs.marketDot = document.getElementById("market-dot");
+  refs.marketText = document.getElementById("market-status-text");
+  refs.navAvatar = document.getElementById("nav-avatar");
 
-    refs.heroTitle       = document.getElementById("hero-title");
-    refs.heroSummary     = document.getElementById("hero-summary");
-    refs.heroCategory    = document.getElementById("hero-category");
-    refs.heroSentiment   = document.getElementById("hero-sentiment");
-    refs.heroHorizon     = document.getElementById("hero-horizon");
-    refs.marketMood      = document.getElementById("market-mood");
-    refs.topBullish      = document.getElementById("top-bullish");
-    refs.topBearish      = document.getElementById("top-bearish");
-    refs.articleCount    = document.getElementById("article-count");
-    refs.signalStrip     = document.getElementById("signal-strip");
+  refs.heroTitle = document.getElementById("hero-title");
+  refs.heroSummary = document.getElementById("hero-summary");
+  refs.heroCategory = document.getElementById("hero-category");
+  refs.heroSentiment = document.getElementById("hero-sentiment");
+  refs.heroHorizon = document.getElementById("hero-horizon");
+  refs.marketMood = document.getElementById("market-mood");
+  refs.topBullish = document.getElementById("top-bullish");
+  refs.topBearish = document.getElementById("top-bearish");
+  refs.articleCount = document.getElementById("article-count");
+  refs.signalStrip = document.getElementById("signal-strip");
 
-    updateClock();
-    setInterval(updateClock, 1000);
-    updateMarketStatus();
+  updateClock();
+  setInterval(updateClock, 1000);
+  updateMarketStatus();
 
-    if (refs.searchInput) {
-        refs.searchInput.addEventListener("input", (e) => {
-            state.search = e.target.value || "";
-            renderDashboard();
-        });
-    }
+  if (refs.searchInput) {
+    refs.searchInput.addEventListener("input", (e) => {
+      state.search = e.target.value || "";
+      renderDashboard();
+    });
+  }
 
-    if (refs.refreshBtn) {
-        refs.refreshBtn.addEventListener("click", loadNews);
-    }
+  if (refs.refreshBtn) {
+    refs.refreshBtn.addEventListener("click", loadNews);
+  }
 
-    // Listen to Supabase auth for avatar + bookmarks
-    supabase.auth.onAuthStateChange(async (event, session) => {
-        const user = session?.user;
-        state.user = user;
-        if (user) {
-            const { data: userData, error } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-            if (userData && refs.navAvatar) {
-                if (userData.photo_url) {
-                    refs.navAvatar.innerHTML = `<img src="${userData.photo_url}" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" referrerpolicy="no-referrer">`;
-                } else {
-                    refs.navAvatar.textContent = (userData.display_name || user.email || "U")[0].toUpperCase();
-                }
-            }
-            // Fetch bookmarks
-            const fetchBookmarks = async () => {
-                const { data } = await supabase.from('bookmarks').select('title').eq('user_id', user.id);
-                state.savedArticles.clear();
-                if (data) data.forEach(d => state.savedArticles.add(d.title));
-                if (state.articles.length) renderDashboard();
-            };
-            fetchBookmarks();
-
-            supabase.channel('public:bookmarks')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'bookmarks', filter: `user_id=eq.${user.id}` }, payload => {
-                    fetchBookmarks();
-                }).subscribe();
+  // Listen to Supabase auth for avatar + bookmarks
+  supabase.auth.onAuthStateChange(async (event, session) => {
+    const user = session?.user;
+    state.user = user;
+    if (user) {
+      const { data: userData, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+      if (userData && refs.navAvatar) {
+        if (userData.photo_url) {
+          refs.navAvatar.innerHTML = `<img src="${userData.photo_url}" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" referrerpolicy="no-referrer">`;
         } else {
-            if (refs.navAvatar) refs.navAvatar.textContent = "?";
-            state.savedArticles.clear();
+          refs.navAvatar.textContent = (userData.display_name ||
+            user.email ||
+            "U")[0].toUpperCase();
         }
-    });
+      }
+      // Fetch bookmarks
+      const fetchBookmarks = async () => {
+        const { data } = await supabase
+          .from("bookmarks")
+          .select("title")
+          .eq("user_id", user.id);
+        state.savedArticles.clear();
+        if (data) data.forEach((d) => state.savedArticles.add(d.title));
+        if (state.articles.length) renderDashboard();
+      };
+      fetchBookmarks();
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session?.user) state.user = session.user;
-    });
-
-    // Hydrate from cache immediately
-    const cachedNews = localStorage.getItem('trade_trends_cache');
-    if (cachedNews) {
-        try {
-            const data = JSON.parse(cachedNews);
-            state.articles = data.map(normalizeArticle);
-            renderFilters();
-            renderDashboard();
-            if (refs.lastUpdated) refs.lastUpdated.textContent = "Showing cached data...";
-        } catch (e) {}
+      supabase
+        .channel("public:bookmarks")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "bookmarks",
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            fetchBookmarks();
+          },
+        )
+        .subscribe();
+    } else {
+      if (refs.navAvatar) refs.navAvatar.textContent = "?";
+      state.savedArticles.clear();
     }
+  });
 
-    const cachedTicker = localStorage.getItem('trade_trends_ticker_cache');
-    if (cachedTicker) {
-        try {
-            renderTicker(JSON.parse(cachedTicker));
-        } catch (e) {}
-    }
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    if (session?.user) state.user = session.user;
+  });
 
-    // Load news from Flask API on Render
-    loadNews();
-    setInterval(loadNews, 60000);
+  // Hydrate from cache immediately
+  const cachedNews = localStorage.getItem("trade_trends_cache");
+  if (cachedNews) {
+    try {
+      const data = JSON.parse(cachedNews);
+      state.articles = data.map(normalizeArticle);
 
-    // Load market ticker from Flask API on Render
-    loadTicker();
-    setInterval(loadTicker, 60000);
+      if (refs.heroTitle) refs.heroTitle.className = "hero-title";
+      if (refs.heroSummary) {
+        refs.heroSummary.className = "hero-summary";
+        refs.heroSummary.style = "";
+      }
 
-    // Load Daily Brief
-    loadDailyBrief();
+      renderFilters();
+      renderDashboard();
+      if (refs.lastUpdated)
+        refs.lastUpdated.textContent = "Showing cached data...";
+    } catch (e) {}
+  }
+
+  const cachedTicker = localStorage.getItem("trade_trends_ticker_cache");
+  if (cachedTicker) {
+    try {
+      renderTicker(JSON.parse(cachedTicker));
+    } catch (e) {}
+  }
+
+  // Load news from Flask API on Render
+  loadNews();
+  setInterval(loadNews, 60000);
+
+  // Load market ticker from Flask API on Render
+  loadTicker();
+  setInterval(loadTicker, 60000);
+
+  // Load Daily Brief
+  loadDailyBrief();
 });
 
 async function loadDailyBrief() {
-    try {
-        const response = await fetch("https://news-by-ai.onrender.com/api/daily-brief");
-        if (!response.ok) return;
-        const brief = await response.json();
-        
-        const banner = document.getElementById("daily-brief-banner");
-        if (banner && !brief.error) {
-            let color = "var(--muted)";
-            if (brief.overall_sentiment.toLowerCase().includes("bullish")) color = "var(--green)";
-            else if (brief.overall_sentiment.toLowerCase().includes("bearish")) color = "var(--red)";
-            
-            const assetsHtml = (brief.top_assets || []).map(a => `<span class="brief-asset-pill">${escapeHtml(a)}</span>`).join("");
-            
-            banner.innerHTML = `
+  try {
+    const response = await fetch(
+      "https://news-by-ai.onrender.com/api/daily-brief",
+    );
+    if (!response.ok) return;
+    const brief = await response.json();
+
+    const banner = document.getElementById("daily-brief-banner");
+    if (banner && !brief.error) {
+      let color = "var(--muted)";
+      if (brief.overall_sentiment.toLowerCase().includes("bullish"))
+        color = "var(--green)";
+      else if (brief.overall_sentiment.toLowerCase().includes("bearish"))
+        color = "var(--red)";
+
+      const assetsHtml = (brief.top_assets || [])
+        .map((a) => `<span class="brief-asset-pill">${escapeHtml(a)}</span>`)
+        .join("");
+
+      banner.innerHTML = `
                 <div class="brief-banner-content">
                     <div class="brief-banner-header">
                         <span style="color: var(--gold); font-weight: bold; margin-right: 8px;">TODAY'S BRIEF</span> 
@@ -145,283 +179,363 @@ async function loadDailyBrief() {
                     <div class="brief-banner-assets">${assetsHtml}</div>
                 </div>
             `;
-            banner.style.display = "block";
-        }
-    } catch (e) {
-        console.error("Failed to load daily brief", e);
+      banner.style.display = "block";
     }
+  } catch (e) {
+    console.error("Failed to load daily brief", e);
+  }
 }
 
-
 function updateClock() {
-    if (!refs.tickerTime) return;
-    refs.tickerTime.textContent = new Date().toLocaleTimeString("en-IN", {
-        hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit"
-    });
+  if (!refs.tickerTime) return;
+  refs.tickerTime.textContent = new Date().toLocaleTimeString("en-IN", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function updateMarketStatus() {
-    if (!refs.marketDot || !refs.marketText) return;
-    const now = new Date();
-    const day = now.getDay();
-    const mins = now.getHours() * 60 + now.getMinutes();
-    const isOpen = day >= 1 && day <= 5 && mins >= (9 * 60 + 15) && mins < (15 * 60 + 30);
-    refs.marketDot.className = "market-dot " + (isOpen ? "open" : "closed");
-    refs.marketText.textContent = isOpen ? "Markets Open" : "Markets Closed";
+  if (!refs.marketDot || !refs.marketText) return;
+  const now = new Date();
+  const day = now.getDay();
+  const mins = now.getHours() * 60 + now.getMinutes();
+  const isOpen =
+    day >= 1 && day <= 5 && mins >= 9 * 60 + 15 && mins < 15 * 60 + 30;
+  refs.marketDot.className = "market-dot " + (isOpen ? "open" : "closed");
+  refs.marketText.textContent = isOpen ? "Markets Open" : "Markets Closed";
 }
 
 // ── DATA HELPERS ──────────────────────────────────────────────────────
 function safeJsonParse(value, fallback) {
-    if (Array.isArray(value) || (value && typeof value === "object")) return value;
-    if (typeof value === "string") {
-        try { return JSON.parse(value); } catch { return fallback; }
+  if (Array.isArray(value) || (value && typeof value === "object"))
+    return value;
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return fallback;
     }
-    return fallback;
+  }
+  return fallback;
 }
 
 function normalizeArticle(article) {
-    const assets = safeJsonParse(article.assets, []);
-    const directions = safeJsonParse(article.directions, {});
-    const structured_analysis = safeJsonParse(article.structured_analysis, null);
-    const importance = Number(article.importance) || 0;
-    const confidence = Number(article.confidence) || 0;
-    let category = String(article.category || "General").trim();
-    if (category.includes("|")) category = category.split("|")[0].trim();
+  const assets = safeJsonParse(article.assets, []);
+  const directions = safeJsonParse(article.directions, {});
+  const structured_analysis = safeJsonParse(article.structured_analysis, null);
+  const importance = Number(article.importance) || 0;
+  const confidence = Number(article.confidence) || 0;
+  let category = String(article.category || "General").trim();
+  if (category.includes("|")) category = category.split("|")[0].trim();
 
-    return {
-        ...article,
-        id: String(article.id || Math.random()),
-        category: category || "General",
-        assets,
-        directions,
-        importance,
-        confidence,
-        analysis: article.analysis || "",
-        structured_analysis: structured_analysis,
-        added_at: article.added_at || "",
-        ai_score: importance * confidence
-    };
+  return {
+    ...article,
+    id: String(article.id || Math.random()),
+    category: category || "General",
+    assets,
+    directions,
+    importance,
+    confidence,
+    analysis: article.analysis || "",
+    structured_analysis: structured_analysis,
+    added_at: article.added_at || "",
+    ai_score: importance * confidence,
+  };
 }
 
 function getFilteredArticles() {
-    const search = state.search.trim().toLowerCase();
-    return state.articles.filter((a) => {
-        if (state.activeCategory !== "All" && a.category !== state.activeCategory) return false;
-        if (!search) return true;
-        const hay = [a.title, a.category, a.sentiment, a.market_impact,
-            Array.isArray(a.assets) ? a.assets.join(" ") : ""].join(" ").toLowerCase();
-        return hay.includes(search);
-    });
+  const search = state.search.trim().toLowerCase();
+  return state.articles.filter((a) => {
+    if (state.activeCategory !== "All" && a.category !== state.activeCategory)
+      return false;
+    if (!search) return true;
+    const hay = [
+      a.title,
+      a.category,
+      a.sentiment,
+      a.market_impact,
+      Array.isArray(a.assets) ? a.assets.join(" ") : "",
+    ]
+      .join(" ")
+      .toLowerCase();
+    return hay.includes(search);
+  });
 }
 
 function getThemeCounts(articles) {
-    const counts = {};
-    articles.forEach((a) => { const k = a.category || "General"; counts[k] = (counts[k] || 0) + 1; });
-    return counts;
+  const counts = {};
+  articles.forEach((a) => {
+    const k = a.category || "General";
+    counts[k] = (counts[k] || 0) + 1;
+  });
+  return counts;
 }
 
 function getSentimentMood(articles) {
-    let pos = 0, neg = 0, neu = 0;
-    articles.forEach((a) => {
-        const w = a.ai_score || 0;
-        const s = String(a.sentiment || "").toLowerCase();
-        if (s.includes("positive")) pos += w;
-        else if (s.includes("negative")) neg += w;
-        else neu += w;
-    });
-    const total = pos + neg + neu || 1;
-    if (pos / total >= 0.55) return "Risk-On";
-    if (neg / total >= 0.55) return "Risk-Off";
-    return "Mixed";
+  let pos = 0,
+    neg = 0,
+    neu = 0;
+  articles.forEach((a) => {
+    const w = a.ai_score || 0;
+    const s = String(a.sentiment || "").toLowerCase();
+    if (s.includes("positive")) pos += w;
+    else if (s.includes("negative")) neg += w;
+    else neu += w;
+  });
+  const total = pos + neg + neu || 1;
+  if (pos / total >= 0.55) return "Risk-On";
+  if (neg / total >= 0.55) return "Risk-Off";
+  return "Mixed";
 }
 
 function moodClass(mood) {
-    const m = mood.toLowerCase();
-    if (m.includes("risk-on")) return "risk-on";
-    if (m.includes("risk-off")) return "risk-off";
-    return "mixed";
+  const m = mood.toLowerCase();
+  if (m.includes("risk-on")) return "risk-on";
+  if (m.includes("risk-off")) return "risk-off";
+  return "mixed";
 }
 
 function getTopStory(articles) {
-    return [...articles].sort((a, b) => (b.ai_score || 0) - (a.ai_score || 0))[0] || null;
+  return (
+    [...articles].sort((a, b) => (b.ai_score || 0) - (a.ai_score || 0))[0] ||
+    null
+  );
 }
 
 function aggregateAssetSignals(articles) {
-    const map = {};
-    articles.forEach((article) => {
-        const dirs = article.directions || {};
-        Object.entries(dirs).forEach(([asset, direction]) => {
-            if (!map[asset]) map[asset] = { Bullish: 0, Bearish: 0, Neutral: 0 };
-            if (map[asset][direction] !== undefined) map[asset][direction] += 1;
-        });
+  const map = {};
+  articles.forEach((article) => {
+    const dirs = article.directions || {};
+    Object.entries(dirs).forEach(([asset, direction]) => {
+      if (!map[asset]) map[asset] = { Bullish: 0, Bearish: 0, Neutral: 0 };
+      if (map[asset][direction] !== undefined) map[asset][direction] += 1;
     });
-    return map;
+  });
+  return map;
 }
 
 function getTopSignal(signalMap, side) {
-    return Object.entries(signalMap)
-        .map(([asset, counts]) => ({ asset, count: counts[side], total: counts.Bullish + counts.Bearish + counts.Neutral }))
-        .filter((item) => item.count > 0)
-        .sort((a, b) => b.count - a.count || b.total - a.total)[0] || null;
+  return (
+    Object.entries(signalMap)
+      .map(([asset, counts]) => ({
+        asset,
+        count: counts[side],
+        total: counts.Bullish + counts.Bearish + counts.Neutral,
+      }))
+      .filter((item) => item.count > 0)
+      .sort((a, b) => b.count - a.count || b.total - a.total)[0] || null
+  );
 }
 
 function formatAddedAt(isoString) {
-    if (!isoString) return "Recently";
-    const date = new Date(isoString);
-    if (Number.isNaN(date.getTime())) return "Recently";
-    const diffMin = Math.floor((new Date() - date) / 60000);
-    if (diffMin < 1) return "Added just now";
-    if (diffMin < 60) return `Added ${diffMin} min ago`;
-    const diffHour = Math.floor(diffMin / 60);
-    if (diffHour < 24) return `Added ${diffHour} hr ago`;
-    const diffDay = Math.floor(diffHour / 24);
-    if (diffDay < 7) return `Added ${diffDay} day ago`;
-    return `Added ${date.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`;
+  if (!isoString) return "Recently";
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return "Recently";
+  const diffMin = Math.floor((new Date() - date) / 60000);
+  if (diffMin < 1) return "Added just now";
+  if (diffMin < 60) return `Added ${diffMin} min ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `Added ${diffHour} hr ago`;
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay < 7) return `Added ${diffDay} day ago`;
+  return `Added ${date.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`;
 }
 
 function fallbackAnalysis(article) {
-    const assets = Array.isArray(article.assets) && article.assets.length
-        ? article.assets.join(", ") : "broader markets";
-    return `Assets most exposed to this event include ${assets}. The system is currently analyzing the ${article.category || "General"} impact.`;
+  const assets =
+    Array.isArray(article.assets) && article.assets.length
+      ? article.assets.join(", ")
+      : "broader markets";
+  return `Assets most exposed to this event include ${assets}. The system is currently analyzing the ${article.category || "General"} impact.`;
 }
 
 function getCategoryIcon(category) {
-    const map = { "Finance": "💰", "Geopolitics": "🌐", "Technology": "💻", "Energy": "⚡", "Markets": "📈", "Economy": "🏦", "Commodities": "🛢️", "Crypto": "₿" };
-    return map[category] || "📰";
+  const map = {
+    Finance: "💰",
+    Geopolitics: "🌐",
+    Technology: "💻",
+    Energy: "⚡",
+    Markets: "📈",
+    Economy: "🏦",
+    Commodities: "🛢️",
+    Crypto: "₿",
+  };
+  return map[category] || "📰";
 }
 
 function sentimentClass(sentiment) {
-    const s = String(sentiment || "").toLowerCase();
-    if (s.includes("positive")) return "positive";
-    if (s.includes("negative")) return "negative";
-    return "neutral";
+  const s = String(sentiment || "").toLowerCase();
+  if (s.includes("positive")) return "positive";
+  if (s.includes("negative")) return "negative";
+  return "neutral";
 }
 
 // ── BOOKMARK ──────────────────────────────────────────────────────────
-window.toggleBookmark = async function(articleId) {
-    if (!requireAuth("save articles")) return;
-    const article = state.articles.find(a => String(a.id) === String(articleId));
-    if (!article) return;
+window.toggleBookmark = async function (articleId) {
+  if (!requireAuth("save articles")) return;
+  const article = state.articles.find(
+    (a) => String(a.id) === String(articleId),
+  );
+  if (!article) return;
 
-    if (state.savedArticles.has(article.title)) {
-        await supabase.from('bookmarks').delete().eq('user_id', state.user.id).eq('title', article.title);
+  if (state.savedArticles.has(article.title)) {
+    await supabase
+      .from("bookmarks")
+      .delete()
+      .eq("user_id", state.user.id)
+      .eq("title", article.title);
+  } else {
+    const { error } = await supabase.from("bookmarks").insert({
+      user_id: state.user.id,
+      saved_at: new Date().toISOString(),
+      title: article.title,
+      link: article.link || "#",
+      category: article.category || "General",
+      article_id: String(article.id),
+    });
+    if (error) {
+      showToast("Failed to save bookmark", "error");
     } else {
-        const { error } = await supabase.from('bookmarks').insert({
-            user_id: state.user.id,
-            saved_at: new Date().toISOString(),
-            title: article.title,
-            link: article.link || "#",
-            category: article.category || "General",
-            article_id: String(article.id)
-        });
-        if (error) {
-            showToast("Failed to save bookmark", "error");
-        } else {   }
     }
+  }
 };
 
 // ── PREDICTION MARKET ────────────────────────────────────────────────
-window.voteOnNews = async function(articleId, voteType) {
-    if (!requireAuth("vote on intelligence")) return;
-    
-    // Optimistic UI update
-    const cardEl = document.getElementById(`news-card-${articleId}`);
-    if (cardEl) {
-        const marketEl = cardEl.querySelector('.prediction-market');
-        if (marketEl) {
-            marketEl.innerHTML = `<div style="text-align:center; padding: 10px; color: var(--gold);">Voting...</div>`;
-        }
-    }
-    
-    try {
-        const response = await fetch(`https://news-by-ai.onrender.com/api/news/${articleId}/vote`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: state.user.id, vote: voteType })
-        });
-        
-        const data = await response.json();
-        if (response.ok) {
-            localStorage.setItem(`voted_${articleId}`, voteType);
-            // Update local state
-            const article = state.articles.find(a => String(a.id) === String(articleId));
-            if (article) {
-                article.bullish_votes = data.bullish_votes;
-                article.bearish_votes = data.bearish_votes;
-            }
-            renderDashboard();
-        } else {
-            alert(data.error || "Failed to vote");
-            renderDashboard(); // Revert
-        }
-    } catch (e) {
-        console.error("Vote error", e);
-        alert("Failed to cast vote");
-        renderDashboard(); // Revert
-    }
-};
+window.voteOnNews = async function (articleId, voteType) {
+  if (!requireAuth("vote on intelligence")) return;
 
+  // Optimistic UI update
+  const cardEl = document.getElementById(`news-card-${articleId}`);
+  if (cardEl) {
+    const marketEl = cardEl.querySelector(".prediction-market");
+    if (marketEl) {
+      marketEl.innerHTML = `<div style="text-align:center; padding: 10px; color: var(--gold);">Voting...</div>`;
+    }
+  }
+
+  try {
+    const response = await fetch(
+      `https://news-by-ai.onrender.com/api/news/${articleId}/vote`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: state.user.id, vote: voteType }),
+      },
+    );
+
+    const data = await response.json();
+    if (response.ok) {
+      localStorage.setItem(`voted_${articleId}`, voteType);
+      // Update local state
+      const article = state.articles.find(
+        (a) => String(a.id) === String(articleId),
+      );
+      if (article) {
+        article.bullish_votes = data.bullish_votes;
+        article.bearish_votes = data.bearish_votes;
+      }
+      renderDashboard();
+    } else {
+      alert(data.error || "Failed to vote");
+      renderDashboard(); // Revert
+    }
+  } catch (e) {
+    console.error("Vote error", e);
+    alert("Failed to cast vote");
+    renderDashboard(); // Revert
+  }
+};
 
 // ── RENDER: HERO / SIGNALS ───────────────────────────────────────────
 function renderHero(articles) {
-    const top = getTopStory(articles);
-    const mood = getSentimentMood(articles);
-    const signalMap = aggregateAssetSignals(articles);
-    const bullish = getTopSignal(signalMap, "Bullish");
-    const bearish = getTopSignal(signalMap, "Bearish");
+  const top = getTopStory(articles);
+  const mood = getSentimentMood(articles);
+  const signalMap = aggregateAssetSignals(articles);
+  const bullish = getTopSignal(signalMap, "Bullish");
+  const bearish = getTopSignal(signalMap, "Bearish");
 
-    if (!top) {
-        if (refs.heroTitle) refs.heroTitle.textContent = "No articles yet";
-        if (refs.heroSummary) refs.heroSummary.textContent = "Run the collector to load fresh headlines.";
-        if (refs.heroCategory) refs.heroCategory.textContent = "Category —";
-        if (refs.heroSentiment) refs.heroSentiment.textContent = "Sentiment —";
-        if (refs.heroHorizon) refs.heroHorizon.textContent = "Added —";
-        if (refs.marketMood) refs.marketMood.textContent = "—";
-        if (refs.topBullish) refs.topBullish.textContent = "—";
-        if (refs.topBearish) refs.topBearish.textContent = "—";
-        if (refs.articleCount) refs.articleCount.textContent = "0";
-        return;
-    }
+  if (!top) {
+    if (refs.heroTitle) refs.heroTitle.textContent = "No articles yet";
+    if (refs.heroSummary)
+      refs.heroSummary.textContent =
+        "Run the collector to load fresh headlines.";
+    if (refs.heroCategory) refs.heroCategory.textContent = "Category —";
+    if (refs.heroSentiment) refs.heroSentiment.textContent = "Sentiment —";
+    if (refs.heroHorizon) refs.heroHorizon.textContent = "Added —";
+    if (refs.marketMood) refs.marketMood.textContent = "—";
+    if (refs.topBullish) refs.topBullish.textContent = "—";
+    if (refs.topBearish) refs.topBearish.textContent = "—";
+    if (refs.articleCount) refs.articleCount.textContent = "0";
+    return;
+  }
 
-    const summary = top.analysis || fallbackAnalysis(top);
-    if (refs.heroTitle) refs.heroTitle.textContent = top.title;
-    if (refs.heroSummary) refs.heroSummary.textContent = summary;
-    if (refs.heroCategory) refs.heroCategory.textContent = `Category: ${top.category}`;
-    if (refs.heroSentiment) refs.heroSentiment.textContent = `Sentiment: ${top.sentiment}`;
-    if (refs.heroHorizon) refs.heroHorizon.textContent = formatAddedAt(top.added_at);
-    if (refs.marketMood) refs.marketMood.textContent = mood;
-    if (refs.topBullish) refs.topBullish.textContent = bullish ? `${bullish.asset} (Exposure: ${bullish.count})` : "—";
-    if (refs.topBearish) refs.topBearish.textContent = bearish ? `${bearish.asset} (Mentions: ${bearish.count})` : "—";
-    if (refs.articleCount) refs.articleCount.textContent = String(articles.length);
+  const summary = top.analysis || fallbackAnalysis(top);
+  if (refs.heroTitle) refs.heroTitle.textContent = top.title;
+  if (refs.heroSummary) refs.heroSummary.textContent = summary;
+  if (refs.heroCategory)
+    refs.heroCategory.textContent = `Category: ${top.category}`;
+  if (refs.heroSentiment)
+    refs.heroSentiment.textContent = `Sentiment: ${top.sentiment}`;
+  if (refs.heroHorizon)
+    refs.heroHorizon.textContent = formatAddedAt(top.added_at);
+  if (refs.marketMood) refs.marketMood.textContent = mood;
+  if (refs.topBullish)
+    refs.topBullish.textContent = bullish
+      ? `${bullish.asset} (Exposure: ${bullish.count})`
+      : "—";
+  if (refs.topBearish)
+    refs.topBearish.textContent = bearish
+      ? `${bearish.asset} (Mentions: ${bearish.count})`
+      : "—";
+  if (refs.articleCount)
+    refs.articleCount.textContent = String(articles.length);
 }
 
 function renderSignalStrip(articles) {
-    if (!refs.signalStrip) return;
-    const signalMap = aggregateAssetSignals(articles);
-    const ranked = Object.entries(signalMap)
-        .map(([asset, counts]) => ({ asset, mentions: counts.Bullish + counts.Bearish + counts.Neutral }))
-        .sort((a, b) => b.mentions - a.mentions).slice(0, 6);
+  if (!refs.signalStrip) return;
+  const signalMap = aggregateAssetSignals(articles);
+  const ranked = Object.entries(signalMap)
+    .map(([asset, counts]) => ({
+      asset,
+      mentions: counts.Bullish + counts.Bearish + counts.Neutral,
+    }))
+    .sort((a, b) => b.mentions - a.mentions)
+    .slice(0, 6);
 
-    if (!ranked.length) { refs.signalStrip.innerHTML = ""; return; }
+  if (!ranked.length) {
+    refs.signalStrip.innerHTML = "";
+    return;
+  }
 
-    refs.signalStrip.innerHTML = ranked.map((item) => {
-        return `<article class="signal-card flat">
+  refs.signalStrip.innerHTML = ranked
+    .map((item) => {
+      return `<article class="signal-card flat">
             <div class="signal-head"><span class="signal-asset">${escapeHtml(item.asset)}</span></div>
             <div class="signal-bars"><span>Exposure Score: ${item.mentions}</span></div>
         </article>`;
-    }).join("");
+    })
+    .join("");
 }
 
 // ── RENDER: BRIEF ─────────────────────────────────────────────────────
 function renderBrief(articles) {
-    const total = articles.length;
-    const avgConf = total ? Math.round(articles.reduce((s, a) => s + (a.confidence || 0), 0) / total) : 0;
-    const topArticle = [...articles].sort((a, b) => b.ai_score - a.ai_score)[0];
-    const themeCounts = getThemeCounts(articles);
-    const topThemes = Object.entries(themeCounts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([t, c]) => `${t} (${c})`).join(", ") || "—";
-    const mood = getSentimentMood(articles);
+  const total = articles.length;
+  const avgConf = total
+    ? Math.round(articles.reduce((s, a) => s + (a.confidence || 0), 0) / total)
+    : 0;
+  const topArticle = [...articles].sort((a, b) => b.ai_score - a.ai_score)[0];
+  const themeCounts = getThemeCounts(articles);
+  const topThemes =
+    Object.entries(themeCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([t, c]) => `${t} (${c})`)
+      .join(", ") || "—";
+  const mood = getSentimentMood(articles);
 
-    refs.briefPanel.innerHTML = `
+  refs.briefPanel.innerHTML = `
         <div class="brief-card">
             <div class="brief-header-strip">
                 <div class="brief-header-left"><div class="brief-icon">📊</div><span class="brief-title">AI Market Brief</span></div>
@@ -438,43 +552,48 @@ function renderBrief(articles) {
 
 // ── RENDER: FILTERS ───────────────────────────────────────────────────
 function renderFilters() {
-    const categories = ["All", ...new Set(state.articles.map((a) => a.category))];
-    refs.categoryFilters.innerHTML = categories
-        .map((c) => `<button class="chip ${c === state.activeCategory ? "active" : ""}" data-cat="${c}" type="button">${c}</button>`)
-        .join("");
+  const categories = ["All", ...new Set(state.articles.map((a) => a.category))];
+  refs.categoryFilters.innerHTML = categories
+    .map(
+      (c) =>
+        `<button class="chip ${c === state.activeCategory ? "active" : ""}" data-cat="${c}" type="button">${c}</button>`,
+    )
+    .join("");
 
-    refs.categoryFilters.querySelectorAll(".chip").forEach((btn) => {
-        btn.addEventListener("click", () => {
-            state.activeCategory = btn.dataset.cat;
-            renderFilters();
-            renderDashboard();
-        });
+  refs.categoryFilters.querySelectorAll(".chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.activeCategory = btn.dataset.cat;
+      renderFilters();
+      renderDashboard();
     });
+  });
 }
 
 // ── RENDER: CARDS ─────────────────────────────────────────────────────
 function renderCards(articles) {
-    if (!articles.length) {
-        refs.newsContainer.innerHTML = `<div class="empty-state"><strong>No results found</strong> Try adjusting your search term or category filter.</div>`;
-        return;
-    }
+  if (!articles.length) {
+    refs.newsContainer.innerHTML = `<div class="empty-state"><strong>No results found</strong> Try adjusting your search term or category filter.</div>`;
+    return;
+  }
 
-    refs.newsContainer.innerHTML = "";
+  refs.newsContainer.innerHTML = "";
 
-    articles.forEach((a) => {
-        const sc = sentimentClass(a.sentiment);
-        const assets = Array.isArray(a.assets) ? a.assets : [];
-        const aiNote = a.analysis || fallbackAnalysis(a);
-        const isSaved = state.savedArticles.has(a.title);
+  articles.forEach((a) => {
+    const sc = sentimentClass(a.sentiment);
+    const assets = Array.isArray(a.assets) ? a.assets : [];
+    const aiNote = a.analysis || fallbackAnalysis(a);
+    const isSaved = state.savedArticles.has(a.title);
 
-        const assetTagsHtml = assets.length
-            ? assets.map((t) => `<span class="asset-tag">${escapeHtml(t)}</span>`).join("")
-            : `<span style="font-size:11px;color:var(--muted)">No mapped assets</span>`;
+    const assetTagsHtml = assets.length
+      ? assets
+          .map((t) => `<span class="asset-tag">${escapeHtml(t)}</span>`)
+          .join("")
+      : `<span style="font-size:11px;color:var(--muted)">No mapped assets</span>`;
 
-        const card = document.createElement("article");
-        card.id = `news-card-${a.id}`;
-        card.className = `news-card ${sc}`;
-        card.innerHTML = `
+    const card = document.createElement("article");
+    card.id = `news-card-${a.id}`;
+    card.className = `news-card ${sc}`;
+    card.innerHTML = `
             <div class="card-stripe"></div>
             <div class="card-body">
                 <div class="card-cat-row">
@@ -496,17 +615,27 @@ function renderCards(articles) {
                 </div>
                 <div class="ai-note">
                     ${(() => {
-                        if (a.structured_analysis && a.structured_analysis.market_interpretation) {
-                            const sa = a.structured_analysis;
-                            const assetTags = (sa.affected_assets || []).map(ast => {
-                                const color = ast.direction === "Bullish" ? "var(--green)" : (ast.direction === "Bearish" ? "var(--red)" : "var(--muted)");
-                                return `<div style="border-left: 2px solid ${color}; padding-left: 8px; margin-bottom: 8px;">
+                      if (
+                        a.structured_analysis &&
+                        a.structured_analysis.market_interpretation
+                      ) {
+                        const sa = a.structured_analysis;
+                        const assetTags = (sa.affected_assets || [])
+                          .map((ast) => {
+                            const color =
+                              ast.direction === "Bullish"
+                                ? "var(--green)"
+                                : ast.direction === "Bearish"
+                                  ? "var(--red)"
+                                  : "var(--muted)";
+                            return `<div style="border-left: 2px solid ${color}; padding-left: 8px; margin-bottom: 8px;">
                                     <strong>${escapeHtml(ast.name)}</strong> <span style="color:${color}">(${escapeHtml(ast.direction)} ${ast.probability || 50}%)</span><br>
                                     <span style="font-size:12px; color:var(--muted);">${escapeHtml(ast.reason || "")}</span>
                                 </div>`;
-                            }).join("");
-                            
-                            return `
+                          })
+                          .join("");
+
+                        return `
                                 <div class="ai-note-header"><span class="ai-chip">Pro Analysis</span></div>
                                 <details class="ai-accordion" open>
                                     <summary>Market Interpretation</summary>
@@ -516,7 +645,10 @@ function renderCards(articles) {
                                     <summary>Asset Impact Reasoning</summary>
                                     <div class="ai-note-text">${assetTags || "No specific assets targeted."}</div>
                                 </details>
-                                ${sa.historical_context && sa.historical_context.similar_event ? `
+                                ${
+                                  sa.historical_context &&
+                                  sa.historical_context.similar_event
+                                    ? `
                                 <details class="ai-accordion">
                                     <summary>Historical Context</summary>
                                     <div class="ai-note-text">
@@ -524,39 +656,46 @@ function renderCards(articles) {
                                         <strong>Reaction:</strong> ${escapeHtml(sa.historical_context.market_reaction)}<br>
                                         <strong>Relevance:</strong> ${escapeHtml(sa.historical_context.relevance)}
                                     </div>
-                                </details>` : ""}
-                                ${sa.invalidation_criteria && sa.invalidation_criteria.length ? `
+                                </details>`
+                                    : ""
+                                }
+                                ${
+                                  sa.invalidation_criteria &&
+                                  sa.invalidation_criteria.length
+                                    ? `
                                 <details class="ai-accordion">
                                     <summary>Risks & Invalidation</summary>
                                     <ul class="ai-note-text" style="margin:0; padding-left: 15px;">
-                                        ${sa.invalidation_criteria.map(i => `<li>${escapeHtml(i)}</li>`).join("")}
+                                        ${sa.invalidation_criteria.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}
                                     </ul>
-                                </details>` : ""}
+                                </details>`
+                                    : ""
+                                }
                             `;
-                        } else {
-                            return `
+                      } else {
+                        return `
                                 <div class="ai-note-header"><span class="ai-chip basic">Basic Analysis</span></div>
                                 <p class="ai-note-text">${escapeHtml(a.analysis || fallbackAnalysis(a))}</p>
                             `;
-                        }
+                      }
                     })()}
                 </div>
                 ${(() => {
-                    const bullish = a.bullish_votes || 0;
-                    const bearish = a.bearish_votes || 0;
-                    const total = bullish + bearish;
-                    const hasVoted = localStorage.getItem(`voted_${a.id}`);
-                    
-                    if (total < 50) {
-                        if (hasVoted) {
-                            return `
+                  const bullish = a.bullish_votes || 0;
+                  const bearish = a.bearish_votes || 0;
+                  const total = bullish + bearish;
+                  const hasVoted = localStorage.getItem(`voted_${a.id}`);
+
+                  if (total < 50) {
+                    if (hasVoted) {
+                      return `
                             <div class="prediction-market">
                                 <div style="text-align:center; padding: 10px; color: var(--gold); font-size: 14px;">
-                                    Vote recorded! Waiting for ${50 - total} more vote${50 - total === 1 ? '' : 's'} to reveal consensus.
+                                    Vote recorded! Waiting for ${50 - total} more vote${50 - total === 1 ? "" : "s"} to reveal consensus.
                                 </div>
                             </div>`;
-                        } else {
-                            return `
+                    } else {
+                      return `
                             <div class="prediction-market">
                                 <div class="pm-title">What's your read?</div>
                                 <div class="pm-actions">
@@ -564,19 +703,24 @@ function renderCards(articles) {
                                     <button class="pm-btn bearish" onclick="voteOnNews('${a.id}', 'bearish')">🐻 BEARISH</button>
                                 </div>
                             </div>`;
-                        }
-                    } else {
-                        const bullPct = total > 0 ? Math.round((bullish / total) * 100) : 50;
-                        const bearPct = 100 - bullPct;
-                        const isAiBullish = a.structured_analysis?.market_interpretation?.toLowerCase().includes("bullish") || a.sentiment?.toLowerCase().includes("positive");
-                        
-                        const dominantPct = bullPct >= 50 ? bullPct : bearPct;
-                        const dominantLabel = bullPct >= 50 ? 'Bullish' : 'Bearish';
-                        
-                        return `
+                    }
+                  } else {
+                    const bullPct =
+                      total > 0 ? Math.round((bullish / total) * 100) : 50;
+                    const bearPct = 100 - bullPct;
+                    const isAiBullish =
+                      a.structured_analysis?.market_interpretation
+                        ?.toLowerCase()
+                        .includes("bullish") ||
+                      a.sentiment?.toLowerCase().includes("positive");
+
+                    const dominantPct = bullPct >= 50 ? bullPct : bearPct;
+                    const dominantLabel = bullPct >= 50 ? "Bullish" : "Bearish";
+
+                    return `
                         <div class="prediction-market revealed">
                             <div class="pm-reveal-text">
-                                <span class="ai-side">AI: ${isAiBullish ? 'Bullish' : 'Bearish'}</span>
+                                <span class="ai-side">AI: ${isAiBullish ? "Bullish" : "Bearish"}</span>
                                 <span class="crowd-side">· Crowd: ${dominantPct}% ${dominantLabel}</span>
                             </div>
                             <div class="pm-bar-container">
@@ -584,165 +728,216 @@ function renderCards(articles) {
                                 <div class="pm-bar bearish" style="width: ${bearPct}%"></div>
                             </div>
                         </div>`;
-                    }
+                  }
                 })()}
                 <div class="card-footer">
                     <div class="asset-tags">${assetTagsHtml}</div>
                     <div style="display:flex;gap:8px;align-items:center;">
-                        <button class="bookmark-btn ${isSaved ? 'saved' : ''}" onclick="toggleBookmark('${a.id}')" title="${isSaved ? 'Remove bookmark' : 'Save article'}">
-                            ${isSaved ? '★ Saved' : '☆ Save'}
+                        <button class="bookmark-btn ${isSaved ? "saved" : ""}" onclick="toggleBookmark('${a.id}')" title="${isSaved ? "Remove bookmark" : "Save article"}">
+                            ${isSaved ? "★ Saved" : "☆ Save"}
                         </button>
                         <a class="read-link" href="${escapeHtml(a.link)}" target="_blank" rel="noopener noreferrer">Read →</a>
                     </div>
                 </div>
             </div>`;
-        refs.newsContainer.appendChild(card);
-    });
+    refs.newsContainer.appendChild(card);
+  });
 }
 
 // ── RENDER: DASHBOARD ─────────────────────────────────────────────────
 function renderDashboard() {
-    const filtered = getFilteredArticles().sort((a, b) => b.ai_score - a.ai_score);
-    renderHero(filtered);
-    renderSignalStrip(filtered);
-    renderBrief(filtered);
-    renderCards(filtered);
+  const filtered = getFilteredArticles().sort(
+    (a, b) => b.ai_score - a.ai_score,
+  );
+  renderHero(filtered);
+  renderSignalStrip(filtered);
+  renderBrief(filtered);
+  renderCards(filtered);
 }
 
 // ── LOAD NEWS (Flask API on Render) ───────────────────────────────────
 async function loadNews() {
-    try {
-        if (refs.lastUpdated) refs.lastUpdated.textContent = "Refreshing…";
-        if (refs.refreshBtn) {
-            refs.refreshBtn.disabled = true;
-            refs.refreshBtn.classList.add("refreshing");
-        }
-
-        let isFetching = true;
-        setTimeout(() => {
-            if (isFetching && refs.heroTitle && state.articles.length === 0) {
-                refs.heroTitle.textContent = "Market Intelligence Pending";
-                refs.heroTitle.className = "hero-title";
-                if (refs.heroSummary) {
-                    refs.heroSummary.textContent = "Waking up the analysis engine to fetch fresh signals. Please hold on...";
-                    refs.heroSummary.className = "hero-summary";
-                    refs.heroSummary.style = "";
-                }
-            }
-        }, 3000);
-
-        const response = await fetch(API_URL, { cache: "no-store" });
-        isFetching = false;
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        const data = await response.json();
-        localStorage.setItem('trade_trends_cache', JSON.stringify(data));
-        state.articles = data.map(normalizeArticle);
-
-        if (refs.heroTitle) refs.heroTitle.className = "hero-title";
-        if (refs.heroSummary) {
-            refs.heroSummary.className = "hero-summary";
-            refs.heroSummary.style = "";
-        }
-
-        renderFilters();
-        renderDashboard();
-
-        if (state.articles.length === 0) {
-            if (refs.heroTitle) refs.heroTitle.textContent = "No intelligence available";
-            if (refs.heroSummary) refs.heroSummary.textContent = "Check back later for fresh signals.";
-        }
-
-        if (refs.lastUpdated) {
-            refs.lastUpdated.textContent = "Updated " + new Date().toLocaleTimeString("en-IN", { hour12: true });
-        }
-    } catch (error) {
-        if (state.articles.length === 0) {
-            if (refs.lastUpdated) refs.lastUpdated.textContent = "Load failed";
-            if (refs.newsContainer) {
-                refs.newsContainer.innerHTML = `<div class="empty-state"><strong>Unable to load feed</strong> Check that the API is running, then refresh.</div>`;
-            }
-        }
-    } finally {
-        if (refs.refreshBtn) {
-            refs.refreshBtn.disabled = false;
-            refs.refreshBtn.classList.remove("refreshing");
-        }
+  try {
+    if (refs.lastUpdated) refs.lastUpdated.textContent = "Refreshing…";
+    if (refs.refreshBtn) {
+      refs.refreshBtn.disabled = true;
+      refs.refreshBtn.classList.add("refreshing");
     }
+
+    let isFetching = true;
+    setTimeout(() => {
+      if (isFetching && refs.heroTitle && state.articles.length === 0) {
+        refs.heroTitle.textContent = "Market Intelligence Pending";
+        refs.heroTitle.className = "hero-title";
+        if (refs.heroSummary) {
+          refs.heroSummary.textContent =
+            "Waking up the analysis engine to fetch fresh signals. Please hold on...";
+          refs.heroSummary.className = "hero-summary";
+          refs.heroSummary.style = "";
+        }
+      }
+    }, 3000);
+
+    const response = await fetch(API_URL, { cache: "no-store" });
+    isFetching = false;
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const data = await response.json();
+    localStorage.setItem("trade_trends_cache", JSON.stringify(data));
+    state.articles = data.map(normalizeArticle);
+
+    if (refs.heroTitle) refs.heroTitle.className = "hero-title";
+    if (refs.heroSummary) {
+      refs.heroSummary.className = "hero-summary";
+      refs.heroSummary.style = "";
+    }
+
+    renderFilters();
+    renderDashboard();
+
+    if (state.articles.length === 0) {
+      if (refs.heroTitle)
+        refs.heroTitle.textContent = "No intelligence available";
+      if (refs.heroSummary)
+        refs.heroSummary.textContent = "Check back later for fresh signals.";
+    }
+
+    if (refs.lastUpdated) {
+      refs.lastUpdated.textContent =
+        "Updated " + new Date().toLocaleTimeString("en-IN", { hour12: true });
+    }
+  } catch (error) {
+    if (state.articles.length === 0) {
+      if (refs.lastUpdated) refs.lastUpdated.textContent = "Load failed";
+      if (refs.newsContainer) {
+        refs.newsContainer.innerHTML = `<div class="empty-state"><strong>Unable to load feed</strong> Check that the API is running, then refresh.</div>`;
+      }
+    }
+  } finally {
+    if (refs.refreshBtn) {
+      refs.refreshBtn.disabled = false;
+      refs.refreshBtn.classList.remove("refreshing");
+    }
+  }
 }
 
 // ── UTIL ──────────────────────────────────────────────────────────────
 function escapeHtml(str) {
-    if (str === null || str === undefined) return "";
-    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
-function setTickerPair(priceId, changeId, priceValue, changeValue, isLiveLabel = false) {
-    const priceEl = document.getElementById(priceId);
-    const changeEl = document.getElementById(changeId);
-    if (!priceEl || !changeEl) return;
+function setTickerPair(
+  priceId,
+  changeId,
+  priceValue,
+  changeValue,
+  isLiveLabel = false,
+) {
+  const priceEl = document.getElementById(priceId);
+  const changeEl = document.getElementById(changeId);
+  if (!priceEl || !changeEl) return;
 
-    if (priceValue === null || priceValue === undefined || priceValue === "N/A") {
-        priceEl.textContent = "N/A";
-    } else {
-        const numericPrice = Number(priceValue);
-        priceEl.textContent = Number.isFinite(numericPrice) ? numericPrice.toLocaleString("en-IN") : String(priceValue);
-    }
+  if (priceValue === null || priceValue === undefined || priceValue === "N/A") {
+    priceEl.textContent = "N/A";
+  } else {
+    const numericPrice = Number(priceValue);
+    priceEl.textContent = Number.isFinite(numericPrice)
+      ? numericPrice.toLocaleString("en-IN")
+      : String(priceValue);
+  }
 
-    if (isLiveLabel) {
-        changeEl.textContent = "LIVE";
-        changeEl.style.color = "#10b981";
-        return;
-    }
+  if (isLiveLabel) {
+    changeEl.textContent = "LIVE";
+    changeEl.style.color = "#10b981";
+    return;
+  }
 
-    const numericChange = Number(changeValue);
-    if (Number.isFinite(numericChange)) {
-        changeEl.textContent = (numericChange >= 0 ? "▲ " : "▼ ") + Math.abs(numericChange).toFixed(2) + "%";
-        changeEl.style.color = numericChange >= 0 ? "#10b981" : "#ef4444";
-    } else {
-        changeEl.textContent = "--";
-        changeEl.style.color = "#94a3b8";
-    }
+  const numericChange = Number(changeValue);
+  if (Number.isFinite(numericChange)) {
+    changeEl.textContent =
+      (numericChange >= 0 ? "▲ " : "▼ ") +
+      Math.abs(numericChange).toFixed(2) +
+      "%";
+    changeEl.style.color = numericChange >= 0 ? "#10b981" : "#ef4444";
+  } else {
+    changeEl.textContent = "--";
+    changeEl.style.color = "#94a3b8";
+  }
 }
 
 function renderTicker(data) {
-    if (data.BTC) {
-        setTickerPair("btc-price", "btc-change", data.BTC.price, data.BTC.change, false);
-    }
-    if (data.USDINR) {
-        setTickerPair("usdinr-price", "usdinr-change", data.USDINR.price, data.USDINR.change, true);
-    }
-    if (data.GOLD) {
-        setTickerPair("gold-price", "gold-change", data.GOLD.price, data.GOLD.change, false);
-    }
-    if (data.NIFTY) {
-        setTickerPair("nifty-price", "nifty-change", data.NIFTY.price, data.NIFTY.change, true);
-    }
-    if (data.BANKNIFTY) {
-        setTickerPair("banknifty-price", "banknifty-change", data.BANKNIFTY.price, data.BANKNIFTY.change, true);
-    }
+  if (data.BTC) {
+    setTickerPair(
+      "btc-price",
+      "btc-change",
+      data.BTC.price,
+      data.BTC.change,
+      false,
+    );
+  }
+  if (data.USDINR) {
+    setTickerPair(
+      "usdinr-price",
+      "usdinr-change",
+      data.USDINR.price,
+      data.USDINR.change,
+      true,
+    );
+  }
+  if (data.GOLD) {
+    setTickerPair(
+      "gold-price",
+      "gold-change",
+      data.GOLD.price,
+      data.GOLD.change,
+      false,
+    );
+  }
+  if (data.NIFTY) {
+    setTickerPair(
+      "nifty-price",
+      "nifty-change",
+      data.NIFTY.price,
+      data.NIFTY.change,
+      true,
+    );
+  }
+  if (data.BANKNIFTY) {
+    setTickerPair(
+      "banknifty-price",
+      "banknifty-change",
+      data.BANKNIFTY.price,
+      data.BANKNIFTY.change,
+      true,
+    );
+  }
 }
 
 async function loadTicker() {
-    try {
-        const response = await fetch(MARKET_API_URL, { cache: "no-store" });
-        const data = await response.json();
-        localStorage.setItem('trade_trends_ticker_cache', JSON.stringify(data));
-        renderTicker(data);
-    } catch (error) {
-        // console.error("Ticker Error:", error);
-    }
+  try {
+    const response = await fetch(MARKET_API_URL, { cache: "no-store" });
+    const data = await response.json();
+    localStorage.setItem("trade_trends_ticker_cache", JSON.stringify(data));
+    renderTicker(data);
+  } catch (error) {
+    // console.error("Ticker Error:", error);
+  }
 }
 
 // ── AUTHENTICATION ──────────────────────────────────────────────────
 function requireAuth(actionText) {
-    if (state.user) return true;
-    
-    if (document.getElementById('auth-req-modal')) return false;
+  if (state.user) return true;
 
-    const modal = document.createElement('div');
-    modal.id = 'auth-req-modal';
-    modal.innerHTML = `
+  if (document.getElementById("auth-req-modal")) return false;
+
+  const modal = document.createElement("div");
+  modal.id = "auth-req-modal";
+  modal.innerHTML = `
         <div style="position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:99999;">
             <div style="background:var(--card-bg);border:1px solid var(--border);padding:32px;border-radius:12px;text-align:center;max-width:360px;width:90%;">
                 <div style="width:48px;height:48px;background:rgba(216,177,91,0.1);color:var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:24px;">🔒</div>
@@ -756,17 +951,17 @@ function requireAuth(actionText) {
             </div>
         </div>
     `;
-    document.body.appendChild(modal);
-    
-    document.getElementById('quick-google-btn').onclick = async () => {
-        document.getElementById('quick-google-btn').innerHTML = "Signing in...";
-        const { error } = await supabase.auth.signInWithOAuth({
-            provider: 'google',
-            options: { redirectTo: window.location.href }
-        });
-        if (error) alert("Sign-in failed: " + error.message);
-    };
-    
-    document.getElementById('quick-close-btn').onclick = () => modal.remove();
-    return false;
+  document.body.appendChild(modal);
+
+  document.getElementById("quick-google-btn").onclick = async () => {
+    document.getElementById("quick-google-btn").innerHTML = "Signing in...";
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.href },
+    });
+    if (error) alert("Sign-in failed: " + error.message);
+  };
+
+  document.getElementById("quick-close-btn").onclick = () => modal.remove();
+  return false;
 }

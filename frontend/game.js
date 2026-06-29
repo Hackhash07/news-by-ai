@@ -2046,24 +2046,34 @@ import { supabase } from "./supabase.js";
 
   function generateQuestion(difficulty = "easy") {
     if (difficulty === "hard") {
-      const ops = ["*", "/"];
+      const ops = ["*", "/", "combo"];
       const op = ops[Math.floor(Math.random() * ops.length)];
       if (op === "*") {
-        const a = randInt(6, 12);
-        const b = randInt(6, 12);
+        const a = randInt(13, 29);
+        const b = randInt(13, 29);
         return {
           text: `${a} × ${b}`,
           answer: a * b,
           difficulty: "hard",
           mult: 2.0,
         };
-      } else {
-        const b = randInt(3, 9);
-        const answer = randInt(4, 12);
+      } else if (op === "/") {
+        const b = randInt(12, 25);
+        const answer = randInt(11, 29);
         const a = b * answer;
         return {
           text: `${a} ÷ ${b}`,
           answer: answer,
+          difficulty: "hard",
+          mult: 2.0,
+        };
+      } else {
+        const a = randInt(50, 150);
+        const b = randInt(25, 99);
+        const c = randInt(15, 65);
+        return {
+          text: `${a} + ${b} - ${c}`,
+          answer: a + b - c,
           difficulty: "hard",
           mult: 2.0,
         };
@@ -2072,8 +2082,8 @@ import { supabase } from "./supabase.js";
       const ops = ["+", "-", "*"];
       const op = ops[Math.floor(Math.random() * ops.length)];
       if (op === "*") {
-        const a = randInt(2, 9);
-        const b = randInt(2, 5);
+        const a = randInt(6, 15);
+        const b = randInt(6, 15);
         return {
           text: `${a} × ${b}`,
           answer: a * b,
@@ -2081,8 +2091,8 @@ import { supabase } from "./supabase.js";
           mult: 1.5,
         };
       } else if (op === "+") {
-        const a = randInt(10, 25);
-        const b = randInt(10, 25);
+        const a = randInt(45, 99);
+        const b = randInt(45, 99);
         return {
           text: `${a} + ${b}`,
           answer: a + b,
@@ -2090,8 +2100,8 @@ import { supabase } from "./supabase.js";
           mult: 1.5,
         };
       } else {
-        const a = randInt(15, 30);
-        const b = randInt(5, a - 1);
+        const a = randInt(100, 199);
+        const b = randInt(45, 99);
         return {
           text: `${a} - ${b}`,
           answer: a - b,
@@ -2703,6 +2713,48 @@ import { supabase } from "./supabase.js";
   }
 
   function renderArena() {
+    const elapsed = state.match.gameStartTime
+      ? (Date.now() - state.match.gameStartTime) / 1000
+      : 0;
+    let splash = document.getElementById("start-splash");
+    if (elapsed < 6 && state.match.gameStartTime) {
+      if (!splash) {
+        splash = document.createElement("div");
+        splash.id = "start-splash";
+        splash.style.cssText =
+          "position:fixed;inset:0;background:rgba(7,16,30,0.95);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;backdrop-filter:blur(10px);text-align:center;";
+        document.body.appendChild(splash);
+      }
+      const countdown = Math.ceil(6 - elapsed);
+      splash.innerHTML = `
+        <h1 style="font-size:32px;color:#C9913A;margin-bottom:24px;text-transform:uppercase;letter-spacing:3px;">Market Rules</h1>
+        <div style="font-size:16px;line-height:1.6;background:rgba(255,255,255,0.03);padding:32px 40px;border-radius:12px;border:1px solid rgba(255,255,255,0.06);max-width:600px;text-align:left;">
+          <div style="margin-bottom:16px;">🔴 <strong style="color:#C9913A">Scarcity Premium:</strong> Only 200 shares! Buying when <50 shares boosts power up to 4x.</div>
+          <div style="margin-bottom:16px;">📈 <strong style="color:#C9913A">Momentum:</strong> 3+ identical trades in a row multiplies market impact.</div>
+          <div style="margin-bottom:16px;">🛡️ <strong style="color:#C9913A">Mean Reversion:</strong> Prices naturally bounce back from extreme drops and spikes.</div>
+          <div style="margin-bottom:16px;">🧠 <strong style="color:#C9913A">Difficulty:</strong> Hard math multiplies trade impact but penalizes cash on fail.</div>
+          <div>⚠️ <strong style="color:#C9913A">Market Events:</strong> Random events (Flash Crashes, Circuit Breakers) occur every 30-45s.</div>
+        </div>
+        <div style="margin-top:40px;font-size:64px;font-weight:800;font-family:monospace;color:#C9913A;text-shadow:0 0 20px rgba(201,145,58,0.5);">${countdown}</div>
+      `;
+      // Lock input while splash is up
+      if (dom.answerInput && !dom.answerInput.disabled) {
+        dom.answerInput.disabled = true;
+        dom.answerInput.placeholder = "GET READY...";
+      }
+    } else if (splash) {
+      splash.remove();
+      if (
+        dom.answerInput &&
+        dom.answerInput.disabled &&
+        dom.answerInput.placeholder === "GET READY..."
+      ) {
+        dom.answerInput.disabled = false;
+        dom.answerInput.placeholder = "e.g. 150 b (buy) or 150 s (sell)";
+        dom.answerInput.focus();
+      }
+    }
+
     if (
       state.match.activeEvent &&
       state.match.activeEvent.startedAt > lastSeenEventStartedAt
@@ -3439,6 +3491,7 @@ import { supabase } from "./supabase.js";
             <div style="display:flex;gap:10px;">
               <button id="btn-download" style="padding:10px 20px;background:#C9913A;color:#000;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;letter-spacing:1px;">DOWNLOAD CARD</button>
               <button id="btn-tweet" style="padding:10px 20px;background:#fff;color:#000;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;letter-spacing:1px;">SHARE TO X</button>
+              <button id="btn-ig" style="padding:10px 20px;background:linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;letter-spacing:1px;">SHARE TO IG</button>
               <button id="btn-close" style="padding:10px 20px;background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:8px;font-size:13px;cursor:pointer;">CLOSE</button>
             </div>
           </div>
@@ -3466,6 +3519,34 @@ import { supabase } from "./supabase.js";
       tweetBtn.textContent = "SHARED ✓";
       tweetBtn.style.background = "#27C47A";
       tweetBtn.style.color = "#000";
+    };
+
+    document.getElementById("btn-ig").onclick = async () => {
+      try {
+        const canvas = await html2canvas(
+          document.getElementById("victory-card"),
+          { scale: 2 },
+        );
+        canvas.toBlob(async (blob) => {
+          const file = new File([blob], "victory.png", { type: "image/png" });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              files: [file],
+              title: "Trading IQ Victory",
+              text: "Just crushed Trading IQ Battle! 🏆",
+            });
+            document.getElementById("btn-ig").textContent = "SHARED ✓";
+          } else {
+            const a = document.createElement("a");
+            a.download = "trading-iq-victory-ig.png";
+            a.href = canvas.toDataURL();
+            a.click();
+            alert("Downloaded image! You can now post it to Instagram.");
+          }
+        });
+      } catch (err) {
+        console.error("Error sharing to IG", err);
+      }
     };
 
     document.getElementById("btn-close").onclick = () => card.remove();
