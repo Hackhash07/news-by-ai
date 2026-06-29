@@ -1366,7 +1366,10 @@ import { supabase } from "./supabase.js";
               .from("rooms")
               .update({
                 phase: "playing",
-                "match.gameStartTime": Date.now(),
+                match: {
+                  ...state.match,
+                  gameStartTime: Date.now()
+                },
                 last_update_time: Date.now(),
               })
               .eq("id", state.roomId)
