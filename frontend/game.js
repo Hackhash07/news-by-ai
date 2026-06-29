@@ -2579,6 +2579,7 @@ import { supabase } from "./supabase.js";
       if (dom.countdownDisplay) {
         dom.countdownDisplay.textContent = formatTime(remaining);
       }
+      renderSplash();
       if (remaining <= 0) {
         if (state.isHost) {
           endGameByTime();
@@ -2712,12 +2713,12 @@ import { supabase } from "./supabase.js";
     }, 3500);
   }
 
-  function renderArena() {
+  function renderSplash() {
     const elapsed = state.match.gameStartTime
       ? (Date.now() - state.match.gameStartTime) / 1000
       : 0;
     let splash = document.getElementById("start-splash");
-    if (elapsed < 6 && state.match.gameStartTime) {
+    if (elapsed >= 0 && elapsed < 6 && state.match.gameStartTime) {
       if (!splash) {
         splash = document.createElement("div");
         splash.id = "start-splash";
@@ -2725,15 +2726,17 @@ import { supabase } from "./supabase.js";
           "position:fixed;inset:0;background:rgba(7,16,30,0.95);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;backdrop-filter:blur(10px);text-align:center;";
         document.body.appendChild(splash);
       }
-      const countdown = Math.ceil(6 - elapsed);
+      const countdown = Math.ceil(6 - Math.max(0, elapsed));
       splash.innerHTML = `
-        <h1 style="font-size:32px;color:#C9913A;margin-bottom:24px;text-transform:uppercase;letter-spacing:3px;">Market Rules</h1>
+        <h1 style="font-size:32px;color:#C9913A;margin-bottom:24px;text-transform:uppercase;letter-spacing:3px;">Market Events</h1>
         <div style="font-size:16px;line-height:1.6;background:rgba(255,255,255,0.03);padding:32px 40px;border-radius:12px;border:1px solid rgba(255,255,255,0.06);max-width:600px;text-align:left;">
-          <div style="margin-bottom:16px;">🔴 <strong style="color:#C9913A">Scarcity Premium:</strong> Only 200 shares! Buying when <50 shares boosts power up to 4x.</div>
-          <div style="margin-bottom:16px;">📈 <strong style="color:#C9913A">Momentum:</strong> 3+ identical trades in a row multiplies market impact.</div>
-          <div style="margin-bottom:16px;">🛡️ <strong style="color:#C9913A">Mean Reversion:</strong> Prices naturally bounce back from extreme drops and spikes.</div>
-          <div style="margin-bottom:16px;">🧠 <strong style="color:#C9913A">Difficulty:</strong> Hard math multiplies trade impact but penalizes cash on fail.</div>
-          <div>⚠️ <strong style="color:#C9913A">Market Events:</strong> Random events (Flash Crashes, Circuit Breakers) occur every 30-45s.</div>
+          <p style="margin-bottom:16px;color:rgba(255,255,255,0.8);">Random events will occur every 30-45 seconds that drastically change the market dynamics:</p>
+          <div style="margin-bottom:12px;">📈 <strong style="color:#C9913A">Bull Run:</strong> All buys are amplified 3x for 20s.</div>
+          <div style="margin-bottom:12px;">📉 <strong style="color:#C9913A">Flash Crash:</strong> Instant 20% drop in stock price.</div>
+          <div style="margin-bottom:12px;">💸 <strong style="color:#C9913A">Dividend:</strong> Instant cash payout for holding 3+ stocks.</div>
+          <div style="margin-bottom:12px;">🚀 <strong style="color:#C9913A">Earnings Surprise:</strong> Price instantly doubles.</div>
+          <div style="margin-bottom:12px;">🌪️ <strong style="color:#C9913A">Volatility Spike:</strong> All trades move the price 4x for 15s.</div>
+          <div>🛑 <strong style="color:#C9913A">Circuit Breaker:</strong> Trading halts completely for 15s.</div>
         </div>
         <div style="margin-top:40px;font-size:64px;font-weight:800;font-family:monospace;color:#C9913A;text-shadow:0 0 20px rgba(201,145,58,0.5);">${countdown}</div>
       `;
@@ -2754,7 +2757,9 @@ import { supabase } from "./supabase.js";
         dom.answerInput.focus();
       }
     }
+  }
 
+  function renderArena() {
     if (
       state.match.activeEvent &&
       state.match.activeEvent.startedAt > lastSeenEventStartedAt
