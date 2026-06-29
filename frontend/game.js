@@ -2110,29 +2110,38 @@ import { supabase } from './supabase.js';
             if (session && session.user) {
                 try {
                     const userId = session.user.id;
-                    const { data: profile } = await supabase.from('profiles').select('elo_score').eq('id', userId).single();
-                    let currentElo = profile?.elo_score || 1000;
+                    const { data: profile } = await supabase.from('profiles').select('elo_score, peak_elo, matches_played, matches_won').eq('id', userId).single();
                     
-                    const myTeamData = teamAData.players.some(p => p.id === state.myPlayerId) ? teamAData : teamBData;
-                    
-                    let eloChange = 0;
-                    let wonParam = false;
-                    if (!isTie) {
-                        wonParam = (winner === myTeamData);
-                        eloChange = wonParam ? 25 : -15;
-                    }
-                    const newElo = Math.max(0, currentElo + eloChange);
-                    
-                    const res = await fetch('https://news-by-ai.onrender.com/api/profile/update-stats', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ user_id: userId, won: wonParam, new_elo: newElo })
-                    });
-                    
-                    if (!res.ok) {
-                        console.error(`Failed to update ELO on backend. Status: ${res.status}`);
-                    } else {
-                        console.log(`Updated ELO for ${userId}: ${currentElo} -> ${newElo}`);
+                    if (profile) {
+                        let currentElo = profile.elo_score || 1000;
+                        let currentPeak = profile.peak_elo || 1000;
+                        let played = (profile.matches_played || 0) + 1;
+                        let won = profile.matches_won || 0;
+                        
+                        const myTeamData = teamAData.players.some(p => p.id === state.myPlayerId) ? teamAData : teamBData;
+                        
+                        let eloChange = 0;
+                        let wonParam = false;
+                        if (!isTie) {
+                            wonParam = (winner === myTeamData);
+                            eloChange = wonParam ? 25 : -15;
+                            if (wonParam) won += 1;
+                        }
+                        const newElo = Math.max(0, currentElo + eloChange);
+                        const newPeak = Math.max(newElo, currentPeak);
+                        
+                        const { error: updateError } = await supabase.from('profiles').update({
+                            elo_score: newElo,
+                            peak_elo: newPeak,
+                            matches_played: played,
+                            matches_won: won
+                        }).eq('id', userId);
+                        
+                        if (updateError) {
+                            console.error(`Failed to update ELO: ${updateError.message}`);
+                        } else {
+                            console.log(`Updated ELO for ${userId}: ${currentElo} -> ${newElo}`);
+                        }
                     }
                 } catch (e) {
                     console.error("Failed to update ELO", e);
