@@ -547,26 +547,37 @@ function renderCards(articles) {
                     const total = bullish + bearish;
                     const hasVoted = localStorage.getItem(`voted_${a.id}`);
                     
-                    if (!hasVoted && total < 10) {
-                        return `
-                        <div class="prediction-market">
-                            <div class="pm-title">What's your read?</div>
-                            <div class="pm-actions">
-                                <button class="pm-btn bullish" onclick="voteOnNews('${a.id}', 'bullish')">🐂 BULLISH</button>
-                                <button class="pm-btn bearish" onclick="voteOnNews('${a.id}', 'bearish')">🐻 BEARISH</button>
-                            </div>
-                        </div>`;
+                    if (total < 50) {
+                        if (hasVoted) {
+                            return `
+                            <div class="prediction-market">
+                                <div style="text-align:center; padding: 10px; color: var(--gold); font-size: 14px;">
+                                    Vote recorded! Waiting for ${50 - total} more vote${50 - total === 1 ? '' : 's'} to reveal consensus.
+                                </div>
+                            </div>`;
+                        } else {
+                            return `
+                            <div class="prediction-market">
+                                <div class="pm-title">What's your read?</div>
+                                <div class="pm-actions">
+                                    <button class="pm-btn bullish" onclick="voteOnNews('${a.id}', 'bullish')">🐂 BULLISH</button>
+                                    <button class="pm-btn bearish" onclick="voteOnNews('${a.id}', 'bearish')">🐻 BEARISH</button>
+                                </div>
+                            </div>`;
+                        }
                     } else {
                         const bullPct = total > 0 ? Math.round((bullish / total) * 100) : 50;
                         const bearPct = 100 - bullPct;
                         const isAiBullish = a.structured_analysis?.market_interpretation?.toLowerCase().includes("bullish") || a.sentiment?.toLowerCase().includes("positive");
-                        const aiMatched = (isAiBullish && bullPct >= 50) || (!isAiBullish && bearPct >= 50);
+                        
+                        const dominantPct = bullPct >= 50 ? bullPct : bearPct;
+                        const dominantLabel = bullPct >= 50 ? 'Bullish' : 'Bearish';
                         
                         return `
                         <div class="prediction-market revealed">
                             <div class="pm-reveal-text">
                                 <span class="ai-side">AI: ${isAiBullish ? 'Bullish' : 'Bearish'}</span>
-                                <span class="crowd-side">· Crowd: ${bullPct}% ${bullPct >= 50 ? 'Bullish' : 'Bearish'}</span>
+                                <span class="crowd-side">· Crowd: ${dominantPct}% ${dominantLabel}</span>
                             </div>
                             <div class="pm-bar-container">
                                 <div class="pm-bar bullish" style="width: ${bullPct}%"></div>
