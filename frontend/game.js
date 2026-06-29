@@ -2190,7 +2190,6 @@ import { supabase } from './supabase.js';
                         alert("Debug: Exception in ELO logic: " + e.message);
                         console.error("Failed to update ELO", e);
                     }
-                }
             }).catch(e => {
                 alert("Debug: session fetch rejected: " + e.message);
             });
