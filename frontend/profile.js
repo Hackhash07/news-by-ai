@@ -122,7 +122,9 @@ async function loadProfile() {
         const streakData = await response.json();
         if (streakData && streakData.streak_days !== undefined) {
             state.profile.streak_days = streakData.streak_days;
-            state.profile.elo_score = streakData.elo_score;
+            if (streakData.elo_score !== undefined) {
+                state.profile.elo_score = streakData.elo_score;
+            }
         }
     } catch (e) {
         console.error("Failed to update streak", e);
