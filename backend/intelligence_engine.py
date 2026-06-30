@@ -60,7 +60,7 @@ def build_intelligence(title, summary, body=""):
     affected_assets = analysis.get("affected_assets", [])
     
     if affected_assets:
-        confidence = max([a.get("confidence", 50) for a in affected_assets])
+        confidence = int(max([a.get("confidence", 50) for a in affected_assets]))
     else:
         confidence = 50
     

@@ -6,7 +6,7 @@ class AffectedAsset(BaseModel):
     ticker: str
     asset_class: Literal["Equity", "Commodity", "Forex", "Crypto", "Fixed Income", "Index", "Unknown"]
     direction: Literal["Bullish", "Bearish", "Neutral"]
-    confidence: float = Field(ge=0.0, le=100.0) # Model is used to 0-100 scale based on previous prompt, keeping it to avoid breaking frontend logic.
+    confidence: int = Field(ge=0, le=100) # Model is used to 0-100 scale based on previous prompt, keeping it to avoid breaking frontend logic.
     reason: str
 
 class ConsensusDeviation(BaseModel):

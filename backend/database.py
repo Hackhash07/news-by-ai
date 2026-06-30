@@ -96,7 +96,7 @@ def save_article(
                             "news_id": news_id,
                             "ticker": a.get("ticker"),
                             "signal_direction": a.get("direction"),
-                            "confidence": a.get("confidence", 50.0),
+                            "confidence": int(a.get("confidence", 50)),
                             "signal_timestamp": data["created_at"]
                         }
                         try:
