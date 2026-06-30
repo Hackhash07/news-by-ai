@@ -74,3 +74,39 @@ def analyze_news(article, article_body=""):
     except Exception as e:
         print(f"OpenRouter/Instructor API Error: {e}")
         return None
+
+def generate_morning_brief(top_news_items):
+    from backend.schemas import MorningBrief
+    client = get_client()
+    if not client:
+        return {"error": "OPENROUTER_API_KEY missing"}
+
+    headlines_text = ""
+    for item in top_news_items:
+        title = item.get("title", "Unknown")
+        sentiment = item.get("sentiment", "Neutral")
+        importance = item.get("importance", 5)
+        headlines_text += f"- {title} (Sentiment: {sentiment}, Importance: {importance})\n"
+
+    prompt = f"""
+You are a market intelligence analyst. Here are today's top market-moving headlines with their AI analysis. 
+Generate a concise morning brief.
+Headlines:
+{headlines_text}
+"""
+    system_prompt = "Generate a concise morning brief. The headline must be one punchy 8-word market summary. The summary must be a 2-3 sentence overview of key market themes today, mentioning specific assets and directional bias. Be direct and confident, not vague."
+
+    try:
+        analysis = client.chat.completions.create(
+            model="nvidia/nemotron-3-ultra-550b-a55b:free",
+            response_model=MorningBrief,
+            max_retries=3,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return analysis.model_dump()
+    except Exception as e:
+        print(f"OpenRouter API Error in morning brief: {e}")
+        return {"error": str(e)}

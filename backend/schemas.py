@@ -34,3 +34,9 @@ class NewsAnalysis(BaseModel):
     portfolio_tags: list[str]
     watch_next: list[str]
     consensus_deviation: ConsensusDeviation
+
+class MorningBrief(BaseModel):
+    headline: str
+    summary: str
+    top_assets: list[str]
+    overall_sentiment: Literal["Bullish", "Bearish", "Mixed", "Cautious"]
