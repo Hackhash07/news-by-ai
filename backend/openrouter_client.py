@@ -48,8 +48,9 @@ market consensus expectations. If the article does not contain enough
 information to assess consensus, set direction to "Unknown" and 
 magnitude to "None".
 
-Use concise, evidence-based language. Avoid sensationalism. 
-Write for an audience of quantitative analysts.
+Use precise, evidence-based language, but be EXTREMELY DETAILED and COMPREHENSIVE. 
+Your `executive_summary`, `market_thesis`, `bull_case`, and `bear_case` MUST be at least 3-4 sentences long each. 
+Do NOT be brief. Provide deep, verbose, and highly analytical insights for a quantitative audience.
 """
 
 def analyze_news(article, article_body=""):
