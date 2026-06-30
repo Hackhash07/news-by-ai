@@ -51,7 +51,10 @@ def build_intelligence(title, summary, body=""):
         "headline": title,
         "category": initial_category
     }
-    analysis = analyze_news(article_dict, body) or {}
+    analysis = analyze_news(article_dict, body)
+    
+    if not analysis:
+        raise Exception("AI analysis failed (rate limit or API error). Article skipped to prevent saving raw HTML fallback.")
 
     category = initial_category
     sentiment = analysis.get("sentiment", "Neutral")
