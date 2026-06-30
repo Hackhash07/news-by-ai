@@ -78,7 +78,7 @@ def rebuild_lsh_from_db():
         
     try:
         # Fetch recent articles to populate LSH index (limit to last 500 to save memory)
-        response = supabase.table("news").select("link, content_signature").order('added_at', desc=True).limit(500).execute()
+        response = supabase.table("news").select("link, content_signature").order('created_at', desc=True).limit(500).execute()
         for row in response.data:
             if row.get("content_signature") and row.get("link"):
                 m = MinHash(num_perm=128, hashvalues=row["content_signature"])
@@ -213,7 +213,7 @@ def collect_news():
                         source_weight=weight,
                         source_tier=tier,
                         analysis_source=analysis_source,
-                        content_signature=list(m.hashvalues) # Store for LSH rebuild
+                        content_signature=[int(h) for h in m.hashvalues] # Cast np.uint64 to int for JSONB
                     )
                     
                     if inserted:
