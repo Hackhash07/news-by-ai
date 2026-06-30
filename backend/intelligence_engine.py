@@ -121,9 +121,9 @@ def build_intelligence(title, summary, body=""):
         "market_impact": market_impact,
         "assets": assets,
         "directions": directions,
-        "confidence": confidence,
+        "confidence": int(round(confidence * 100)),  # DB column is INTEGER, store as 0-100
         "time_horizon": time_horizon,
         "analysis": basic_analysis,
-        "structured_analysis": analysis,
+        "structured_analysis": analysis,  # Raw float confidence preserved here for frontend
         "added_at": now_iso()
     }
