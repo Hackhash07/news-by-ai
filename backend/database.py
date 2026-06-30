@@ -73,7 +73,7 @@ def save_article(
             "time_horizon": time_horizon,
             "analysis": analysis or "",
             "structured_analysis": structured_analysis if structured_analysis is not None else {},
-            "added_at": added_at or _utc_now_text(),
+            "created_at": added_at or _utc_now_text(),
             "source": source,
             "published_at": published_at,
             "image_url": image_url,
@@ -97,7 +97,7 @@ def save_article(
                             "ticker": a.get("ticker"),
                             "signal_direction": a.get("direction"),
                             "confidence": a.get("confidence", 50.0),
-                            "signal_timestamp": data["added_at"]
+                            "signal_timestamp": data["created_at"]
                         }
                         try:
                             supabase.table("signal_outcomes").insert(signal_data).execute()
