@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timezone
 
-from backend.news_analyzer import classify_article
+from backend.openrouter_client import analyze_news
 from backend.confidence_engine import calculate_confidence
 
 
@@ -15,18 +15,18 @@ def now_iso():
 # Deterministic Preprocessing
 # -----------------------------
 def guess_category(title, summary):
-    text = (title + " " + summary).lower()
-    if any(x in text for x in ["war", "strike", "attack", "israel", "lebanon", "ukraine", "russia", "china", "taiwan", "election", "sanction"]):
+    text = (title + " " + (summary or "")).lower()
+    if any(x in text for x in ["war", "missile", "treaty", "nato"]):
         return "Geopolitics"
-    if any(x in text for x in ["fed", "inflation", "cpi", "ppi", "rate", "interest", "earnings", "gdp", "employment", "jobs"]):
+    if any(x in text for x in ["earnings", "fed", "rate", "inflation", "stock"]):
         return "Finance"
-    if any(x in text for x in ["crypto", "bitcoin", "ethereum"]):
-        return "Crypto"
+    if any(x in text for x in ["ai", "chip", "software", "apple", "nvidia", "tech"]):
+        return "Technology"
     return "General"
 
 
 def extract_initial_assets(title, summary):
-    text = (title + " " + summary).lower()
+    text = (title + " " + (summary or "")).lower()
     assets = []
     if any(x in text for x in ["oil", "opec", "crude"]):
         assets.append("Crude Oil")
@@ -47,38 +47,35 @@ def build_intelligence(title, summary):
     initial_category = guess_category(title, summary)
     initial_assets = extract_initial_assets(title, summary)
     
-    analysis = classify_article(title, summary, initial_category, initial_assets)
+    article_dict = {
+        "headline": title,
+        "category": initial_category
+    }
+    analysis = analyze_news(article_dict) or {}
 
-    category = analysis.get("category", initial_category)
+    category = initial_category
     sentiment = analysis.get("sentiment", "Neutral")
-    
-    # Python assigns importance based on keyword hits implicitly or we can use the LLM's assessment
-    # The user wanted Importance determined by Python, but it's hard to give a 1-10 score reliably without AI.
-    # We will use a baseline Python score and let AI adjust it.
     importance = analysis.get("importance", 7)
+    confidence = analysis.get("confidence", 50)
     
-    # Calculate deterministic confidence
-    ai_probs = []
-    for asset in analysis.get("affected_assets", []):
-        if "probability" in asset:
-            ai_probs.append(asset["probability"])
-            
-    confidence = calculate_confidence(
-        importance=importance,
-        source="News Source", # We don't have source explicitly here, could pass it, but defaulting
-        ai_probabilities=ai_probs
-    )
+    # Map strict schema to DB schema
+    market_impact = analysis.get("market_impact", "Unknown")
+    assets = analysis.get("assets", initial_assets)
+    basic_analysis = analysis.get("basic_analysis", summary)
 
+    # Note: openrouter_client returns basic_analysis instead of structured_analysis.market_interpretation
+    # We will pass the whole analysis dict as structured_analysis so the frontend can display basic_analysis if it wants.
+    
     return {
         "category": category,
         "sentiment": sentiment,
         "importance": importance,
-        "market_impact": analysis.get("market_interpretation", "High Volatility"),
-        "assets": [a.get("name") for a in analysis.get("affected_assets", [])],
-        "directions": {a.get("name"): a.get("direction") for a in analysis.get("affected_assets", [])},
+        "market_impact": market_impact,
+        "assets": assets,
+        "directions": {},
         "confidence": confidence,
         "time_horizon": "Variable",
-        "analysis": analysis.get("summary", ""),
+        "analysis": basic_analysis,
         "structured_analysis": analysis,
         "added_at": now_iso()
     }

@@ -12,7 +12,7 @@ from backend.database import (
 )
 from backend.market_data import get_market_data
 from backend.news_collector import collect_news
-from backend.news_analyzer import generate_morning_brief
+from backend.openrouter_client import generate_morning_brief
 
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = BASE_DIR.parent / "frontend"
