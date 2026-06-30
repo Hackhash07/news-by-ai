@@ -62,21 +62,28 @@ def analyze_news(article, article_body=""):
     if article_body:
         content_payload += f"\n\nFull Article Body:\n{article_body}"
 
-    try:
-        # Instructor automatically handles retries and validation errors based on the Pydantic schema
-        analysis: NewsAnalysis = client.chat.completions.create(
-            model="meta-llama/llama-3.3-70b-instruct:free",
-            response_model=NewsAnalysis,
-            max_retries=3,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": content_payload}
-            ]
-        )
-        return analysis.model_dump()
-    except Exception as e:
-        print(f"OpenRouter/Instructor API Error: {e}")
-        return None
+    import time
+    
+    for attempt in range(3):
+        try:
+            # Instructor automatically handles retries and validation errors based on the Pydantic schema
+            analysis: NewsAnalysis = client.chat.completions.create(
+                model="google/gemini-2.0-flash-lite-preview-02-05:free",
+                response_model=NewsAnalysis,
+                max_retries=3,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": content_payload}
+                ]
+            )
+            return analysis.model_dump()
+        except Exception as e:
+            print(f"OpenRouter/Instructor API Error on attempt {attempt+1}: {e}")
+            if "429" in str(e) or "rate-limited" in str(e):
+                time.sleep(5) # wait 5 seconds before retrying
+                continue
+            return None
+    return None
 
 def generate_morning_brief(top_news_items):
     from backend.schemas import MorningBrief
@@ -101,7 +108,7 @@ Headlines:
 
     try:
         analysis = client.chat.completions.create(
-            model="meta-llama/llama-3.3-70b-instruct:free",
+            model="google/gemini-2.0-flash-lite-preview-02-05:free",
             response_model=MorningBrief,
             max_retries=3,
             messages=[
