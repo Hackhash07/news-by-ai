@@ -181,7 +181,7 @@ def refresh_news():
     # Trigger job manually using a background thread (so we don't mess with APScheduler's internal clock)
     def background_task():
         try:
-            collect_news()
+            collect_news(force=True)
         except Exception as e:
             print(f"Error in background news collection: {e}")
 

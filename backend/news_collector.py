@@ -138,9 +138,13 @@ def log_job_end(job_id, articles_processed, errors, status="completed"):
     except Exception as e:
         print(f"Error in log_job_end: {e}")
 
-def collect_news():
-    if not acquire_refresh_lock():
-        return {"status": "conflict", "error": "Refresh already in progress"}
+def collect_news(force=False):
+    if not force:
+        if not acquire_refresh_lock():
+            print("Refresh lock active. Aborting collect_news.")
+            return {"status": "conflict", "error": "Refresh already in progress"}
+    else:
+        print("Force mode enabled. Skipping lock check.")
     
     # Ensure LSH index is rebuilt on first run
     rebuild_lsh_from_db()
