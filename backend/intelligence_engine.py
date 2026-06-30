@@ -59,20 +59,22 @@ def build_intelligence(title, summary):
     confidence = analysis.get("confidence", 50)
     
     # Map strict schema to DB schema
-    market_impact = analysis.get("market_impact", "Unknown")
-    assets = analysis.get("assets", initial_assets)
-    basic_analysis = analysis.get("basic_analysis", summary)
-
-    # Note: openrouter_client returns basic_analysis instead of structured_analysis.market_interpretation
-    # We will pass the whole analysis dict as structured_analysis so the frontend can display basic_analysis if it wants.
+    market_impact = analysis.get("market_thesis", "Unknown")
     
+    # Extract asset names and directions from affected_assets
+    affected_assets = analysis.get("affected_assets", [])
+    assets = [a.get("asset") for a in affected_assets if a.get("asset")] or initial_assets
+    directions = {a.get("asset"): a.get("direction") for a in affected_assets if a.get("asset") and a.get("direction")}
+    
+    basic_analysis = analysis.get("executive_summary", summary)
+
     return {
         "category": category,
         "sentiment": sentiment,
         "importance": importance,
         "market_impact": market_impact,
         "assets": assets,
-        "directions": {},
+        "directions": directions,
         "confidence": confidence,
         "time_horizon": "Variable",
         "analysis": basic_analysis,

@@ -29,18 +29,42 @@ def analyze_news(article):
     category = article.get("category", "")
 
     prompt = f"""
+Write like a senior institutional macro strategist. Use concise, evidence-based language. Avoid sensationalism.
 Analyze the following news article.
+
 Headline: {headline}
 Category: {category}
 
 Return STRICT JSON exactly in this format, with no other text:
 {{
   "sentiment": "Positive, Negative, or Neutral",
-  "importance": int (1-10),
+  "importance": int (1-10, where 10 is global market shock),
+  "executive_summary": "string (1-2 sentences summarizing the core macro impact)",
+  "market_thesis": "string (The core thesis on how this shifts the macro landscape)",
+  "why_this_matters": "string (Why institutional investors care about this)",
+  "affected_assets": [
+    {{
+      "asset": "string (e.g. S&P 500, Gold, US Dollar, 10Y Treasury)",
+      "direction": "Bullish, Bearish, or Neutral",
+      "confidence": int (0-100),
+      "reason": "string (Concise reason for this direction)"
+    }}
+  ],
+  "affected_sectors": ["string", "string"],
+  "first_order_effects": ["string", "string"],
+  "second_order_effects": ["string", "string"],
+  "historical_parallels": ["string", "string"],
+  "bull_case": "string (What happens if this is highly positive/successful)",
+  "bear_case": "string (What happens if this goes poorly/fails)",
+  "key_risks": ["string", "string"],
+  "time_horizon": {{
+      "intraday": "string (Immediate reaction)",
+      "short_term": "string (1-4 weeks)",
+      "medium_term": "string (1-6 months)"
+  }},
   "confidence": int (0-100),
-  "market_impact": "string (Macro view on the market reaction)",
-  "assets": ["Asset1", "Asset2"],
-  "basic_analysis": "string (Summary of event)"
+  "portfolio_tags": ["string", "string"],
+  "watch_next": ["string", "string"]
 }}
 """
 

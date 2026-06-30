@@ -2411,11 +2411,11 @@ import { supabase } from "./supabase.js";
         const penalty =
           Math.round(
             (roomData.initial_worth || 100) *
-              0.1 *
-              (myState.currentQuestion &&
+            0.1 *
+            (myState.currentQuestion &&
               myState.currentQuestion.difficulty === "hard"
-                ? 2
-                : 1),
+              ? 2
+              : 1),
           ) || 10;
         myState.cash -= penalty;
         myState.lastFeedback = {
@@ -2903,8 +2903,8 @@ import { supabase } from "./supabase.js";
     const calcPL = (team) =>
       team.initialTotalWorth
         ? ((team.totalWorth - team.initialTotalWorth) /
-            team.initialTotalWorth) *
-          100
+          team.initialTotalWorth) *
+        100
         : 0;
     const plA = calcPL(teamAData);
     const plB = calcPL(teamBData);
@@ -3182,7 +3182,7 @@ import { supabase } from "./supabase.js";
       loser_team: isTie
         ? "TIE"
         : state.teams[teamAData.totalWorth >= teamBData.totalWorth ? 1 : 0]
-            .name,
+          .name,
       winner_worth: formatINR(winner.totalWorth),
       loser_worth: formatINR(loserData.totalWorth),
       margin: formatINR(winner.totalWorth - loserData.totalWorth),
