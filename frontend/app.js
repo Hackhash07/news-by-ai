@@ -603,12 +603,24 @@ function renderCards(articles) {
                 <h2 class="card-headline">${escapeHtml(a.title)}</h2>
                 <div class="score-row">
                     <div class="score-pill ai"><span class="sp-label">AI Score</span><span class="sp-val">${a.ai_score}</span></div>
-                    <div class="score-pill"><span class="sp-label">Importance</                      if (
+                    <div class="score-pill"><span class="sp-label">Importance</span><span class="sp-val">${a.importance}/10</span></div>
+                    <div class="score-pill"><span class="sp-label">Confidence</span><span class="sp-val">${a.confidence}%</span></div>
+                </div>
+                <div class="card-div"></div>
+                <div class="card-data">
+                    <div><div class="data-label">Category</div><div class="data-val">${escapeHtml(a.category)}</div></div>
+                    <div><div class="data-label">Added</div><div class="data-val">${formatAddedAt(a.added_at)}</div></div>
+                    <div><div class="data-label">Assets</div><div class="data-val">${assets.length ? escapeHtml(assets.join(", ")) : "—"}</div></div>
+                    <div><div class="data-label">Market Impact</div><div class="data-val">${escapeHtml(a.market_impact || "Neutral")}</div></div>
+                </div>
+                <div class="ai-note">
+                    ${(() => {
+                      if (
                         a.structured_analysis &&
                         a.structured_analysis.market_thesis
                       ) {
                         const sa = a.structured_analysis;
-                        
+
                         const assetTags = (sa.affected_assets || [])
                           .map((ast) => {
                             const color =
@@ -621,10 +633,22 @@ function renderCards(articles) {
                                     <strong>${escapeHtml(ast.asset)}</strong> <span style="color:${color}">(${escapeHtml(ast.direction)} ${ast.confidence || 50}%)</span><br>
                                     <span style="font-size:12px; color:var(--muted);">${escapeHtml(ast.reason || "")}</span>
                                 </div>`;
-                          }).join("");
+                          })
+                          .join("");
 
-                        const renderList = (arr) => arr && arr.length ? `<ul style="margin:0; padding-left: 15px; color:var(--muted); font-size:13px;">${arr.map(i => `<li>${escapeHtml(i)}</li>`).join("")}</ul>` : '';
-                        const renderTags = (arr) => arr && arr.length ? arr.map(i => `<span style="display:inline-block; padding:2px 6px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:4px; font-size:11px; margin:2px 4px 2px 0;">${escapeHtml(i)}</span>`).join("") : '';
+                        const renderList = (arr) =>
+                          arr && arr.length
+                            ? `<ul style="margin:0; padding-left: 15px; color:var(--muted); font-size:13px;">${arr.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul>`
+                            : "";
+                        const renderTags = (arr) =>
+                          arr && arr.length
+                            ? arr
+                                .map(
+                                  (i) =>
+                                    `<span style="display:inline-block; padding:2px 6px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:4px; font-size:11px; margin:2px 4px 2px 0;">${escapeHtml(i)}</span>`,
+                                )
+                                .join("")
+                            : "";
 
                         return `
                                 <div class="ai-note-header"><span class="ai-chip">Institutional Research</span></div>
@@ -641,11 +665,14 @@ function renderCards(articles) {
                                     <summary>Affected Assets & Sectors</summary>
                                     <div class="ai-note-text">
                                       ${assetTags || "No specific assets targeted."}
-                                      ${sa.affected_sectors && sa.affected_sectors.length ? `<div style="margin-top:8px;"><strong>Sectors:</strong><br>${renderTags(sa.affected_sectors)}</div>` : ''}
+                                      ${sa.affected_sectors && sa.affected_sectors.length ? `<div style="margin-top:8px;"><strong>Sectors:</strong><br>${renderTags(sa.affected_sectors)}</div>` : ""}
                                     </div>
                                 </details>
 
-                                ${sa.first_order_effects && sa.first_order_effects.length ? `
+                                ${
+                                  sa.first_order_effects &&
+                                  sa.first_order_effects.length
+                                    ? `
                                 <details class="ai-accordion">
                                     <summary>Impact Chain</summary>
                                     <div class="ai-note-text">
@@ -654,9 +681,13 @@ function renderCards(articles) {
                                         <strong style="display:block; margin-top:8px;">Second Order Effects:</strong>
                                         ${renderList(sa.second_order_effects)}
                                     </div>
-                                </details>` : ""}
+                                </details>`
+                                    : ""
+                                }
 
-                                ${sa.bull_case || sa.bear_case ? `
+                                ${
+                                  sa.bull_case || sa.bear_case
+                                    ? `
                                 <details class="ai-accordion">
                                     <summary>Scenarios & Risks</summary>
                                     <div class="ai-note-text">
@@ -664,9 +695,13 @@ function renderCards(articles) {
                                         ${sa.bear_case ? `<div style="margin-bottom:8px;"><strong style="color:var(--red)">Bear Case:</strong> ${escapeHtml(sa.bear_case)}</div>` : ""}
                                         ${sa.key_risks && sa.key_risks.length ? `<strong>Key Risks:</strong> ${renderList(sa.key_risks)}` : ""}
                                     </div>
-                                </details>` : ""}
+                                </details>`
+                                    : ""
+                                }
                                 
-                                ${sa.time_horizon ? `
+                                ${
+                                  sa.time_horizon
+                                    ? `
                                 <details class="ai-accordion">
                                     <summary>Time Horizon</summary>
                                     <div class="ai-note-text" style="display:grid; grid-template-columns:1fr; gap:6px;">
@@ -674,7 +709,9 @@ function renderCards(articles) {
                                         ${sa.time_horizon.short_term ? `<div><span style="color:var(--gold); font-size:11px;">SHORT TERM:</span> ${escapeHtml(sa.time_horizon.short_term)}</div>` : ""}
                                         ${sa.time_horizon.medium_term ? `<div><span style="color:var(--gold); font-size:11px;">MEDIUM TERM:</span> ${escapeHtml(sa.time_horizon.medium_term)}</div>` : ""}
                                     </div>
-                                </details>` : ""}
+                                </details>`
+                                    : ""
+                                }
 
                                 <div style="margin-top:12px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.05);">
                                   ${sa.watch_next && sa.watch_next.length ? `<div><strong style="font-size:11px; color:var(--muted); text-transform:uppercase;">Watch Next:</strong><br>${renderTags(sa.watch_next)}</div>` : ""}
