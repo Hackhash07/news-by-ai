@@ -120,8 +120,8 @@ def log_job_start():
         res = supabase.table("job_log").insert(data).execute()
         if res.data:
             return res.data[0]["id"]
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Error in log_job_start: {e}")
     return None
 
 def log_job_end(job_id, articles_processed, errors, status="completed"):
@@ -135,8 +135,8 @@ def log_job_end(job_id, articles_processed, errors, status="completed"):
             "status": status
         }
         supabase.table("job_log").update(data).eq("id", job_id).execute()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Error in log_job_end: {e}")
 
 def collect_news():
     if not acquire_refresh_lock():
@@ -232,6 +232,12 @@ def collect_news():
         
     duration = round(time.time() - start_time, 2)
     log_job_end(job_id, inserted_count, failed_count)
+    log_refresh(
+        duration_seconds=duration,
+        inserted_count=inserted_count,
+        duplicate_count=duplicates_skipped,
+        failed_count=failed_count
+    )
     
     return {
         "status": "success",
