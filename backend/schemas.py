@@ -1,12 +1,17 @@
 from pydantic import BaseModel, Field
 from typing import Literal
 
+VALID_CATEGORIES = Literal[
+    "Crypto", "Macro", "Equities", "Forex", "Commodities",
+    "Fixed Income", "Monetary Policy", "Geopolitics", "Politics"
+]
+
 class AffectedAsset(BaseModel):
     asset: str
     ticker: str
     asset_class: Literal["Equity", "Commodity", "Forex", "Crypto", "Fixed Income", "Index", "Unknown"]
     direction: Literal["Bullish", "Bearish", "Neutral"]
-    confidence: int = Field(ge=0, le=100) # Model is used to 0-100 scale based on previous prompt, keeping it to avoid breaking frontend logic.
+    confidence: float = Field(ge=0.0, le=1.0)
     reason: str
 
 class ConsensusDeviation(BaseModel):
@@ -22,6 +27,8 @@ class TimeHorizon(BaseModel):
 class NewsAnalysis(BaseModel):
     sentiment: Literal["Positive", "Negative", "Neutral"]
     importance: int = Field(ge=1, le=10)
+    confidence: float = Field(ge=0.0, le=1.0)
+    category: VALID_CATEGORIES
     executive_summary: str
     market_thesis: str
     affected_assets: list[AffectedAsset]
@@ -40,3 +47,4 @@ class MorningBrief(BaseModel):
     summary: str
     top_assets: list[str]
     overall_sentiment: Literal["Bullish", "Bearish", "Mixed", "Cautious"]
+
