@@ -178,13 +178,18 @@ def refresh_news():
     if not provided_secret or provided_secret != ADMIN_SECRET:
         return jsonify({"error": "Unauthorized"}), 401
 
-    # Trigger job manually
-    try:
-        scheduler.modify_job('news_collection_job', next_run_time=datetime.now())
-    except Exception as e:
-        print(f"Error triggering job: {e}")
+    # Trigger job manually using a background thread (so we don't mess with APScheduler's internal clock)
+    def background_task():
+        try:
+            collect_news()
+        except Exception as e:
+            print(f"Error in background news collection: {e}")
+
+    import threading
+    thread = threading.Thread(target=background_task)
+    thread.start()
     
-    return jsonify({"status": "triggered", "message": "News collection started in APScheduler"}), 202
+    return jsonify({"status": "triggered", "message": "News collection started in background thread"}), 202
 
 # Keep the old endpoint for backwards compatibility, but secure it with the new secret
 @app.route("/update-news")
