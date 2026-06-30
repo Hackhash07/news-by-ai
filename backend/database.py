@@ -45,6 +45,10 @@ def save_article(
     source=None,
     published_at=None,
     image_url=None,
+    source_weight=1.0,
+    source_tier='secondary',
+    analysis_source='headline_only',
+    content_signature=None,
 ):
     if not supabase:
         print("Warning: Supabase not configured. Cannot save article.")
@@ -69,12 +73,37 @@ def save_article(
             "time_horizon": time_horizon,
             "analysis": analysis or "",
             "structured_analysis": structured_analysis if structured_analysis is not None else {},
+            "added_at": added_at or _utc_now_text(),
             "source": source,
             "published_at": published_at,
-            "image_url": image_url
+            "image_url": image_url,
+            "source_weight": source_weight,
+            "source_tier": source_tier,
+            "analysis_source": analysis_source,
+            "content_signature": content_signature
         }
         
-        supabase.table("news").insert(data).execute()
+        res = supabase.table("news").insert(data).execute()
+        
+        # Log to signal_outcomes for quant backtesting
+        if res.data and len(res.data) > 0:
+            news_id = res.data[0].get("id")
+            if assets and structured_analysis:
+                affected_assets = structured_analysis.get("affected_assets", [])
+                for a in affected_assets:
+                    if a.get("direction") != "Neutral" and a.get("ticker") != "UNKNOWN":
+                        signal_data = {
+                            "news_id": news_id,
+                            "ticker": a.get("ticker"),
+                            "signal_direction": a.get("direction"),
+                            "confidence": a.get("confidence", 50.0),
+                            "signal_timestamp": data["added_at"]
+                        }
+                        try:
+                            supabase.table("signal_outcomes").insert(signal_data).execute()
+                        except Exception as e:
+                            print(f"Error saving signal outcome: {e}")
+                            
         return True
     except Exception as e:
         print(f"Error saving article {link}: {e}")

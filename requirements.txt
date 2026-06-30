@@ -7,3 +7,10 @@ feedparser
 ollama
 python-dotenv
 supabase
+instructor
+pydantic
+trafilatura
+apscheduler
+datasketch
+yfinance
+openai

@@ -135,6 +135,35 @@ def news():
     return jsonify(articles)
 
 
+# Initialize APScheduler for background jobs
+# WARNING: Render free tier spins down after 15 minutes of inactivity.
+# The APScheduler will die with it. To prevent this, either upgrade to a paid 
+# Render instance, or keep pinging the /update-news POST endpoint via an external 
+# cron job (like cron-job.org) to keep the dyno awake.
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+from datetime import datetime
+from backend.outcome_tracker import fetch_and_fill_outcomes
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(
+    func=collect_news,
+    trigger=IntervalTrigger(minutes=30),
+    id='news_collection_job',
+    name='Collect and analyze news every 30 minutes',
+    replace_existing=True,
+    max_instances=1
+)
+scheduler.add_job(
+    func=fetch_and_fill_outcomes,
+    trigger=IntervalTrigger(hours=1),
+    id='outcome_tracker_job',
+    name='Fetch yfinance data and fill backtest outcomes',
+    replace_existing=True,
+    max_instances=1
+)
+scheduler.start()
+
 @app.route("/api/admin/refresh-news", methods=["POST", "GET"])
 def refresh_news():
     auth_header = request.headers.get("Authorization", "")
@@ -149,22 +178,45 @@ def refresh_news():
     if not provided_secret or provided_secret != ADMIN_SECRET:
         return jsonify({"error": "Unauthorized"}), 401
 
-    # Run in background to prevent Gunicorn timeout (30s) during heavy AI generation
-    def background_task():
-        try:
-            collect_news()
-        except Exception as e:
-            print(f"Error in background news collection: {e}")
-
-    thread = threading.Thread(target=background_task)
-    thread.start()
+    # Trigger job manually
+    try:
+        scheduler.modify_job('news_collection_job', next_run_time=datetime.now())
+    except Exception as e:
+        print(f"Error triggering job: {e}")
     
-    return jsonify({"status": "processing", "message": "News collection started in background"}), 202
+    return jsonify({"status": "triggered", "message": "News collection started in APScheduler"}), 202
 
 # Keep the old endpoint for backwards compatibility, but secure it with the new secret
 @app.route("/update-news")
 def update_news():
     return refresh_news()
+
+@app.route("/api/signal-accuracy")
+def api_signal_accuracy():
+    try:
+        from backend.database import supabase
+        response = supabase.table("signal_outcomes").select("outcome_1h").execute()
+        
+        if not response.data:
+            return jsonify({"error": "No signals tracked yet"}), 404
+            
+        total = len(response.data)
+        correct = len([r for r in response.data if r.get("outcome_1h") == "Correct"])
+        incorrect = len([r for r in response.data if r.get("outcome_1h") == "Incorrect"])
+        neutral = len([r for r in response.data if r.get("outcome_1h") == "Neutral"])
+        
+        accuracy = (correct / (correct + incorrect)) if (correct + incorrect) > 0 else 0
+        
+        return jsonify({
+            "total_signals": total,
+            "evaluated_signals": correct + incorrect,
+            "accuracy_1h": round(accuracy, 3),
+            "correct": correct,
+            "incorrect": incorrect,
+            "neutral": neutral
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/chat/rooms")

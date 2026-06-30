@@ -1,159 +1,76 @@
 import os
-import json
-import requests
-import re
+import instructor
+import openai
+from backend.schemas import NewsAnalysis
 
-def extract_json(text):
-    if not text:
-        return None
-    text = text.strip()
-    try:
-        return json.loads(text)
-    except Exception:
-        pass
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
-        return None
-    try:
-        return json.loads(match.group(0))
-    except Exception:
-        return None
-
-def analyze_news(article):
+# Patch the OpenAI client to use OpenRouter with instructor
+def get_client():
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         print("OPENROUTER_API_KEY missing")
         return None
+        
+    return instructor.patch(openai.OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key
+    ))
+
+SYSTEM_PROMPT = """
+You are a senior institutional macro strategist at a tier-1 hedge fund.
+Analyze the provided financial news article and return ONLY a valid JSON 
+object with no additional text, markdown, or commentary.
+
+IMPORTANCE SCORE RUBRIC (you must follow this exactly):
+9-10: Central bank rate decision, major geopolitical shock, systemic 
+      financial crisis event, sovereign default
+7-8:  Earnings surprise >10%, major M&A announcement, significant 
+      regulatory action, war escalation
+5-6:  Fed/ECB speech, major macro data release (CPI, NFP, GDP), 
+      corporate guidance revision
+3-4:  Analyst upgrade/downgrade, sector rotation signal, minor data print
+1-2:  Routine commentary, reiteration of known policy, scheduled 
+      low-impact event
+
+TICKER INSTRUCTION: For every affected asset, provide the primary 
+exchange ticker symbol used on Yahoo Finance or Bloomberg. 
+Examples: Gold = "GC=F", S&P500 = "^GSPC", EUR/USD = "EURUSD=X", 
+Apple = "AAPL", Bitcoin = "BTC-USD". If you cannot determine the 
+ticker with high confidence, use "UNKNOWN".
+
+CONSENSUS DEVIATION: Assess whether this event deviates from current 
+market consensus expectations. If the article does not contain enough 
+information to assess consensus, set direction to "Unknown" and 
+magnitude to "None".
+
+Use concise, evidence-based language. Avoid sensationalism. 
+Write for an audience of quantitative analysts.
+"""
+
+def analyze_news(article, article_body=""):
+    client = get_client()
+    if not client:
+        return None
 
     headline = article.get("headline", "")
     category = article.get("category", "")
-
-    prompt = f"""
-Write like a senior institutional macro strategist. Use concise, evidence-based language. Avoid sensationalism.
-Analyze the following news article.
-
-Headline: {headline}
-Category: {category}
-
-Return STRICT JSON exactly in this format, with no other text:
-{{
-  "sentiment": "Positive, Negative, or Neutral",
-  "importance": int (1-10, where 10 is global market shock),
-  "executive_summary": "string (1-2 sentences summarizing the core macro impact)",
-  "market_thesis": "string (The core thesis on how this shifts the macro landscape)",
-  "why_this_matters": "string (Why institutional investors care about this)",
-  "affected_assets": [
-    {{
-      "asset": "string (e.g. S&P 500, Gold, US Dollar, 10Y Treasury)",
-      "direction": "Bullish, Bearish, or Neutral",
-      "confidence": int (0-100),
-      "reason": "string (Concise reason for this direction)"
-    }}
-  ],
-  "affected_sectors": ["string", "string"],
-  "first_order_effects": ["string", "string"],
-  "second_order_effects": ["string", "string"],
-  "historical_parallels": ["string", "string"],
-  "bull_case": "string (What happens if this is highly positive/successful)",
-  "bear_case": "string (What happens if this goes poorly/fails)",
-  "key_risks": ["string", "string"],
-  "time_horizon": {{
-      "intraday": "string (Immediate reaction)",
-      "short_term": "string (1-4 weeks)",
-      "medium_term": "string (1-6 months)"
-  }},
-  "confidence": int (0-100),
-  "portfolio_tags": ["string", "string"],
-  "watch_next": ["string", "string"]
-}}
-"""
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
     
-    payload = {
-        "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
-        "messages": [
-            {"role": "user", "content": prompt}
-        ]
-    }
-
-    def make_request():
-        resp = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-        return data["choices"][0]["message"]["content"]
+    # If full body is available, use it. Otherwise fallback to headline only.
+    content_payload = f"Headline: {headline}\nCategory: {category}"
+    if article_body:
+        content_payload += f"\n\nFull Article Body:\n{article_body}"
 
     try:
-        content = make_request()
-        parsed = extract_json(content)
-        if parsed:
-            return parsed
+        # Instructor automatically handles retries and validation errors based on the Pydantic schema
+        analysis: NewsAnalysis = client.chat.completions.create(
+            model="nvidia/nemotron-3-ultra-550b-a55b:free",
+            response_model=NewsAnalysis,
+            max_retries=3,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": content_payload}
+            ]
+        )
+        return analysis.model_dump()
     except Exception as e:
-        print(f"OpenRouter API Error (first attempt): {e}")
-
-    # Retry once
-    try:
-        print("Retrying OpenRouter request...")
-        content = make_request()
-        parsed = extract_json(content)
-        if parsed:
-            return parsed
-    except Exception as e:
-        print(f"OpenRouter API Error (retry): {e}")
-
-    return None
-
-def generate_morning_brief(top_news_items):
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        return {"error": "OPENROUTER_API_KEY missing"}
-
-    headlines_text = ""
-    for item in top_news_items:
-        title = item.get("title", "Unknown")
-        sentiment = item.get("sentiment", "Neutral")
-        importance = item.get("importance", 5)
-        headlines_text += f"- {title} (Sentiment: {sentiment}, Importance: {importance})\n"
-
-    prompt = f"""
-You are a market intelligence analyst. Here are today's top market-moving headlines with their AI analysis. Generate a concise morning brief in exactly this JSON format:
-{{
-  "headline": "one punchy 8-word market summary for today",
-  "summary": "2-3 sentence overview of key market themes today, mentioning specific assets and directional bias. Be direct and confident, not vague.",
-  "top_assets": ["NIFTY", "BTC", "Gold"],
-  "overall_sentiment": "Bullish|Bearish|Mixed|Cautious"
-}}
-
-Headlines:
-{headlines_text}
-
-Return ONLY the JSON, no other text.
-"""
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-
-    payload = {
-        "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
-        "messages": [
-            {"role": "user", "content": prompt}
-        ]
-    }
-
-    try:
-        resp = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-        content = data["choices"][0]["message"]["content"]
-        parsed = extract_json(content)
-        if parsed:
-            return parsed
-        return {"error": "Failed to parse JSON from OpenRouter"}
-    except Exception as e:
-        print(f"OpenRouter API Error in morning brief: {e}")
-        return {"error": str(e)}
+        print(f"OpenRouter/Instructor API Error: {e}")
+        return None

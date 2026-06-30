@@ -43,7 +43,7 @@ def extract_initial_assets(title, summary):
 # -----------------------------
 # Main Intelligence Builder
 # -----------------------------
-def build_intelligence(title, summary):
+def build_intelligence(title, summary, body=""):
     initial_category = guess_category(title, summary)
     initial_assets = extract_initial_assets(title, summary)
     
@@ -51,18 +51,23 @@ def build_intelligence(title, summary):
         "headline": title,
         "category": initial_category
     }
-    analysis = analyze_news(article_dict) or {}
+    analysis = analyze_news(article_dict, body) or {}
 
     category = initial_category
     sentiment = analysis.get("sentiment", "Neutral")
     importance = analysis.get("importance", 7)
-    confidence = analysis.get("confidence", 50)
+    
+    affected_assets = analysis.get("affected_assets", [])
+    
+    if affected_assets:
+        confidence = max([a.get("confidence", 50) for a in affected_assets])
+    else:
+        confidence = 50
     
     # Map strict schema to DB schema
     market_impact = analysis.get("market_thesis", "Unknown")
     
     # Extract asset names and directions from affected_assets
-    affected_assets = analysis.get("affected_assets", [])
     assets = [a.get("asset") for a in affected_assets if a.get("asset")] or initial_assets
     directions = {a.get("asset"): a.get("direction") for a in affected_assets if a.get("asset") and a.get("direction")}
     
