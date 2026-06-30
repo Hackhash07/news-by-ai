@@ -129,7 +129,10 @@ def news():
             "confidence": row["confidence"],
             "time_horizon": row["time_horizon"],
             "analysis": row["analysis"],
+            "structured_analysis": safe_json_loads(row.get("structured_analysis"), {}),
             "added_at": row["added_at"],
+            "bullish_votes": row.get("bullish_votes") or 0,
+            "bearish_votes": row.get("bearish_votes") or 0,
         })
 
     return jsonify(articles)
