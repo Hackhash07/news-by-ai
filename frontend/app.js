@@ -747,7 +747,7 @@ function renderCards(articles) {
 // ── RENDER: DASHBOARD ─────────────────────────────────────────────────
 function renderDashboard() {
   const filtered = getFilteredArticles().sort(
-    (a, b) => b.ai_score - a.ai_score,
+    (a, b) => new Date(b.added_at).getTime() - new Date(a.added_at).getTime(),
   );
   renderHero(filtered);
   renderSignalStrip(filtered);
