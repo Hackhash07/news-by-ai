@@ -355,12 +355,18 @@ function getCategoryIcon(category) {
   const map = {
     Finance: "💰",
     Geopolitics: "🌐",
+    Geopolitical: "🌐",
     Technology: "💻",
     Energy: "⚡",
     Markets: "📈",
     Economy: "🏦",
     Commodities: "🛢️",
     Crypto: "₿",
+    Macro: "🏦",
+    Equities: "📈",
+    Forex: "💱",
+    "Fixed Income": "🏛️",
+    "Monetary Policy": "🏛️",
   };
   return map[category] || "📰";
 }
@@ -604,7 +610,19 @@ function renderCards(articles) {
                 <div class="score-row">
                     <div class="score-pill ai"><span class="sp-label">AI Score</span><span class="sp-val">${a.ai_score}</span></div>
                     <div class="score-pill"><span class="sp-label">Importance</span><span class="sp-val">${a.importance}/10</span></div>
-                    <div class="score-pill"><span class="sp-label">Confidence</span><span class="sp-val">${a.confidence}%</span></div>
+                    ${(() => {
+                      const c = a.structured_analysis?.confidence ?? a.confidence;
+                      const cf = parseFloat(c);
+                      if (!Number.isFinite(cf) || cf < 0 || cf > 1) {
+                        return `<div class="score-pill"><span class="sp-label">Confidence</span><span class="sp-val">—</span></div>`;
+                      }
+                      let confStyle = '';
+                      if (cf < 0.5) confStyle = 'background:rgba(245,158,11,0.15); border-color:rgba(245,158,11,0.4); color:#f59e0b;';
+                      else if (cf < 0.75) confStyle = 'background:rgba(148,163,184,0.15); border-color:rgba(148,163,184,0.4); color:#94a3b8;';
+                      else if (cf < 0.9) confStyle = '';
+                      else confStyle = 'background:rgba(16,185,129,0.15); border-color:rgba(16,185,129,0.4); color:#10b981;';
+                      return `<div class="score-pill" style="${confStyle}"><span class="sp-label">Confidence</span><span class="sp-val">${Math.round(cf * 100)}%</span></div>`;
+                    })()}
                 </div>
                 <div class="card-div"></div>
                 <div class="card-data">
@@ -654,10 +672,18 @@ function renderCards(articles) {
                                 <div class="ai-note-header"><span class="ai-chip">Institutional Research</span></div>
                                 
                                 <details class="ai-accordion" open>
-                                    <summary>Thesis & Summary</summary>
+                                    <summary>Summary</summary>
                                     <div class="ai-note-text">
-                                      <p style="margin-top:0;"><strong>Executive Summary:</strong> ${escapeHtml(sa.executive_summary || "")}</p>
-                                      <p style="margin-bottom:0;"><strong>Market Thesis:</strong> ${escapeHtml(sa.market_thesis || "")}</p>
+                                      <p style="margin:0 0 4px 0; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">What happened — factual record</p>
+                                      <p style="margin-top:0;">${escapeHtml(sa.executive_summary || "")}</p>
+                                    </div>
+                                </details>
+                                
+                                <details class="ai-accordion" open>
+                                    <summary>Market Thesis</summary>
+                                    <div class="ai-note-text">
+                                      <p style="margin:0 0 4px 0; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">Analytical interpretation</p>
+                                      <p style="margin-top:0;">${escapeHtml(sa.market_thesis || "")}</p>
                                     </div>
                                 </details>
                                 
@@ -719,9 +745,9 @@ function renderCards(articles) {
                                 </div>
                             `;
                       } else {
-                        // Keep legacy fallback for older articles
+                        // Keep fallback for older articles
                         return `
-                                <div class="ai-note-header"><span class="ai-chip">Legacy Analysis</span></div>
+                                <div class="ai-note-header"><span class="ai-chip">Summary</span></div>
                                 <p class="ai-note-text">${escapeHtml(a.analysis || "Analysis unavailable.")}</p>
                             `;
                       }
