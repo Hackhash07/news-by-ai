@@ -367,6 +367,7 @@ function getCategoryIcon(category) {
     Forex: "💱",
     "Fixed Income": "🏛️",
     "Monetary Policy": "🏛️",
+    "Politics": "🏛️",
   };
   return map[category] || "📰";
 }
