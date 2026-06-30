@@ -80,29 +80,3 @@ def build_intelligence(title, summary):
         "added_at": now_iso()
     }
 
-# -----------------------------
-# Basic Intelligence Builder (Low Importance)
-# -----------------------------
-def build_basic_intelligence(title, summary):
-    category = guess_category(title, summary)
-    assets = extract_initial_assets(title, summary)
-    
-    return {
-        "category": category,
-        "sentiment": "Neutral",
-        "importance": 3,
-        "market_impact": "Low Impact",
-        "assets": assets,
-        "directions": {},
-        "confidence": 40,
-        "time_horizon": "Unknown",
-        "analysis": summary or "This article was saved for context but did not meet the importance threshold for deep AI analysis.",
-        "structured_analysis": {
-            "summary": summary,
-            "market_interpretation": "Low immediate market impact anticipated.",
-            "affected_assets": [],
-            "historical_context": None,
-            "invalidation_criteria": []
-        },
-        "added_at": now_iso()
-    }

@@ -3,26 +3,14 @@ import time
 import re
 
 from backend.database import save_article, acquire_refresh_lock, release_refresh_lock, log_refresh, get_existing_links, get_articles
-from backend.intelligence_engine import build_intelligence, build_basic_intelligence
+from backend.intelligence_engine import build_intelligence
 
 RSS_FEEDS = [
     "https://feeds.bbci.co.uk/news/rss.xml",
     "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
 ]
 
-IMPORTANT_KEYWORDS = [
-    "fed", "inflation", "cpi", "ppi", "rate", "interest", "war", "strike", "attack",
-    "israel", "lebanon", "ukraine", "russia", "china", "taiwan", "election",
-    "tariff", "sanction", "earnings", "gdp", "employment", "jobs", "sec",
-    "bitcoin", "crypto", "opec", "oil", "gold", "central bank", "powell"
-]
 
-def is_high_importance(title, summary):
-    text = (title + " " + summary).lower()
-    for kw in IMPORTANT_KEYWORDS:
-        if re.search(r'\b' + kw + r'\b', text):
-            return True
-    return False
 
 def jaccard_similarity(str1, str2):
     a = set(re.findall(r'\w+', str1.lower()))
@@ -99,16 +87,8 @@ def collect_news():
                 continue
                 
             try:
-                if is_high_importance(title, summary):
-                    if articles_sent_to_ai >= 1:
-                        print(f"Skipping '{title}' to prevent worker timeout (max 1 AI call per run)")
-                        continue
-                        
-                    articles_sent_to_ai += 1
-                    intelligence = build_intelligence(title, summary)
-                else:
-                    articles_saved_basic += 1
-                    intelligence = build_basic_intelligence(title, summary)
+                articles_sent_to_ai += 1
+                intelligence = build_intelligence(title, summary)
                 
                 inserted = save_article(
                     title=title,
@@ -130,7 +110,7 @@ def collect_news():
                 
                 if inserted:
                     inserted_count += 1
-                    print(f"Inserted: {title} (AI: {is_high_importance(title, summary)})")
+                    print(f"Inserted: {title} (AI Analyzed)")
                 else:
                     duplicate_count += 1
                     print(f"Duplicate/Skipped After AI: {title}")
