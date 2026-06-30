@@ -10,10 +10,13 @@ def get_client():
         print("OPENROUTER_API_KEY missing")
         return None
         
-    return instructor.patch(openai.OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key
-    ))
+    return instructor.patch(
+        openai.OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=api_key
+        ),
+        mode=instructor.Mode.JSON
+    )
 
 SYSTEM_PROMPT = """
 You are a senior institutional macro strategist at a tier-1 hedge fund.
@@ -62,7 +65,7 @@ def analyze_news(article, article_body=""):
     try:
         # Instructor automatically handles retries and validation errors based on the Pydantic schema
         analysis: NewsAnalysis = client.chat.completions.create(
-            model="nvidia/nemotron-3-ultra-550b-a55b:free",
+            model="meta-llama/llama-3.3-70b-instruct:free",
             response_model=NewsAnalysis,
             max_retries=3,
             messages=[
@@ -98,7 +101,7 @@ Headlines:
 
     try:
         analysis = client.chat.completions.create(
-            model="nvidia/nemotron-3-ultra-550b-a55b:free",
+            model="meta-llama/llama-3.3-70b-instruct:free",
             response_model=MorningBrief,
             max_retries=3,
             messages=[
