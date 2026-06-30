@@ -617,7 +617,7 @@ function renderCards(articles) {
                     ${(() => {
                       if (
                         a.structured_analysis &&
-                        a.structured_analysis.market_thesis
+                        Object.keys(a.structured_analysis).length > 0
                       ) {
                         const sa = a.structured_analysis;
 
