@@ -673,9 +673,13 @@ function renderCards(articles) {
                                 }
                             `;
                       } else {
+                        const showAd = a.importance <= 5;
                         return `
                                 <div class="ai-note-header"><span class="ai-chip basic">Basic Analysis</span></div>
                                 <p class="ai-note-text">${escapeHtml(a.analysis || fallbackAnalysis(a))}</p>
+                                ${
+                                  showAd
+                                    ? `
                                 <div style="margin-top:auto; padding:16px; background:linear-gradient(to right, rgba(216,177,91,0.05), rgba(216,177,91,0.02)); border:1px solid rgba(216,177,91,0.15); border-radius:8px; display:flex; align-items:center; gap:12px;">
                                     <div style="font-size:20px;">⚡️</div>
                                     <div style="flex:1;">
@@ -684,6 +688,9 @@ function renderCards(articles) {
                                     </div>
                                     <a href="#" onclick="alert('Referral link goes here!'); return false;" style="padding:8px 12px; background:rgba(216,177,91,0.15); color:var(--gold); text-decoration:none; border-radius:6px; font-size:11px; font-weight:700; transition:all 0.2s;">UPGRADE</a>
                                 </div>
+                                `
+                                    : ""
+                                }
                             `;
                       }
                     })()}
