@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -136,7 +137,6 @@ def news():
 
 @app.route("/api/admin/refresh-news", methods=["POST", "GET"])
 def refresh_news():
-    # Support both Bearer token and ?secret= parameter
     auth_header = request.headers.get("Authorization", "")
     secret_param = request.args.get("secret", "")
     
@@ -149,12 +149,17 @@ def refresh_news():
     if not provided_secret or provided_secret != ADMIN_SECRET:
         return jsonify({"error": "Unauthorized"}), 401
 
-    result = collect_news()
+    # Run in background to prevent Gunicorn timeout (30s) during heavy AI generation
+    def background_task():
+        try:
+            collect_news()
+        except Exception as e:
+            print(f"Error in background news collection: {e}")
+
+    thread = threading.Thread(target=background_task)
+    thread.start()
     
-    if result.get("status") == "conflict":
-        return jsonify(result), 409
-        
-    return jsonify(result), 200
+    return jsonify({"status": "processing", "message": "News collection started in background"}), 202
 
 # Keep the old endpoint for backwards compatibility, but secure it with the new secret
 @app.route("/update-news")
@@ -238,7 +243,7 @@ def api_update_streak():
 
 @app.route("/api/admin/morning-brief", methods=["POST", "GET"])
 def api_morning_brief():
-    auth_header = request.headers.get("Authorization", "")
+
     secret_param = request.args.get("secret", "")
     
     provided_secret = ""
