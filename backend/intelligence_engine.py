@@ -71,7 +71,11 @@ def build_intelligence(title, summary, body=""):
     assets = [a.get("asset") for a in affected_assets if a.get("asset")] or initial_assets
     directions = {a.get("asset"): a.get("direction") for a in affected_assets if a.get("asset") and a.get("direction")}
     
-    basic_analysis = analysis.get("executive_summary", summary)
+    import re
+    def strip_html(text):
+        return re.sub(r'<[^>]+>', '', str(text)) if text else ""
+        
+    basic_analysis = analysis.get("executive_summary", strip_html(summary))
 
     return {
         "category": category,
