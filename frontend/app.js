@@ -676,7 +676,7 @@ function renderCards(articles) {
                         return `
                                 <div class="ai-note-header"><span class="ai-chip basic">Basic Analysis</span></div>
                                 <p class="ai-note-text">${escapeHtml(a.analysis || fallbackAnalysis(a))}</p>
-                                <div style="margin-top:24px; padding:16px; background:linear-gradient(to right, rgba(216,177,91,0.05), rgba(216,177,91,0.02)); border:1px solid rgba(216,177,91,0.15); border-radius:8px; display:flex; align-items:center; gap:12px;">
+                                <div style="margin-top:auto; padding:16px; background:linear-gradient(to right, rgba(216,177,91,0.05), rgba(216,177,91,0.02)); border:1px solid rgba(216,177,91,0.15); border-radius:8px; display:flex; align-items:center; gap:12px;">
                                     <div style="font-size:20px;">⚡️</div>
                                     <div style="flex:1;">
                                         <div style="font-size:13px; font-weight:600; color:var(--gold); margin-bottom:2px;">Unlock Pro Analysis</div>
