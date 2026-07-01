@@ -160,8 +160,8 @@
                     <span class="stat-label">Market Mood</span>
                     <strong id="market-mood" class="stat-value">—</strong>
                 </div>
-                <div class="stat-card">
-                    <span class="stat-label">AI Signal Accuracy</span>
+                <div class="stat-card" id="accuracy-card" style="cursor: pointer; position: relative;" title="Click to learn how accuracy is measured">
+                    <span class="stat-label">AI Signal Accuracy ⓘ</span>
                     <strong id="signal-accuracy" class="stat-value">—</strong>
                 </div>
                 <div class="stat-card">
@@ -239,6 +239,41 @@
             </div>
         </div>
     </footer>
+
+    <!-- AI Signal Accuracy Info Modal -->
+    <div id="accuracy-modal" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.85); z-index: 9999; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; width: 90%; max-width: 500px; padding: 32px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); position: relative;">
+            <button id="close-accuracy-modal" style="position: absolute; top: 16px; right: 16px; background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 20px;">✖</button>
+            <h2 style="font-size: 20px; color: var(--accent); margin-bottom: 24px; text-transform: uppercase; letter-spacing: 1px;">How We Measure Accuracy</h2>
+            
+            <div style="margin-bottom: 20px;">
+                <h3 style="font-size: 14px; color: #fff; margin-bottom: 8px;">What is a Signal?</h3>
+                <p style="font-size: 13px; color: var(--text); line-height: 1.5;">When breaking news hits, our AI instantly analyzes it and generates a <strong>Bullish</strong> (price will go up) or <strong>Bearish</strong> (price will go down) signal for the affected asset.</p>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <h3 style="font-size: 14px; color: #fff; margin-bottom: 8px;">How is Accuracy Measured?</h3>
+                <p style="font-size: 13px; color: var(--text); line-height: 1.5;">We record the live market price at the exact second the news breaks. Exactly <strong>1 hour later</strong>, we fetch the price again to see if the market moved in the direction we predicted.</p>
+            </div>
+
+            <div style="display: flex; gap: 16px; margin-bottom: 24px;">
+                <div style="flex: 1; background: rgba(39, 196, 122, 0.1); border: 1px solid rgba(39, 196, 122, 0.3); padding: 16px; border-radius: 8px;">
+                    <div style="color: var(--green); font-size: 12px; font-weight: 700; margin-bottom: 4px; text-transform: uppercase;">Correct Signals</div>
+                    <div id="modal-correct-count" style="font-size: 24px; font-weight: 700; color: #fff;">-</div>
+                    <div style="font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 4px;">Predicted direction matched the 1-hour price action.</div>
+                </div>
+                <div style="flex: 1; background: rgba(255, 82, 82, 0.1); border: 1px solid rgba(255, 82, 82, 0.3); padding: 16px; border-radius: 8px;">
+                    <div style="color: var(--red); font-size: 12px; font-weight: 700; margin-bottom: 4px; text-transform: uppercase;">Incorrect Signals</div>
+                    <div id="modal-incorrect-count" style="font-size: 24px; font-weight: 700; color: #fff;">-</div>
+                    <div style="font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 4px;">Market moved opposite to our AI prediction.</div>
+                </div>
+            </div>
+            
+            <div style="font-size: 11px; color: var(--muted); text-align: center; border-top: 1px solid var(--border); padding-top: 16px;">
+                Neutral signals (price didn't change) are excluded from the accuracy percentage.
+            </div>
+        </div>
+    </div>
 
     <script type="module" src="app.js"></script>
 </body>

@@ -43,6 +43,27 @@ document.addEventListener("DOMContentLoaded", () => {
   setInterval(updateClock, 1000);
   updateMarketStatus();
 
+  // Accuracy Modal wiring
+  const accuracyCard = document.getElementById("accuracy-card");
+  const accuracyModal = document.getElementById("accuracy-modal");
+  const closeAccuracyModal = document.getElementById("close-accuracy-modal");
+
+  if (accuracyCard && accuracyModal && closeAccuracyModal) {
+    accuracyCard.addEventListener("click", () => {
+      accuracyModal.style.display = "flex";
+    });
+
+    closeAccuracyModal.addEventListener("click", () => {
+      accuracyModal.style.display = "none";
+    });
+
+    accuracyModal.addEventListener("click", (e) => {
+      if (e.target === accuracyModal) {
+        accuracyModal.style.display = "none";
+      }
+    });
+  }
+
   if (refs.searchInput) {
     refs.searchInput.addEventListener("input", (e) => {
       state.search = e.target.value || "";
@@ -216,6 +237,12 @@ async function loadSignalAccuracy() {
     else if (pct >= 50) color = "#f59e0b"; // amber
 
     refs.signalAccuracy.innerHTML = `<span style="color:${color}">${pct}%</span> <span style="font-size:11px; color:var(--muted); font-weight:400;">(${evaluated} signals)</span>`;
+    
+    // Update modal counts
+    const modalCorrect = document.getElementById("modal-correct-count");
+    if (modalCorrect) modalCorrect.textContent = data.correct || 0;
+    const modalIncorrect = document.getElementById("modal-incorrect-count");
+    if (modalIncorrect) modalIncorrect.textContent = data.incorrect || 0;
   } catch (e) {
     refs.signalAccuracy.textContent = "—";
   }
