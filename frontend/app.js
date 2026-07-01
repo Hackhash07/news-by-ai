@@ -1009,7 +1009,12 @@ async function updateTickerBar() {
       }
       
       const numVal = Number(val);
-      priceEl.textContent = `${formats[key].prefix}${numVal.toFixed(2)}`;
+      // Format number with commas and exactly 2 decimal places
+      const formattedVal = numVal.toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+      priceEl.textContent = `${formats[key].prefix}${formattedVal}`;
       
       if (prevTicker[key] !== undefined) {
         if (numVal > prevTicker[key]) {
