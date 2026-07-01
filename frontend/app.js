@@ -668,6 +668,17 @@ function renderCards(articles) {
                 <div class="card-cat-row">
                     <span class="card-cat"><span class="cat-icon" aria-hidden="true">${getCategoryIcon(a.category)}</span>${escapeHtml(a.category)}</span>
                     <span class="sent-badge ${sc}">${escapeHtml(a.sentiment || "Neutral")}</span>
+                    ${(() => {
+                      const sa = a.structured_analysis;
+                      if (!sa || !sa.affected_assets) return '';
+                      const evaluated = sa.affected_assets.filter(ast => ast.outcome_1h && ast.outcome_1h !== 'Neutral');
+                      if (!evaluated.length) return '';
+                      const correct = evaluated.filter(ast => ast.outcome_1h === 'Correct').length;
+                      const incorrect = evaluated.filter(ast => ast.outcome_1h === 'Incorrect').length;
+                      if (correct > 0 && incorrect === 0) return `<span style="margin-left:6px;padding:2px 8px;background:rgba(39,196,122,0.15);border:1px solid var(--green);border-radius:4px;font-size:10px;color:var(--green);font-weight:700;text-transform:uppercase;">✓ Signal Correct</span>`;
+                      if (incorrect > 0 && correct === 0) return `<span style="margin-left:6px;padding:2px 8px;background:rgba(255,82,82,0.15);border:1px solid var(--red);border-radius:4px;font-size:10px;color:var(--red);font-weight:700;text-transform:uppercase;">✗ Signal Incorrect</span>`;
+                      return `<span style="margin-left:6px;padding:2px 8px;background:rgba(255,255,255,0.08);border:1px solid var(--border);border-radius:4px;font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;">${correct}✓ ${incorrect}✗</span>`;
+                    })()}
                 </div>
                 <h2 class="card-headline">${escapeHtml(a.title)}</h2>
                 <div class="score-row">
@@ -760,7 +771,7 @@ function renderCards(articles) {
                                     </div>
                                 </details>
                                 
-                                <details class="ai-accordion">
+                                <details class="ai-accordion"${(() => { const aa = sa.affected_assets || []; return aa.some(ast => ast.outcome_1h) ? ' open' : ''; })()}>
                                     <summary>Affected Assets & Sectors</summary>
                                     <div class="ai-note-text">
                                       ${assetTags || "No specific assets targeted."}
