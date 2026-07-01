@@ -28,7 +28,9 @@ def get_ticker_data():
     symbols = {
         "GOLD": "GC=F",
         "NIFTY": "^NSEI",
-        "BANKNIFTY": "^NSEBANK"
+        "BANKNIFTY": "^NSEBANK",
+        "SPX": "^GSPC",
+        "NASDAQ": "^IXIC"
     }
 
     for key, symbol in symbols.items():
