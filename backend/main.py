@@ -148,6 +148,27 @@ def news():
             "bearish_votes": row.get("bearish_votes") or 0,
         })
 
+    try:
+        from backend.database import supabase
+        response = supabase.table("signal_outcomes").select("news_id, ticker, outcome_1h").execute()
+        if response.data:
+            outcomes = {}
+            for row in response.data:
+                nid = row.get("news_id")
+                if nid not in outcomes:
+                    outcomes[nid] = {}
+                outcomes[nid][row.get("ticker")] = row.get("outcome_1h")
+                
+            for article in articles:
+                nid = article.get("id")
+                if nid in outcomes and "structured_analysis" in article and "affected_assets" in article["structured_analysis"]:
+                    for asset in article["structured_analysis"]["affected_assets"]:
+                        ticker = asset.get("ticker")
+                        if ticker in outcomes[nid]:
+                            asset["outcome_1h"] = outcomes[nid][ticker]
+    except Exception as e:
+        print(f"Error attaching signal outcomes to news feed: {e}")
+
     return jsonify(articles)
 
 
