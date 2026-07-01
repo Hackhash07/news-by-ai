@@ -920,6 +920,24 @@ input {
   margin-bottom: 10px;
 }
 
+/* AI Disclaimer Banner */
+.ai-disclaimer-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  background: rgba(245, 158, 11, 0.08);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.15);
+  font-size: 11px;
+  color: #d4a54a;
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+}
+.ai-disclaimer-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
 /* Daily Brief Banner */
 .daily-brief-banner {
   background: rgba(17, 24, 43, 0.92);
