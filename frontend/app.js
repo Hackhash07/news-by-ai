@@ -983,7 +983,8 @@ let prevTicker = {};
 
 async function updateTickerBar() {
   try {
-    const res = await fetch('/api/market-ticker');
+    const res = await fetch('https://news-by-ai.onrender.com/api/market-ticker');
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const data = await res.json();
     
     const formats = {
