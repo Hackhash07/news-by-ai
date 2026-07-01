@@ -1036,10 +1036,10 @@ async function updateTickerBar() {
     const data = await res.json();
     
     const formats = {
-      USDINR: { prefix: "₹" },
-      GOLD: { prefix: "$" },
-      NIFTY: { prefix: "" },
-      BANKNIFTY: { prefix: "" }
+      USDINR: { prefix: "₹", suffix: "" },
+      GOLD: { prefix: "$", suffix: "/oz" },
+      NIFTY: { prefix: "", suffix: "" },
+      BANKNIFTY: { prefix: "", suffix: "" }
     };
     
     // Process each supported ticker element
@@ -1062,7 +1062,7 @@ async function updateTickerBar() {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
       });
-      priceEl.textContent = `${formats[key].prefix}${formattedVal}`;
+      priceEl.textContent = `${formats[key].prefix}${formattedVal}${formats[key].suffix || ""}`;
       
       if (prevTicker[key] !== undefined) {
         if (numVal > prevTicker[key]) {
