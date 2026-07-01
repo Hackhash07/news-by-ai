@@ -154,6 +154,7 @@ import { supabase } from "./supabase.js";
     dom.countdownDisplay = $("game-countdown");
     dom.worthDisplay = $("game-stock-worth");
     dom.tradesDisplay = $("game-trades-count");
+    dom.totalTradesLabel = $("total-trades-label");
     dom.marketStatus = $("game-market-status");
     dom.chartCanvas = $("game-chart-canvas");
     dom.switchTeamBtn = $("switch-team-btn");
@@ -1422,11 +1423,13 @@ import { supabase } from "./supabase.js";
         return;
       }
 
-      // RESULTS/PLAYING → WAITING (play again)
+      // RESULTS/PLAYING/READY_CHECK → WAITING (play again / cancel start)
       if (
-        (prevPhase === "results" || prevPhase === "playing") &&
+        (prevPhase === "results" || prevPhase === "playing" || prevPhase === "ready_check") &&
         state.phase === "waiting"
       ) {
+        let splash = document.getElementById("start-splash");
+        if (splash) splash.remove();
         clearInterval(countdownInterval);
         dom.arena.hidden = true;
         dom.results.hidden = true;
@@ -2808,7 +2811,39 @@ import { supabase } from "./supabase.js";
       <button id="btn-ready-check" style="padding:16px 40px;background:${amIReady ? "#27C47A" : "#C9913A"};color:#000;border:none;border-radius:8px;font-weight:800;font-size:18px;cursor:${amIReady ? "default" : "pointer"};letter-spacing:2px;text-transform:uppercase;transition:all 0.2s;">
         ${amIReady ? "WAITING FOR OTHERS..." : "I AM READY"}
       </button>
+      
+      <div style="margin-top: 24px;">
+        <button id="btn-cancel-ready" style="padding:10px 24px;background:transparent;color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.2);border-radius:6px;font-size:12px;cursor:pointer;letter-spacing:1px;text-transform:uppercase;transition:all 0.2s;font-weight:600;">
+          ${state.isHost ? "CANCEL START" : "LEAVE ROOM"}
+        </button>
+      </div>
     `;
+
+    document.getElementById("btn-cancel-ready").onclick = async () => {
+      if (state.isHost) {
+        document.getElementById("btn-cancel-ready").disabled = true;
+        await supabase
+          .from("rooms")
+          .update({
+            phase: "waiting",
+            last_update_time: Date.now(),
+          })
+          .eq("id", state.roomId);
+      } else {
+        if (confirm("Are you sure you want to leave the room?")) {
+          // Player leaves
+          const { data: roomData } = await supabase.from("rooms").select("*").eq("id", state.roomId).single();
+          if (roomData) {
+            for (let i = 0; i < roomData.teams.length; i++) {
+              roomData.teams[i].players = roomData.teams[i].players.filter(p => p.id !== state.myPlayerId);
+            }
+            await supabase.from("rooms").update({ teams: roomData.teams, last_update_time: Date.now() }).eq("id", state.roomId);
+          }
+          clearSession();
+          window.location.reload();
+        }
+      }
+    };
 
     if (!amIReady) {
       document.getElementById("btn-ready-check").onclick = async () => {
@@ -2844,6 +2879,9 @@ import { supabase } from "./supabase.js";
 
     if (dom.tradesDisplay) {
       dom.tradesDisplay.textContent = myState ? `${myState.trades}` : "0";
+    }
+    if (dom.totalTradesLabel && state.match) {
+      dom.totalTradesLabel.textContent = (state.match.totalBuys || 0) + (state.match.totalSells || 0);
     }
 
     const availableSharesSpan = $("game-available-shares");
