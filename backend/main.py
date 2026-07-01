@@ -409,7 +409,7 @@ def api_get_daily_brief():
                 nid = article.get("id")
                 if nid in outcomes and "structured_analysis" in article and "affected_assets" in article["structured_analysis"]:
                     for asset in article["structured_analysis"]["affected_assets"]:
-                        ticker = asset.get("asset")
+                        ticker = asset.get("ticker")
                         if ticker in outcomes[nid]:
                             asset["outcome_1h"] = outcomes[nid][ticker]
     except Exception as e:
