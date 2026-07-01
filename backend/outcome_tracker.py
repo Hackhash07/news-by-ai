@@ -23,6 +23,9 @@ SKIP_TICKERS = {
     "^STOXX50E",  # Euro Stoxx 50 - not on free tier
     "^SPNY",  # S&P Energy Sector - not on free tier
     "BA.L",  # LSE tickers unreliable on free tier
+    "CL=F",  # Crude Oil futures - no free endpoint
+    "BZ=F",  # Brent futures - no free endpoint
+    "ITA",   # iShares Italy ETF - insufficient data
 }
 
 # Yahoo-to-TwelveData symbol mapping for special tickers
@@ -33,8 +36,6 @@ SYMBOL_MAP = {
     "USDJPY=X": "USD/JPY",
     "GBPUSD=X": "GBP/USD",
     "AUDUSD=X": "AUD/USD",
-    "CL=F": "WTI/USD",    # Crude Oil → WTI spot price
-    "BZ=F": "WTI/USD",    # Brent → fallback to WTI
     "GC=F": "XAU/USD",    # Gold Futures → Gold spot
     "SI=F": "XAG/USD",    # Silver Futures → Silver spot
     "^GSPC": "SPX",       # S&P 500
@@ -91,9 +92,16 @@ def fetch_price_at_time(ticker: str, target_time: datetime) -> tuple[float | Non
             return None, None
         
         values = data.get("values", [])
-        if not values or len(values) < 2:
-            logger.warning(f"Not enough data points for {td_symbol}: got {len(values) if values else 0}")
+        if not values:
+            logger.warning(f"No data points for {td_symbol}")
             return None, None
+        
+        if len(values) == 1:
+            # Only 1 bar available (signal was near market close/open)
+            # Use same price for both → will result in Neutral
+            logger.info(f"Only 1 data point for {td_symbol}, marking as Neutral")
+            price = float(values[0]["close"])
+            return price, price
         
         # Twelve Data returns values in reverse chronological order (newest first)
         # So we reverse to get chronological order
