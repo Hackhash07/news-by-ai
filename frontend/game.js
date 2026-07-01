@@ -3153,24 +3153,19 @@ import { supabase } from "./supabase.js";
       dom.playAgainBtn.disabled = !state.isHost;
     }
 
-    // Cache stats for Victory Card
-    const initialWorthA = teamAData.players.length * 10000;
-    const initialWorthB = teamBData.players.length * 10000;
-    const winnerInitial = isTie
-      ? initialWorthA
-      : teamAData.totalWorth >= teamBData.totalWorth
-        ? initialWorthA
-        : initialWorthB;
-    const loserInitial = isTie
-      ? initialWorthB
-      : teamAData.totalWorth >= teamBData.totalWorth
-        ? initialWorthB
-        : initialWorthA;
-    const loserData = isTie
-      ? teamBData
-      : teamAData.totalWorth >= teamBData.totalWorth
-        ? teamBData
-        : teamAData;
+    // Calculate team initial worth properly (players start with state.initialWorth)
+    const initialWorthA = teamAData.players.length * (state.initialWorth || 100);
+    const initialWorthB = teamBData.players.length * (state.initialWorth || 100);
+    
+    const winnerInitial = isTie ? initialWorthA : (teamAData.totalWorth >= teamBData.totalWorth ? initialWorthA : initialWorthB);
+    const loserInitial = isTie ? initialWorthB : (teamAData.totalWorth >= teamBData.totalWorth ? initialWorthB : initialWorthA);
+    
+    const loserData = isTie ? teamBData : (teamAData.totalWorth >= teamBData.totalWorth ? teamBData : teamAData);
+
+    // Margin is the difference in PROFIT between the teams, normalizing for unequal team sizes
+    const winnerProfit = winner.totalWorth - winnerInitial;
+    const loserProfit = loserData.totalWorth - loserInitial;
+    const marginValue = winnerProfit - loserProfit;
 
     const matchData = {
       date: new Date().toLocaleDateString("en-GB", {
@@ -3185,8 +3180,8 @@ import { supabase } from "./supabase.js";
           .name,
       winner_worth: formatINR(winner.totalWorth),
       loser_worth: formatINR(loserData.totalWorth),
-      margin: formatINR(winner.totalWorth - loserData.totalWorth),
-      loser_loss: formatINR(Math.abs(loserInitial - loserData.totalWorth)),
+      margin: formatINR(marginValue),
+      loser_loss: formatINR(Math.abs(loserProfit)),
       mvp: mvp ? mvp.name.replace(/\s+/g, "_").toLowerCase() : "none",
       total_trades:
         teamAData.players.reduce((sum, p) => sum + (p.trades || 0), 0) +
@@ -3195,8 +3190,16 @@ import { supabase } from "./supabase.js";
       players: teamAData.players.length + teamBData.players.length,
     };
 
+    const myTeamData = teamAData.players.some((p) => p.id === state.myPlayerId) ? teamAData : teamBData;
+    const isWinner = !isTie && winner.players === myTeamData.players;
+
     if (dom.shareVictoryBtn) {
-      dom.shareVictoryBtn.onclick = () => showShareCard(matchData);
+      if (isWinner) {
+        dom.shareVictoryBtn.style.display = "block";
+        dom.shareVictoryBtn.onclick = () => showShareCard(matchData);
+      } else {
+        dom.shareVictoryBtn.style.display = "none";
+      }
     }
 
     // Update ELO stats exactly once per match
@@ -3234,18 +3237,10 @@ import { supabase } from "./supabase.js";
               let played = (profile.matches_played || 0) + 1;
               let won = profile.matches_won || 0;
 
-              const myTeamData = teamAData.players.some(
-                (p) => p.id === state.myPlayerId,
-              )
-                ? teamAData
-                : teamBData;
-
               let eloChange = 0;
-              let wonParam = false;
               if (!isTie) {
-                wonParam = winner.players === myTeamData.players;
-                eloChange = wonParam ? 25 : -15;
-                if (wonParam) won += 1;
+                eloChange = isWinner ? 25 : -15;
+                if (isWinner) won += 1;
               }
               const newElo = Math.max(0, currentElo + eloChange);
               const newPeak = Math.max(newElo, currentPeak);
