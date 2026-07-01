@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+import logging
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -12,6 +13,7 @@ from backend.database import (
     get_top_recent_news, save_morning_brief, get_morning_brief
 )
 from backend.market_data import get_market_data
+from backend.market_ticker import get_ticker_data
 from backend.news_collector import collect_news
 from backend.openrouter_client import generate_morning_brief
 
@@ -21,6 +23,8 @@ FRONTEND_DIR = BASE_DIR.parent / "frontend"
 app = Flask(__name__)
 app.config["JSON_SORT_KEYS"] = False
 CORS(app)
+
+logger = logging.getLogger(__name__)
 
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "ChinnuU07")
 
@@ -108,6 +112,15 @@ def serve_static(filename):
 @app.route("/market-data")
 def market_data():
     return jsonify(get_market_data())
+
+@app.route('/api/market-ticker', methods=['GET'])
+def market_ticker():
+    try:
+        data = get_ticker_data()
+        return jsonify(data), 200
+    except Exception as e:
+        logger.error(f"Market ticker endpoint error: {e}")
+        return jsonify({"error": "Failed to fetch ticker data"}), 500
 
 
 @app.route("/news")

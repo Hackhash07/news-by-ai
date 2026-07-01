@@ -141,9 +141,9 @@ document.addEventListener("DOMContentLoaded", () => {
   loadNews();
   setInterval(loadNews, 60000);
 
-  // Load market ticker from Flask API on Render
-  loadTicker();
-  setInterval(loadTicker, 60000);
+  // Load market ticker from new backend endpoint
+  updateTickerBar();
+  setInterval(updateTickerBar, 60000);
 
   // Load Daily Brief
   loadDailyBrief();
@@ -979,62 +979,56 @@ function setTickerPair(
   }
 }
 
-function renderTicker(data) {
-  if (data.BTC) {
-    setTickerPair(
-      "btc-price",
-      "btc-change",
-      data.BTC.price,
-      data.BTC.change,
-      false,
-    );
-  }
-  if (data.USDINR) {
-    setTickerPair(
-      "usdinr-price",
-      "usdinr-change",
-      data.USDINR.price,
-      data.USDINR.change,
-      true,
-    );
-  }
-  if (data.GOLD) {
-    setTickerPair(
-      "gold-price",
-      "gold-change",
-      data.GOLD.price,
-      data.GOLD.change,
-      false,
-    );
-  }
-  if (data.NIFTY) {
-    setTickerPair(
-      "nifty-price",
-      "nifty-change",
-      data.NIFTY.price,
-      data.NIFTY.change,
-      true,
-    );
-  }
-  if (data.BANKNIFTY) {
-    setTickerPair(
-      "banknifty-price",
-      "banknifty-change",
-      data.BANKNIFTY.price,
-      data.BANKNIFTY.change,
-      true,
-    );
-  }
-}
+let prevTicker = {};
 
-async function loadTicker() {
+async function updateTickerBar() {
   try {
-    const response = await fetch(MARKET_API_URL, { cache: "no-store" });
-    const data = await response.json();
-    localStorage.setItem("trade_trends_ticker_cache", JSON.stringify(data));
-    renderTicker(data);
-  } catch (error) {
-    // console.error("Ticker Error:", error);
+    const res = await fetch('/api/market-ticker');
+    const data = await res.json();
+    
+    const formats = {
+      USDINR: { prefix: "₹" },
+      GOLD: { prefix: "$" },
+      NIFTY: { prefix: "" },
+      BANKNIFTY: { prefix: "" }
+    };
+    
+    // Process each supported ticker element
+    ["USDINR", "GOLD", "NIFTY", "BANKNIFTY"].forEach(key => {
+      const priceEl = document.getElementById(`${key.toLowerCase()}-price`);
+      const changeEl = document.getElementById(`${key.toLowerCase()}-change`);
+      
+      if (!priceEl || !changeEl) return;
+      
+      const val = data[key];
+      if (val === null || val === undefined) {
+        priceEl.textContent = "--";
+        changeEl.textContent = "";
+        return;
+      }
+      
+      const numVal = Number(val);
+      priceEl.textContent = `${formats[key].prefix}${numVal.toFixed(2)}`;
+      
+      if (prevTicker[key] !== undefined) {
+        if (numVal > prevTicker[key]) {
+          changeEl.textContent = "▲";
+          changeEl.style.color = "#10b981"; // green
+        } else if (numVal < prevTicker[key]) {
+          changeEl.textContent = "▼";
+          changeEl.style.color = "#ef4444"; // red
+        } else {
+          changeEl.textContent = "";
+        }
+      } else {
+        changeEl.textContent = "";
+      }
+      
+      prevTicker[key] = numVal;
+    });
+    
+  } catch (err) {
+    console.warn('Ticker update failed:', err);
   }
 }
 
