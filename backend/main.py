@@ -251,6 +251,28 @@ def api_signal_debug():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/admin/evaluate-signals", methods=["POST", "GET"])
+def api_evaluate_signals():
+    secret_param = request.args.get("secret", "")
+    auth_header = request.headers.get("Authorization", "")
+    provided_secret = ""
+    if auth_header.startswith("Bearer "):
+        provided_secret = auth_header.split(" ")[1]
+    elif secret_param:
+        provided_secret = secret_param
+    if not provided_secret or provided_secret != ADMIN_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    def background_eval():
+        try:
+            fetch_and_fill_outcomes()
+        except Exception as e:
+            logger.error(f"Error in background signal evaluation: {e}")
+
+    import threading
+    thread = threading.Thread(target=background_eval)
+    thread.start()
+    return jsonify({"status": "triggered", "message": "Signal evaluation started in background"}), 202
 
 @app.route("/api/chat/rooms")
 def api_chat_rooms():
