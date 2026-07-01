@@ -18,6 +18,11 @@ SKIP_TICKERS = {
     "EWB",  # Delisted ETF
     "GB10Y=RR",  # Bond yield - not on Twelve Data
     "BKM.L",  # Obscure LSE ticker
+    "IMOEX.ME",  # Russian index - not available
+    "RUB=X",  # Russian ruble - restricted
+    "^STOXX50E",  # Euro Stoxx 50 - not on free tier
+    "^SPNY",  # S&P Energy Sector - not on free tier
+    "BA.L",  # LSE tickers unreliable on free tier
 }
 
 # Yahoo-to-TwelveData symbol mapping for special tickers
@@ -27,12 +32,14 @@ SYMBOL_MAP = {
     "EURUSD=X": "EUR/USD",
     "USDJPY=X": "USD/JPY",
     "GBPUSD=X": "GBP/USD",
-    "CL=F": "CL",       # Crude Oil
-    "BZ=F": "BZ",       # Brent Crude
-    "GC=F": "GC",       # Gold Futures
-    "^GSPC": "SPX",     # S&P 500
-    "^STOXX50E": "STOXX50E",  # Euro Stoxx 50
-    "^SPNY": "SPNY",    # S&P Energy Sector
+    "AUDUSD=X": "AUD/USD",
+    "CL=F": "WTI/USD",    # Crude Oil → WTI spot price
+    "BZ=F": "WTI/USD",    # Brent → fallback to WTI
+    "GC=F": "XAU/USD",    # Gold Futures → Gold spot
+    "SI=F": "XAG/USD",    # Silver Futures → Silver spot
+    "^GSPC": "SPX",       # S&P 500
+    "^DJI": "DJI",        # Dow Jones
+    "^IXIC": "IXIC",      # Nasdaq
 }
 
 
