@@ -239,6 +239,18 @@ def api_signal_accuracy():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/admin/signal-debug")
+def api_signal_debug():
+    secret_param = request.args.get("secret", "")
+    if secret_param != ADMIN_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        from backend.database import supabase
+        response = supabase.table("signal_outcomes").select("id, ticker, signal_direction, confidence, signal_timestamp, price_at_signal, price_1h_after, outcome_1h").order("signal_timestamp", desc=True).limit(30).execute()
+        return jsonify({"signals": response.data})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/api/chat/rooms")
 def api_chat_rooms():
