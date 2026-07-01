@@ -393,6 +393,28 @@ def api_get_daily_brief():
     brief = get_morning_brief(today_str)
     if not brief:
         return jsonify({"error": "No brief found for today"}), 404
+        
+    try:
+        from backend.database import supabase
+        response = supabase.table("signal_outcomes").select("news_id, ticker, outcome_1h").execute()
+        if response.data:
+            outcomes = {}
+            for row in response.data:
+                nid = row.get("news_id")
+                if nid not in outcomes:
+                    outcomes[nid] = {}
+                outcomes[nid][row.get("ticker")] = row.get("outcome_1h")
+                
+            for article in brief.get("articles", []):
+                nid = article.get("id")
+                if nid in outcomes and "structured_analysis" in article and "affected_assets" in article["structured_analysis"]:
+                    for asset in article["structured_analysis"]["affected_assets"]:
+                        ticker = asset.get("asset")
+                        if ticker in outcomes[nid]:
+                            asset["outcome_1h"] = outcomes[nid][ticker]
+    except Exception as e:
+        print(f"Error attaching signal outcomes: {e}")
+        
     return jsonify(brief)
 
 

@@ -710,8 +710,18 @@ function renderCards(articles) {
                                 : ast.direction === "Bearish"
                                   ? "var(--red)"
                                   : "var(--muted)";
+                            let outcomeBadge = "";
+                            if (ast.outcome_1h) {
+                                if (ast.outcome_1h === "Correct") {
+                                    outcomeBadge = `<span style="display:inline-block; margin-left: 8px; padding: 2px 6px; background: rgba(39, 196, 122, 0.15); border: 1px solid var(--green); border-radius: 4px; font-size: 10px; color: var(--green); text-transform: uppercase; font-weight: 700;">✓ Correct</span>`;
+                                } else if (ast.outcome_1h === "Incorrect") {
+                                    outcomeBadge = `<span style="display:inline-block; margin-left: 8px; padding: 2px 6px; background: rgba(255, 82, 82, 0.15); border: 1px solid var(--red); border-radius: 4px; font-size: 10px; color: var(--red); text-transform: uppercase; font-weight: 700;">✗ Incorrect</span>`;
+                                } else if (ast.outcome_1h === "Neutral") {
+                                    outcomeBadge = `<span style="display:inline-block; margin-left: 8px; padding: 2px 6px; background: rgba(255, 255, 255, 0.1); border: 1px solid var(--border); border-radius: 4px; font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 700;">− Neutral</span>`;
+                                }
+                            }
                             return `<div style="border-left: 2px solid ${color}; padding-left: 8px; margin-bottom: 8px;">
-                                    <strong>${escapeHtml(ast.asset)}</strong> <span style="color:${color}">(${escapeHtml(ast.direction)} ${ast.confidence || 50}%)</span><br>
+                                    <strong>${escapeHtml(ast.asset)}</strong> <span style="color:${color}">(${escapeHtml(ast.direction)} ${ast.confidence || 50}%)</span>${outcomeBadge}<br>
                                     <span style="font-size:12px; color:var(--muted);">${escapeHtml(ast.reason || "")}</span>
                                 </div>`;
                           })
