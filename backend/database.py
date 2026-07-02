@@ -383,6 +383,47 @@ def get_morning_brief(brief_date):
         print(f"Error fetching morning brief: {e}")
         return None
 
+def cleanup_old_news(max_total=210, target_total=200, delete_up_to_importance=4):
+    """
+    Cleans up old low-importance news articles if the total count exceeds max_total.
+    Deletes oldest articles with importance <= delete_up_to_importance until total is back to target_total.
+    """
+    if not supabase:
+        return
+        
+    try:
+        # Get total count
+        res = supabase.table("news").select("id", count="exact").limit(1).execute()
+        total_count = res.count if res.count is not None else 0
+        
+        if total_count <= max_total:
+            return
+            
+        excess = total_count - target_total
+        if excess <= 0:
+            return
+            
+        # Find oldest articles with importance <= delete_up_to_importance
+        res_oldest = supabase.table("news") \
+            .select("id") \
+            .lte("importance", delete_up_to_importance) \
+            .order("created_at", desc=False) \
+            .limit(excess) \
+            .execute()
+            
+        if not res_oldest.data:
+            return
+            
+        ids_to_delete = [row["id"] for row in res_oldest.data]
+        
+        # Delete them
+        if ids_to_delete:
+            supabase.table("news").delete().in_("id", ids_to_delete).execute()
+            print(f"Cleaned up {len(ids_to_delete)} old low-importance news articles to keep database lean.")
+            
+    except Exception as e:
+        print(f"Error cleaning up old news: {e}")
+
 def get_top_recent_news(hours=18, limit=5):
     if not supabase:
         return []

@@ -4,7 +4,7 @@ import trafilatura
 from datasketch import MinHash, MinHashLSH
 from datetime import datetime
 
-from backend.database import save_article, acquire_refresh_lock, release_refresh_lock, log_refresh, supabase, get_articles
+from backend.database import save_article, acquire_refresh_lock, release_refresh_lock, log_refresh, supabase, get_articles, cleanup_old_news
 from backend.intelligence_engine import build_intelligence
 
 RSS_FEEDS = {
@@ -232,6 +232,8 @@ def collect_news(force=False):
                     print(f"Error analyzing {title}: {e}")
 
     finally:
+        # Prune old low-importance articles to prevent DB from growing too large
+        cleanup_old_news(max_total=210, target_total=210, delete_up_to_importance=4)
         release_refresh_lock()
         
     duration = round(time.time() - start_time, 2)
