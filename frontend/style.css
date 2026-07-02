@@ -84,6 +84,7 @@ input {
 
 .ticker-inner {
   display: inline-flex;
+  flex-shrink: 0;
   gap: 36px;
   padding-right: 36px; /* Match the gap for seamless looping */
   animation: ticker-scroll 22s linear infinite;
