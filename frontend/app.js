@@ -1057,15 +1057,15 @@ async function updateTickerBar() {
     
     // Process each supported ticker element
     ["USDINR", "GOLD", "NIFTY", "BANKNIFTY", "SPX", "NASDAQ", "BTC"].forEach(key => {
-      const priceEl = document.getElementById(`${key.toLowerCase()}-price`);
-      const changeEl = document.getElementById(`${key.toLowerCase()}-change`);
+      const priceEls = document.querySelectorAll(`.${key.toLowerCase()}-price`);
+      const changeEls = document.querySelectorAll(`.${key.toLowerCase()}-change`);
       
-      if (!priceEl || !changeEl) return;
+      if (!priceEls.length || !changeEls.length) return;
       
       const val = data[key];
       if (val === null || val === undefined) {
-        priceEl.textContent = "--";
-        changeEl.textContent = "";
+        priceEls.forEach(el => el.textContent = "--");
+        changeEls.forEach(el => el.textContent = "");
         return;
       }
       
@@ -1075,20 +1075,27 @@ async function updateTickerBar() {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
       });
-      priceEl.textContent = `${formats[key].prefix}${formattedVal}${formats[key].suffix || ""}`;
+      
+      priceEls.forEach(el => {
+        el.textContent = `${formats[key].prefix}${formattedVal}${formats[key].suffix || ""}`;
+      });
       
       if (prevTicker[key] !== undefined) {
         if (numVal > prevTicker[key]) {
-          changeEl.textContent = "▲";
-          changeEl.style.color = "#10b981"; // green
+          changeEls.forEach(el => {
+            el.textContent = "▲";
+            el.style.color = "#10b981"; // green
+          });
         } else if (numVal < prevTicker[key]) {
-          changeEl.textContent = "▼";
-          changeEl.style.color = "#ef4444"; // red
+          changeEls.forEach(el => {
+            el.textContent = "▼";
+            el.style.color = "#ef4444"; // red
+          });
         } else {
-          changeEl.textContent = "";
+          changeEls.forEach(el => el.textContent = "");
         }
       } else {
-        changeEl.textContent = "";
+        changeEls.forEach(el => el.textContent = "");
       }
       
       prevTicker[key] = numVal;
