@@ -43,16 +43,6 @@ document.addEventListener("DOMContentLoaded", () => {
   setInterval(updateClock, 1000);
   updateMarketStatus();
 
-  // Clone ticker for seamless infinite scroll
-  const tickerTrack = document.querySelector('.ticker-track');
-  const tickerInner = document.querySelector('.ticker-inner');
-  if (tickerTrack && tickerInner) {
-    const clone = tickerInner.cloneNode(true);
-    // Hide the clone from screen readers to prevent duplicate reading
-    clone.setAttribute('aria-hidden', 'true');
-    tickerTrack.appendChild(clone);
-  }
-
   // Accuracy Modal wiring
   const accuracyCard = document.getElementById("accuracy-card");
   const accuracyModal = document.getElementById("accuracy-modal");
