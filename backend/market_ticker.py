@@ -30,7 +30,8 @@ def get_ticker_data():
         "NIFTY": "^NSEI",
         "BANKNIFTY": "^NSEBANK",
         "SPX": "^GSPC",
-        "NASDAQ": "^IXIC"
+        "NASDAQ": "^IXIC",
+        "BTC": "BTC-USD"
     }
 
     for key, symbol in symbols.items():

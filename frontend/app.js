@@ -1041,11 +1041,12 @@ async function updateTickerBar() {
       NIFTY: { prefix: "", suffix: "" },
       BANKNIFTY: { prefix: "", suffix: "" },
       SPX: { prefix: "", suffix: "" },
-      NASDAQ: { prefix: "", suffix: "" }
+      NASDAQ: { prefix: "", suffix: "" },
+      BTC: { prefix: "$", suffix: "" }
     };
     
     // Process each supported ticker element
-    ["USDINR", "GOLD", "NIFTY", "BANKNIFTY", "SPX", "NASDAQ"].forEach(key => {
+    ["USDINR", "GOLD", "NIFTY", "BANKNIFTY", "SPX", "NASDAQ", "BTC"].forEach(key => {
       const priceEl = document.getElementById(`${key.toLowerCase()}-price`);
       const changeEl = document.getElementById(`${key.toLowerCase()}-change`);
       
