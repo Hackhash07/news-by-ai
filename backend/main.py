@@ -233,6 +233,36 @@ def refresh_news():
 def update_news():
     return refresh_news()
 
+@app.route("/api/admin/refresh-outcomes", methods=["POST", "GET"])
+def refresh_outcomes():
+    auth_header = request.headers.get("Authorization", "")
+    secret_param = request.args.get("secret", "")
+    
+    provided_secret = ""
+    if auth_header.startswith("Bearer "):
+        provided_secret = auth_header.split(" ")[1]
+    elif secret_param:
+        provided_secret = secret_param
+        
+    if not provided_secret or provided_secret != ADMIN_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    def background_task():
+        try:
+            fetch_and_fill_outcomes()
+        except Exception as e:
+            print(f"Error in background outcome tracking: {e}")
+
+    import threading
+    thread = threading.Thread(target=background_task)
+    thread.start()
+    
+    return jsonify({"status": "triggered", "message": "Outcome tracking started in background thread"}), 202
+
+@app.route("/update-outcomes")
+def update_outcomes():
+    return refresh_outcomes()
+
 @app.route("/api/signal-accuracy")
 def api_signal_accuracy():
     try:
