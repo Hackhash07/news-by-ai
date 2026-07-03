@@ -28,7 +28,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (refs.sortFilter) {
     refs.sortFilter.addEventListener("change", (e) => {
       state.sortFilter = e.target.value;
-      fetchNews();
+      loadNews();
     });
   }
   refs.tickerTime = document.getElementById("ticker-time");
@@ -912,9 +912,16 @@ function renderCards(articles) {
 
 // ── RENDER: DASHBOARD ─────────────────────────────────────────────────
 function renderDashboard() {
-  const filtered = getFilteredArticles().sort(
-    (a, b) => new Date(b.added_at).getTime() - new Date(a.added_at).getTime(),
-  );
+  let filtered = getFilteredArticles();
+  
+  // Only override the sort if we are on the default filter.
+  // Otherwise, we respect the sorting/filtering order returned by the backend.
+  if (state.sortFilter === "default") {
+    filtered = filtered.sort(
+      (a, b) => new Date(b.added_at).getTime() - new Date(a.added_at).getTime()
+    );
+  }
+  
   renderHero(filtered);
   renderSignalStrip(filtered);
   renderBrief(filtered);
