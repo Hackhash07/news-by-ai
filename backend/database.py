@@ -422,7 +422,7 @@ def cleanup_old_news(max_total=210, target_total=200, delete_up_to_importance=4)
                 
         # FALLBACK: If the database is filled entirely with high-importance articles, 
         # enforce a hard limit to guarantee we never hit free tier limits.
-        hard_limit = 300
+        hard_limit = 270
         res_check = supabase.table("news").select("id", count="exact").limit(1).execute()
         current_total = res_check.count if res_check.count is not None else 0
         
