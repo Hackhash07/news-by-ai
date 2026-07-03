@@ -418,6 +418,10 @@ def cleanup_old_news(max_total=210, target_total=200, delete_up_to_importance=4)
         
         # Delete them
         if ids_to_delete:
+            # First delete foreign key dependencies that don't have CASCADE
+            supabase.table("news_votes").delete().in_("news_id", ids_to_delete).execute()
+            
+            # Now delete the actual news rows
             supabase.table("news").delete().in_("id", ids_to_delete).execute()
             print(f"Cleaned up {len(ids_to_delete)} old low-importance news articles to keep database lean.")
             
