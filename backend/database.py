@@ -411,19 +411,34 @@ def cleanup_old_news(max_total=210, target_total=200, delete_up_to_importance=4)
             .limit(excess) \
             .execute()
             
-        if not res_oldest.data:
-            return
-            
-        ids_to_delete = [row["id"] for row in res_oldest.data]
+        if res_oldest.data:
+            ids_to_delete = [row["id"] for row in res_oldest.data]
+            if ids_to_delete:
+                # First delete foreign key dependencies that don't have CASCADE
+                supabase.table("news_votes").delete().in_("news_id", ids_to_delete).execute()
+                # Now delete the actual news rows
+                supabase.table("news").delete().in_("id", ids_to_delete).execute()
+                print(f"Cleaned up {len(ids_to_delete)} old low-importance news articles to keep database lean.")
+                
+        # FALLBACK: If the database is filled entirely with high-importance articles, 
+        # enforce a hard limit to guarantee we never hit free tier limits.
+        hard_limit = 300
+        res_check = supabase.table("news").select("id", count="exact").limit(1).execute()
+        current_total = res_check.count if res_check.count is not None else 0
         
-        # Delete them
-        if ids_to_delete:
-            # First delete foreign key dependencies that don't have CASCADE
-            supabase.table("news_votes").delete().in_("news_id", ids_to_delete).execute()
-            
-            # Now delete the actual news rows
-            supabase.table("news").delete().in_("id", ids_to_delete).execute()
-            print(f"Cleaned up {len(ids_to_delete)} old low-importance news articles to keep database lean.")
+        if current_total > hard_limit:
+            hard_excess = current_total - target_total
+            res_hard_oldest = supabase.table("news") \
+                .select("id") \
+                .order("created_at", desc=False) \
+                .limit(hard_excess) \
+                .execute()
+                
+            if res_hard_oldest.data:
+                hard_ids_to_delete = [row["id"] for row in res_hard_oldest.data]
+                supabase.table("news_votes").delete().in_("news_id", hard_ids_to_delete).execute()
+                supabase.table("news").delete().in_("id", hard_ids_to_delete).execute()
+                print(f"Hard cleaned up {len(hard_ids_to_delete)} oldest articles to enforce absolute limit.")
             
     except Exception as e:
         print(f"Error cleaning up old news: {e}")
