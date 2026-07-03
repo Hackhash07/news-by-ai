@@ -385,13 +385,16 @@ def get_morning_brief(brief_date):
 
 def cleanup_old_news(max_total=210, target_total=200, delete_up_to_importance=4):
     """
-    Cleans up old low-importance news articles if the total count exceeds max_total.
-    Deletes oldest articles with importance <= delete_up_to_importance until total is back to target_total.
+    Cleans up old news articles if the total count exceeds max_total.
+    Prefers deleting old low-importance articles. If none exist, deletes the oldest articles 
+    unconditionally to preserve recently added news (even if low importance).
     """
     if not supabase:
         return
         
     try:
+        from datetime import datetime, timedelta
+        
         # Get total count
         res = supabase.table("news").select("id", count="exact").limit(1).execute()
         total_count = res.count if res.count is not None else 0
@@ -403,42 +406,45 @@ def cleanup_old_news(max_total=210, target_total=200, delete_up_to_importance=4)
         if excess <= 0:
             return
             
-        # Find oldest articles with importance <= delete_up_to_importance
+        # Define what counts as 'old' (e.g. older than 24 hours)
+        cutoff = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+        
+        # 1. Find OLD low-importance articles first
         res_oldest = supabase.table("news") \
             .select("id") \
             .lte("importance", delete_up_to_importance) \
+            .lt("created_at", cutoff) \
             .order("created_at", desc=False) \
             .limit(excess) \
             .execute()
             
+        ids_deleted = 0
         if res_oldest.data:
             ids_to_delete = [row["id"] for row in res_oldest.data]
             if ids_to_delete:
-                # First delete foreign key dependencies that don't have CASCADE
+                # First delete foreign key dependencies
                 supabase.table("news_votes").delete().in_("news_id", ids_to_delete).execute()
                 # Now delete the actual news rows
                 supabase.table("news").delete().in_("id", ids_to_delete).execute()
-                print(f"Cleaned up {len(ids_to_delete)} old low-importance news articles to keep database lean.")
+                ids_deleted += len(ids_to_delete)
+                print(f"Cleaned up {len(ids_to_delete)} old low-importance news articles.")
                 
-        # FALLBACK: If the database is filled entirely with high-importance articles, 
-        # enforce a hard limit to guarantee we never hit free tier limits.
-        hard_limit = 270
-        res_check = supabase.table("news").select("id", count="exact").limit(1).execute()
-        current_total = res_check.count if res_check.count is not None else 0
-        
-        if current_total > hard_limit:
-            hard_excess = current_total - target_total
+        # 2. If we STILL have excess, delete the oldest articles unconditionally
+        # This protects brand new low-importance articles by sacrificing old high-importance ones.
+        remaining_excess = excess - ids_deleted
+        if remaining_excess > 0:
             res_hard_oldest = supabase.table("news") \
                 .select("id") \
                 .order("created_at", desc=False) \
-                .limit(hard_excess) \
+                .limit(remaining_excess) \
                 .execute()
                 
             if res_hard_oldest.data:
                 hard_ids_to_delete = [row["id"] for row in res_hard_oldest.data]
-                supabase.table("news_votes").delete().in_("news_id", hard_ids_to_delete).execute()
-                supabase.table("news").delete().in_("id", hard_ids_to_delete).execute()
-                print(f"Hard cleaned up {len(hard_ids_to_delete)} oldest articles to enforce absolute limit.")
+                if hard_ids_to_delete:
+                    supabase.table("news_votes").delete().in_("news_id", hard_ids_to_delete).execute()
+                    supabase.table("news").delete().in_("id", hard_ids_to_delete).execute()
+                    print(f"Cleaned up {len(hard_ids_to_delete)} oldest overall articles to reach target limit.")
             
     except Exception as e:
         print(f"Error cleaning up old news: {e}")
