@@ -282,7 +282,8 @@ def update_outcomes():
 def api_signal_accuracy():
     try:
         from backend.database import supabase
-        response = supabase.table("signal_outcomes").select("outcome_1h").execute()
+        # Use inner join to only fetch outcomes for articles that still exist in the news table
+        response = supabase.table("signal_outcomes").select("outcome_1h, news!inner(id)").execute()
         
         if not response.data:
             return jsonify({"error": "No signals tracked yet"}), 404
