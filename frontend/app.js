@@ -1197,9 +1197,9 @@ async function fetchSignalHistory() {
         if (signal.signal_direction === "Bullish") expectancy = "+";
         else if (signal.signal_direction === "Bearish") expectancy = "-";
         
-        let realMomentStr = "0.00%";
+        let realMomentStr = "N/A";
         let realMomentColor = "var(--text)";
-        if (signal.percentage_change !== null) {
+        if (signal.percentage_change !== null && signal.percentage_change !== undefined) {
           const pct = signal.percentage_change * 100;
           realMomentStr = (pct > 0 ? "+" : "") + pct.toFixed(2) + "%";
           if (pct > 0.1) realMomentColor = "var(--green)";
