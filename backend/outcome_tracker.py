@@ -55,6 +55,7 @@ def get_closest_price_yfinance(yahoo_ticker: str, target_time: datetime) -> floa
         return None
 
 def fetch_and_fill_outcomes():
+    results = []
     try:
         now_utc = datetime.utcnow().replace(tzinfo=pytz.UTC).isoformat()
         
@@ -70,7 +71,7 @@ def fetch_and_fill_outcomes():
         signals = response.data
         if not signals:
             logger.info("No pending signals to evaluate")
-            return
+            return results
 
         logger.info(f"Processing {len(signals)} pending signals")
 
@@ -87,6 +88,7 @@ def fetch_and_fill_outcomes():
                     "status": "UNRESOLVABLE",
                     "failure_reason": "Invalid or skipped ticker"
                 }).eq("id", signal_id).execute()
+                results.append({"ticker": ticker, "status": "UNRESOLVABLE"})
                 continue
                 
             signal_time_str = signal.get("signal_timestamp")
@@ -103,6 +105,7 @@ def fetch_and_fill_outcomes():
                     "status": status
                 }).eq("id", signal_id).execute()
                 logger.info(f"Market closed for {ticker} at {eval_time_str}, rolled forward to {next_eval_time}")
+                results.append({"ticker": ticker, "status": "ROLLED_FORWARD", "next_eval_time": next_eval_time})
                 continue
 
             # Parse times
@@ -122,12 +125,14 @@ def fetch_and_fill_outcomes():
                         "retry_count": retry_count,
                         "failure_reason": "Empty price data from yfinance"
                     }).eq("id", signal_id).execute()
+                    results.append({"ticker": ticker, "status": "RETRY"})
                 else:
                     supabase.table("signal_outcomes").update({
                         "status": "NO_DATA",
                         "retry_count": retry_count,
                         "failure_reason": "Max retries reached with empty price data"
                     }).eq("id", signal_id).execute()
+                    results.append({"ticker": ticker, "status": "NO_DATA"})
                 continue
                 
             direction = signal.get("signal_direction")
@@ -167,11 +172,15 @@ def fetch_and_fill_outcomes():
             try:
                 supabase.table("signal_outcomes").update(update_data).eq("id", signal_id).execute()
                 logger.info(f"Evaluated {ticker}: {outcome_1h} ({direction}, {pct_change:+.3%})")
+                results.append({"ticker": ticker, "status": status_map.get(outcome_1h, "NEUTRAL"), "pct_change": pct_change})
             except Exception as e:
                 logger.error(f"DB update failed for {ticker}: {e}")
+                results.append({"ticker": ticker, "status": "ERROR", "error": str(e)})
                 
     except Exception as e:
         logger.error(f"Error in outcome_tracker: {e}")
+        
+    return results
 
 if __name__ == "__main__":
     fetch_and_fill_outcomes()

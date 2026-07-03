@@ -330,16 +330,17 @@ def api_evaluate_signals():
     if not provided_secret or provided_secret != ADMIN_SECRET:
         return jsonify({"error": "Unauthorized"}), 401
 
-    def background_eval():
-        try:
-            fetch_and_fill_outcomes()
-        except Exception as e:
-            logger.error(f"Error in background signal evaluation: {e}")
-
-    import threading
-    thread = threading.Thread(target=background_eval)
-    thread.start()
-    return jsonify({"status": "triggered", "message": "Signal evaluation started in background"}), 202
+    try:
+        from backend.outcome_tracker import fetch_and_fill_outcomes
+        results = fetch_and_fill_outcomes()
+        return jsonify({
+            "status": "success",
+            "message": f"Processed {len(results)} signals.",
+            "results": results
+        }), 200
+    except Exception as e:
+        logger.error(f"Error in signal evaluation endpoint: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/chat/rooms")
 def api_chat_rooms():
