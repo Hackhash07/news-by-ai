@@ -166,7 +166,7 @@ def analyze_news(article, article_body=""):
         try:
             # Instructor automatically handles retries and validation errors based on the Pydantic schema
             analysis: NewsAnalysis = client.chat.completions.create(
-                model="google/gemini-2.5-flash:free",
+                model="google/gemini-2.0-flash-lite-preview-02-05:free",
                 response_model=NewsAnalysis,
                 max_retries=3,
                 messages=[

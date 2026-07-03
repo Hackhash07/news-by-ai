@@ -42,6 +42,7 @@ SKIP_TICKERS = {
     "AAPL",   # Apple - no pre-market hourly data on free tier
     "SPX",    # S&P 500 alias
     "IXIC",   # Nasdaq alias
+    "EUROBANKS=F", # Not available on either platform
 }
 
 # Yahoo-to-TwelveData symbol mapping for special tickers
@@ -78,7 +79,7 @@ def fetch_price_yfinance(yahoo_ticker: str, target_time: datetime) -> tuple[floa
         hist = yf.download(yahoo_ticker, start=start, end=end, interval="1h", progress=False, auto_adjust=True)
         if hist.empty or len(hist) < 2:
             return None, None
-        closes = hist["Close"].dropna().tolist()
+        closes = hist["Close"].dropna().values.tolist()
         if len(closes) < 2:
             return None, None
         return float(closes[0]), float(closes[1])
