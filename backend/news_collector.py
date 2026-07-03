@@ -226,6 +226,9 @@ def collect_news(force=False):
                         print(f"Inserted: {title} ({analysis_source})")
                     else:
                         duplicates_skipped += 1
+                    
+                    # Pace ourselves to avoid hammering the free OpenRouter rate limit
+                    time.sleep(4)
                         
                 except Exception as e:
                     failed_count += 1
