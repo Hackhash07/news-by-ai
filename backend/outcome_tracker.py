@@ -36,6 +36,12 @@ SKIP_TICKERS = {
     "DJT",    # Trump Media - unreliable on free tier
     "UAL",    # United Airlines - unreliable on free tier
     "IBIT",   # ETF - not on TwelveData
+    # US equity tickers that fail during pre-market hours (signals generated at night UTC)
+    "^GSPC",  # S&P 500 - no pre-market hourly data on yfinance
+    "^IXIC",  # Nasdaq - no pre-market hourly data
+    "AAPL",   # Apple - no pre-market hourly data on free tier
+    "SPX",    # S&P 500 alias
+    "IXIC",   # Nasdaq alias
 }
 
 # Yahoo-to-TwelveData symbol mapping for special tickers
