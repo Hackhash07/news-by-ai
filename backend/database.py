@@ -92,12 +92,17 @@ def save_article(
                 affected_assets = structured_analysis.get("affected_assets", [])
                 for a in affected_assets:
                     if a.get("direction") != "Neutral" and a.get("ticker") != "UNKNOWN":
+                        from backend.market_utils import get_evaluation_time
+                        eval_time, status = get_evaluation_time(a.get("ticker"), data["created_at"])
+                        
                         signal_data = {
                             "news_id": news_id,
                             "ticker": a.get("ticker"),
                             "signal_direction": a.get("direction"),
                             "confidence": int(a.get("confidence", 50)),
-                            "signal_timestamp": data["created_at"]
+                            "signal_timestamp": data["created_at"],
+                            "evaluation_time": eval_time,
+                            "status": status
                         }
                         try:
                             supabase.table("signal_outcomes").insert(signal_data).execute()

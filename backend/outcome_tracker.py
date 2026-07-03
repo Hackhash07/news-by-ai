@@ -1,160 +1,70 @@
 import requests
 from datetime import datetime, timedelta
 from backend.database import supabase
+from backend.market_utils import is_market_open_now, get_evaluation_time
 import logging
-import time
-import os
+import pytz
 import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
-TWELVEDATA_API_KEY = os.getenv("TWELVEDATA_API_KEY", "")
-
-# Tickers that are known to not work on either Twelve Data or yfinance
+# Tickers that are known to not work
 SKIP_TICKERS = {
     "USDC", "USDT", "UNKNOWN", "", "N/A",
-    "CRCL", "STRC",  # Micro-cap / delisted
-    "FTSE350DEF=I",  # Not available
-    "BDI=F",  # Baltic Dry Index
-    "EWB",  # Delisted ETF
-    "GB10Y=RR",  # Bond yield
-    "BKM.L",  # Obscure LSE ticker
-    "IMOEX.ME",  # Russian index - restricted
-    "RUB=X",  # Russian ruble - restricted
-    "^STOXX50E",  # Euro Stoxx 50 - not on free tier
-    "^SPNY",  # S&P Energy Sector - not on free tier
-    "BA.L",  # LSE tickers unreliable
-    "CL=F",  # Crude Oil futures
-    "BZ=F",  # Brent futures
-    "ITA",   # iShares Italy ETF
-    "NG=F",  # Natural Gas - not on TwelveData free tier
-    "ZC=F",  # Corn futures - not on TwelveData free tier
-    "IRR=X", # Iranian Rial - restricted
-    "^MSCIE", # MSCI EM index - not available
-    "EU10Y=F", # EU bond yield
-    "ASOS.L",  # LSE - unreliable
-    "DJT",    # Trump Media - unreliable on free tier
-    "UAL",    # United Airlines - unreliable on free tier
-    "IBIT",   # ETF - not on TwelveData
-    # US equity tickers that fail during pre-market hours (signals generated at night UTC)
-    "^GSPC",  # S&P 500 - no pre-market hourly data on yfinance
-    "^IXIC",  # Nasdaq - no pre-market hourly data
-    "AAPL",   # Apple - no pre-market hourly data on free tier
-    "SPX",    # S&P 500 alias
-    "IXIC",   # Nasdaq alias
-    "EUROBANKS=F", # Not available on either platform
+    "CRCL", "STRC",
+    "FTSE350DEF=I", "BDI=F", "EWB", "GB10Y=RR",
+    "BKM.L", "IMOEX.ME", "RUB=X", "^STOXX50E",
+    "^SPNY", "BA.L", "CL=F", "BZ=F", "ITA",
+    "NG=F", "ZC=F", "IRR=X", "^MSCIE", "EU10Y=F",
+    "ASOS.L", "DJT", "UAL", "IBIT",
+    "EUROBANKS=F",
 }
 
-# Yahoo-to-TwelveData symbol mapping for special tickers
-SYMBOL_MAP = {
-    "BTC-USD": "BTC/USD",
-    "ETH-USD": "ETH/USD",
-    "EURUSD=X": "EUR/USD",
-    "USDJPY=X": "USD/JPY",
-    "GBPUSD=X": "GBP/USD",
-    "AUDUSD=X": "AUD/USD",
-    "GC=F": "XAU/USD",    # Gold Futures → Gold spot
-    "SI=F": "XAG/USD",    # Silver Futures → Silver spot
-    "^GSPC": "SPX",       # S&P 500
-    "^DJI": "DJI",        # Dow Jones
-    "^IXIC": "IXIC",      # Nasdaq
-}
-
-
-def convert_ticker(yahoo_ticker: str) -> str:
-    """Convert Yahoo Finance ticker format to Twelve Data format."""
-    if yahoo_ticker in SYMBOL_MAP:
-        return SYMBOL_MAP[yahoo_ticker]
-    # Remove .L suffix for London stocks (Twelve Data uses different format)
-    if yahoo_ticker.endswith(".L"):
-        return yahoo_ticker  # Keep as-is, Twelve Data supports LSE tickers
-    return yahoo_ticker
-
-
-def fetch_price_yfinance(yahoo_ticker: str, target_time: datetime) -> tuple[float | None, float | None]:
-    """Fallback: fetch price via yfinance for tickers unavailable on TwelveData."""
+def get_closest_price_yfinance(yahoo_ticker: str, target_time: datetime) -> float | None:
+    """Fetch 5m candles ±30 mins around target_time and pick closest."""
     try:
-        start = target_time - timedelta(hours=2)
-        end = target_time + timedelta(hours=4)
-        hist = yf.download(yahoo_ticker, start=start, end=end, interval="1h", progress=False, auto_adjust=True)
-        if hist.empty or len(hist) < 2:
-            return None, None
-        closes = hist["Close"].dropna().values.tolist()
-        if len(closes) < 2:
-            return None, None
-        return float(closes[0]), float(closes[1])
+        if target_time.tzinfo is None:
+            target_time = target_time.replace(tzinfo=pytz.UTC)
+            
+        start = target_time - timedelta(minutes=30)
+        end = target_time + timedelta(minutes=30)
+        
+        hist = yf.download(yahoo_ticker, start=start, end=end, interval="5m", progress=False, auto_adjust=True)
+        
+        if hist.empty:
+            return None
+            
+        # Convert index to UTC timezone-aware
+        if hist.index.tzinfo is None:
+            hist.index = hist.index.tz_localize('UTC')
+        else:
+            hist.index = hist.index.tz_convert('UTC')
+            
+        # Find closest index
+        time_diffs = abs(hist.index - target_time)
+        closest_idx = time_diffs.argmin()
+        closest_price = hist["Close"].iloc[closest_idx]
+        
+        # If it's a pandas series/dataframe (multi-index), extract scalar
+        if hasattr(closest_price, "item"):
+            return float(closest_price.item())
+        return float(closest_price)
+        
     except Exception as e:
-        logger.error(f"yfinance fallback failed for {yahoo_ticker}: {e}")
-        return None, None
-
-
-def fetch_price_at_time(ticker: str, target_time: datetime) -> tuple[float | None, float | None]:
-    """
-    Fetch the price at signal time and ~1 hour after.
-    Tries TwelveData first, then falls back to yfinance.
-    Returns (price_at_signal, price_1h_after) or (None, None) on failure.
-    """
-    td_symbol = convert_ticker(ticker)
-    
-    start_date = (target_time - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
-    end_date = (target_time + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
-
-    # --- Try TwelveData first ---
-    if TWELVEDATA_API_KEY:
-        try:
-            url = "https://api.twelvedata.com/time_series"
-            params = {
-                "symbol": td_symbol,
-                "interval": "1h",
-                "start_date": start_date,
-                "end_date": end_date,
-                "timezone": "UTC",
-                "outputsize": 5,
-                "apikey": TWELVEDATA_API_KEY,
-            }
-            
-            res = requests.get(url, params=params, timeout=10)
-            res.raise_for_status()
-            data = res.json()
-            
-            if "code" not in data or data["code"] == 200:
-                values = data.get("values", [])
-                if len(values) >= 2:
-                    values.reverse()
-                    return float(values[0]["close"]), float(values[1]["close"])
-                elif len(values) == 1:
-                    price = float(values[0]["close"])
-                    return price, price
-                    
-        except Exception as e:
-            logger.warning(f"Twelve Data fetch failed for {td_symbol}: {e}, trying yfinance...")
-
-    # --- Fallback to yfinance (completely free, no API key needed) ---
-    # Use the original yahoo-format ticker for yfinance
-    yahoo_ticker = ticker  # ticker is already in yahoo format (e.g. ^GSPC, AAPL, BTC-USD)
-    result = fetch_price_yfinance(yahoo_ticker, target_time)
-    if result[0] is not None:
-        logger.info(f"yfinance fallback succeeded for {yahoo_ticker}")
-        return result
-
-    logger.warning(f"No price data for {ticker} from any source")
-    return None, None
-
+        logger.error(f"yfinance closest price fetch failed for {yahoo_ticker}: {e}")
+        return None
 
 def fetch_and_fill_outcomes():
-    if not TWELVEDATA_API_KEY:
-        logger.error("TWELVEDATA_API_KEY not configured — skipping outcome evaluation")
-        return
-        
     try:
-        # Query signals where price_1h_after is NULL and signal is at least 2 hours old
-        two_hours_ago = (datetime.utcnow() - timedelta(hours=2)).isoformat() + "Z"
+        now_utc = datetime.utcnow().replace(tzinfo=pytz.UTC).isoformat()
         
+        # Pull up to 2 rows where status in PENDING, RETRY and eval_time <= NOW
         response = supabase.table("signal_outcomes")\
             .select("*")\
-            .is_("price_1h_after", "null")\
-            .lt("signal_timestamp", two_hours_ago)\
-            .limit(8)\
+            .in_("status", ["PENDING", "RETRY"])\
+            .lte("evaluation_time", now_utc)\
+            .order("evaluation_time", desc=False)\
+            .limit(2)\
             .execute()
             
         signals = response.data
@@ -163,47 +73,67 @@ def fetch_and_fill_outcomes():
             return
 
         logger.info(f"Processing {len(signals)} pending signals")
-        processed = 0
-        skipped = 0
 
         for signal in signals:
             ticker = signal.get("ticker")
+            signal_id = signal["id"]
+            
+            # Update last_attempt
+            current_time = datetime.utcnow().replace(tzinfo=pytz.UTC).isoformat()
+            supabase.table("signal_outcomes").update({"last_attempt": current_time}).eq("id", signal_id).execute()
+            
             if not ticker or ticker in SKIP_TICKERS:
-                # Mark as Neutral so we don't keep retrying bad tickers
-                try:
-                    supabase.table("signal_outcomes").update({
-                        "outcome_1h": "Neutral",
-                        "price_at_signal": 0,
-                        "price_1h_after": 0,
-                    }).eq("id", signal["id"]).execute()
-                    logger.info(f"Skipped invalid ticker: {ticker}")
-                except Exception:
-                    pass
-                skipped += 1
+                supabase.table("signal_outcomes").update({
+                    "status": "UNRESOLVABLE",
+                    "failure_reason": "Invalid or skipped ticker"
+                }).eq("id", signal_id).execute()
                 continue
                 
             signal_time_str = signal.get("signal_timestamp")
-            if not signal_time_str:
+            eval_time_str = signal.get("evaluation_time")
+            if not signal_time_str or not eval_time_str:
                 continue
                 
-            # Parse timestamp
-            signal_time_str = signal_time_str.replace("Z", "+00:00")
-            signal_time = datetime.fromisoformat(signal_time_str)
+            # Check market open
+            if not is_market_open_now(ticker, eval_time_str):
+                # Roll forward evaluation time
+                next_eval_time, status = get_evaluation_time(ticker, signal_time_str)
+                supabase.table("signal_outcomes").update({
+                    "evaluation_time": next_eval_time,
+                    "status": status
+                }).eq("id", signal_id).execute()
+                logger.info(f"Market closed for {ticker} at {eval_time_str}, rolled forward to {next_eval_time}")
+                continue
+
+            # Parse times
+            signal_time = datetime.fromisoformat(signal_time_str.replace("Z", "+00:00"))
+            eval_time = datetime.fromisoformat(eval_time_str.replace("Z", "+00:00"))
             
-            # Rate-limit protection: respect Twelve Data's 8 credits/min limit
-            time.sleep(8)
+            # Fetch prices
+            price_signal = get_closest_price_yfinance(ticker, signal_time)
+            price_after = get_closest_price_yfinance(ticker, eval_time)
             
-            price_at_signal, price_1h_after = fetch_price_at_time(ticker, signal_time)
-            
-            if price_at_signal is None or price_1h_after is None:
-                logger.warning(f"No price data for {ticker}, skipping")
+            if price_signal is None or price_after is None:
+                # No data
+                retry_count = signal.get("retry_count", 0) + 1
+                if retry_count < 5:
+                    supabase.table("signal_outcomes").update({
+                        "status": "RETRY",
+                        "retry_count": retry_count,
+                        "failure_reason": "Empty price data from yfinance"
+                    }).eq("id", signal_id).execute()
+                else:
+                    supabase.table("signal_outcomes").update({
+                        "status": "NO_DATA",
+                        "retry_count": retry_count,
+                        "failure_reason": "Max retries reached with empty price data"
+                    }).eq("id", signal_id).execute()
                 continue
                 
             direction = signal.get("signal_direction")
             outcome_1h = "Neutral"
             
-            # Use a small threshold to avoid noise
-            pct_change = (price_1h_after - price_at_signal) / price_at_signal if price_at_signal != 0 else 0
+            pct_change = (price_after - price_signal) / price_signal if price_signal != 0 else 0
             
             if direction == "Bullish":
                 if pct_change > 0.001:
@@ -216,26 +146,32 @@ def fetch_and_fill_outcomes():
                 elif pct_change > 0.001:
                     outcome_1h = "Incorrect"
                     
+            # Map outcome_1h text back to the new status enum values
+            status_map = {
+                "Correct": "CORRECT",
+                "Incorrect": "INCORRECT",
+                "Neutral": "NEUTRAL"
+            }
+            
             # Update database
             update_data = {
-                "price_at_signal": price_at_signal,
-                "price_1h_after": price_1h_after,
-                "outcome_1h": outcome_1h
+                "price_signal": price_signal,
+                "price_after": price_after,
+                "percentage_change": pct_change,
+                "status": status_map.get(outcome_1h, "NEUTRAL"),
+                "evaluated_at": current_time,
+                "provider_used": "yfinance",
+                "outcome_1h": outcome_1h # Backward compatibility
             }
             
             try:
-                supabase.table("signal_outcomes").update(update_data).eq("id", signal["id"]).execute()
+                supabase.table("signal_outcomes").update(update_data).eq("id", signal_id).execute()
                 logger.info(f"Evaluated {ticker}: {outcome_1h} ({direction}, {pct_change:+.3%})")
-                processed += 1
             except Exception as e:
                 logger.error(f"DB update failed for {ticker}: {e}")
-                
-        logger.info(f"Outcome tracker done: {processed} evaluated, {skipped} skipped")
                 
     except Exception as e:
         logger.error(f"Error in outcome_tracker: {e}")
 
 if __name__ == "__main__":
     fetch_and_fill_outcomes()
-
-# TEST: curl http://localhost:5000/api/admin/evaluate-signals?secret=ChinnuU07
