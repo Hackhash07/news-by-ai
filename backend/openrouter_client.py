@@ -183,6 +183,48 @@ def analyze_news(article, article_body=""):
             return None
     return None
 
+def analyze_news_batch(articles_list):
+    from backend.schemas import BatchNewsAnalysisItem
+    client = get_client()
+    if not client:
+        return None
+
+    if not articles_list:
+        return []
+
+    content_payload = "Analyze the following news articles. For each article, output a JSON object matching the schema and include its article_index.\n\n"
+    for i, article in enumerate(articles_list):
+        headline = article.get("headline", "")
+        category = article.get("category", "")
+        body = article.get("body", "")
+        
+        content_payload += f"--- ARTICLE INDEX: {i} ---\nHeadline: {headline}\nCategory: {category}\n"
+        if body:
+            content_payload += f"Full Article Body:\n{body}\n"
+        content_payload += "\n"
+
+    import time
+    
+    for attempt in range(3):
+        try:
+            analyses: list[BatchNewsAnalysisItem] = client.chat.completions.create(
+                model="nvidia/nemotron-3-super-120b-a12b:free",
+                response_model=list[BatchNewsAnalysisItem],
+                max_retries=3,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": content_payload}
+                ]
+            )
+            return [a.model_dump() for a in analyses]
+        except Exception as e:
+            print(f"OpenRouter API Batch Error on attempt {attempt+1}: {e}")
+            if "429" in str(e) or "rate-limited" in str(e):
+                time.sleep(5)
+                continue
+            return None
+    return None
+
 def generate_morning_brief(top_news_items):
     from backend.schemas import MorningBrief
     client = get_client()

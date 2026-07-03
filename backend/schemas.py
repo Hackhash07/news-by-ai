@@ -48,3 +48,5 @@ class MorningBrief(BaseModel):
     top_assets: list[str]
     overall_sentiment: Literal["Bullish", "Bearish", "Mixed", "Cautious"]
 
+class BatchNewsAnalysisItem(NewsAnalysis):
+    article_index: int

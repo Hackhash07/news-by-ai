@@ -158,11 +158,73 @@ def collect_news(force=False):
     failed_count = 0
     
     try:
+        pending_batch = []
+        
+        def process_batch():
+            nonlocal inserted_count, duplicates_skipped, failed_count, pending_batch
+            if not pending_batch:
+                return
+            
+            # 3. AI Inference (Batched)
+            try:
+                from backend.intelligence_engine import build_intelligence_batch
+                batch_results = build_intelligence_batch(pending_batch)
+                
+                for i, art in enumerate(pending_batch):
+                    intelligence = batch_results.get(i)
+                    if not intelligence:
+                        failed_count += 1
+                        print(f"Failed to get AI result for {art['title']}")
+                        continue
+                        
+                    # Compute minhash to save
+                    m = get_minhash(art['content_to_hash'])
+                    
+                    inserted = save_article(
+                        title=art['title'],
+                        link=art['link'],
+                        category=intelligence.get("category"),
+                        sentiment=intelligence.get("sentiment"),
+                        importance=intelligence.get("importance"),
+                        market_impact=intelligence.get("market_impact"),
+                        assets=intelligence.get("assets"),
+                        directions=intelligence.get("directions"),
+                        confidence=intelligence.get("confidence"),
+                        time_horizon=intelligence.get("time_horizon"),
+                        analysis=intelligence.get("analysis"),
+                        structured_analysis=intelligence.get("structured_analysis"),
+                        source=art['source_name'],
+                        published_at=art['published_at'],
+                        image_url=art['image_url'],
+                        source_weight=art['weight'],
+                        source_tier=art['tier'],
+                        analysis_source=art['analysis_source'],
+                        content_signature=[int(h) for h in m.hashvalues] # Cast np.uint64 to int for JSONB
+                    )
+                    
+                    if inserted:
+                        inserted_count += 1
+                        lsh.insert(art['link'], m) # Add to memory index
+                        print(f"Inserted: {art['title']} ({art['analysis_source']})")
+                    else:
+                        duplicates_skipped += 1
+                        
+                # Pace ourselves to avoid hammering the free OpenRouter rate limit
+                import time
+                time.sleep(4)
+                
+            except Exception as e:
+                failed_count += len(pending_batch)
+                print(f"Error processing batch: {e}")
+                
+            pending_batch.clear()
+
         for source_name, feed_info in RSS_FEEDS.items():
             feed_url = feed_info["url"]
             weight = feed_info["weight"]
             tier = feed_info["tier"]
             
+            import feedparser
             feed = feedparser.parse(feed_url)
             for entry in feed.entries[:3]:
                 title = getattr(entry, "title", "").strip()
@@ -191,48 +253,25 @@ def collect_news(force=False):
                     print(f"Duplicate (LSH): {title}")
                     continue
                     
-                # 3. AI Inference
-                try:
-                    intelligence = build_intelligence(title, summary, body)
+                pending_batch.append({
+                    'title': title,
+                    'link': link,
+                    'summary': summary,
+                    'body': body,
+                    'published_at': published_at,
+                    'image_url': image_url,
+                    'source_name': source_name,
+                    'weight': weight,
+                    'tier': tier,
+                    'analysis_source': analysis_source,
+                    'content_to_hash': content_to_hash
+                })
+                
+                if len(pending_batch) >= 5:
+                    process_batch()
                     
-                    # Compute minhash to save
-                    m = get_minhash(content_to_hash)
-                    
-                    inserted = save_article(
-                        title=title,
-                        link=link,
-                        category=intelligence.get("category"),
-                        sentiment=intelligence.get("sentiment"),
-                        importance=intelligence.get("importance"),
-                        market_impact=intelligence.get("market_impact"),
-                        assets=intelligence.get("assets"),
-                        directions=intelligence.get("directions"),
-                        confidence=intelligence.get("confidence"),
-                        time_horizon=intelligence.get("time_horizon"),
-                        analysis=intelligence.get("analysis"),
-                        structured_analysis=intelligence.get("structured_analysis"),
-                        source=source_name,
-                        published_at=published_at,
-                        image_url=image_url,
-                        source_weight=weight,
-                        source_tier=tier,
-                        analysis_source=analysis_source,
-                        content_signature=[int(h) for h in m.hashvalues] # Cast np.uint64 to int for JSONB
-                    )
-                    
-                    if inserted:
-                        inserted_count += 1
-                        lsh.insert(link, m) # Add to memory index
-                        print(f"Inserted: {title} ({analysis_source})")
-                    else:
-                        duplicates_skipped += 1
-                    
-                    # Pace ourselves to avoid hammering the free OpenRouter rate limit
-                    time.sleep(4)
-                        
-                except Exception as e:
-                    failed_count += 1
-                    print(f"Error analyzing {title}: {e}")
+        # Process any remaining articles
+        process_batch()
 
     finally:
         # Prune old low-importance articles to prevent DB from growing too large
