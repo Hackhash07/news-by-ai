@@ -10,6 +10,7 @@ const state = {
   search: "",
   user: null,
   savedArticles: new Set(),
+  sortFilter: "default",
 };
 
 const refs = {};
@@ -22,6 +23,14 @@ document.addEventListener("DOMContentLoaded", () => {
   refs.refreshBtn = document.getElementById("refresh-btn");
   refs.newsContainer = document.getElementById("news-container");
   refs.lastUpdated = document.getElementById("last-updated");
+  refs.sortFilter = document.getElementById("news-sort-filter");
+
+  if (refs.sortFilter) {
+    refs.sortFilter.addEventListener("change", (e) => {
+      state.sortFilter = e.target.value;
+      fetchNews();
+    });
+  }
   refs.tickerTime = document.getElementById("ticker-time");
   refs.marketDot = document.getElementById("market-dot");
   refs.marketText = document.getElementById("market-status-text");
@@ -935,7 +944,9 @@ async function loadNews() {
       }
     }, 3000);
 
-    const response = await fetch(API_URL, { cache: "no-store" });
+    const targetUrl = new URL(API_URL);
+    targetUrl.searchParams.set("filter", state.sortFilter);
+    const response = await fetch(targetUrl.toString(), { cache: "no-store" });
     isFetching = false;
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 

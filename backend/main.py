@@ -169,6 +169,17 @@ def news():
     except Exception as e:
         print(f"Error attaching signal outcomes to news feed: {e}")
 
+    filter_type = request.args.get('filter', 'default')
+    
+    if filter_type == 'high_importance_today':
+        articles.sort(key=lambda a: a.get('importance', 0), reverse=True)
+    elif filter_type == 'low_importance_today':
+        articles.sort(key=lambda a: a.get('importance', 0))
+    elif filter_type == 'correct_signals':
+        articles = [a for a in articles if any(asset.get('outcome_1h') == 'Correct' for asset in a.get('structured_analysis', {}).get('affected_assets', []))]
+    elif filter_type == 'incorrect_signals':
+        articles = [a for a in articles if any(asset.get('outcome_1h') == 'Incorrect' for asset in a.get('structured_analysis', {}).get('affected_assets', []))]
+
     return jsonify(articles)
 
 

@@ -243,7 +243,17 @@
         <!-- Filter bar -->
         <div class="filter-row">
             <div id="category-filters" class="chips" role="group" aria-label="Category filters"></div>
-            <span id="last-updated" class="last-updated" aria-live="polite">Loading…</span>
+            
+            <div class="filter-controls-right">
+                <select id="news-sort-filter" class="sort-dropdown">
+                    <option value="default">Default (Latest)</option>
+                    <option value="high_importance_today">High Importance First</option>
+                    <option value="low_importance_today">Low Importance First</option>
+                    <option value="correct_signals">Correct AI Signals Only</option>
+                    <option value="incorrect_signals">Incorrect AI Signals Only</option>
+                </select>
+                <span id="last-updated" class="last-updated" aria-live="polite">Loading…</span>
+            </div>
         </div>
 
         <!-- News cards -->
