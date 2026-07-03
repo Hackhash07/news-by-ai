@@ -4,28 +4,38 @@ from backend.database import supabase
 import logging
 import time
 import os
+import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
 TWELVEDATA_API_KEY = os.getenv("TWELVEDATA_API_KEY", "")
 
-# Tickers that are known to not work on Twelve Data free tier
+# Tickers that are known to not work on either Twelve Data or yfinance
 SKIP_TICKERS = {
     "USDC", "USDT", "UNKNOWN", "", "N/A",
     "CRCL", "STRC",  # Micro-cap / delisted
     "FTSE350DEF=I",  # Not available
-    "BDI=F",  # Baltic Dry Index - not on Twelve Data
+    "BDI=F",  # Baltic Dry Index
     "EWB",  # Delisted ETF
-    "GB10Y=RR",  # Bond yield - not on Twelve Data
+    "GB10Y=RR",  # Bond yield
     "BKM.L",  # Obscure LSE ticker
-    "IMOEX.ME",  # Russian index - not available
+    "IMOEX.ME",  # Russian index - restricted
     "RUB=X",  # Russian ruble - restricted
     "^STOXX50E",  # Euro Stoxx 50 - not on free tier
     "^SPNY",  # S&P Energy Sector - not on free tier
-    "BA.L",  # LSE tickers unreliable on free tier
-    "CL=F",  # Crude Oil futures - no free endpoint
-    "BZ=F",  # Brent futures - no free endpoint
-    "ITA",   # iShares Italy ETF - insufficient data
+    "BA.L",  # LSE tickers unreliable
+    "CL=F",  # Crude Oil futures
+    "BZ=F",  # Brent futures
+    "ITA",   # iShares Italy ETF
+    "NG=F",  # Natural Gas - not on TwelveData free tier
+    "ZC=F",  # Corn futures - not on TwelveData free tier
+    "IRR=X", # Iranian Rial - restricted
+    "^MSCIE", # MSCI EM index - not available
+    "EU10Y=F", # EU bond yield
+    "ASOS.L",  # LSE - unreliable
+    "DJT",    # Trump Media - unreliable on free tier
+    "UAL",    # United Airlines - unreliable on free tier
+    "IBIT",   # ETF - not on TwelveData
 }
 
 # Yahoo-to-TwelveData symbol mapping for special tickers
@@ -54,67 +64,74 @@ def convert_ticker(yahoo_ticker: str) -> str:
     return yahoo_ticker
 
 
-def fetch_price_at_time(ticker: str, target_time: datetime) -> tuple[float | None, float | None]:
-    """
-    Fetch the price at signal time and ~1 hour after using Twelve Data.
-    Returns (price_at_signal, price_1h_after) or (None, None) on failure.
-    """
-    if not TWELVEDATA_API_KEY:
-        logger.error("TWELVEDATA_API_KEY not set")
+def fetch_price_yfinance(yahoo_ticker: str, target_time: datetime) -> tuple[float | None, float | None]:
+    """Fallback: fetch price via yfinance for tickers unavailable on TwelveData."""
+    try:
+        start = target_time - timedelta(hours=2)
+        end = target_time + timedelta(hours=4)
+        hist = yf.download(yahoo_ticker, start=start, end=end, interval="1h", progress=False, auto_adjust=True)
+        if hist.empty or len(hist) < 2:
+            return None, None
+        closes = hist["Close"].dropna().tolist()
+        if len(closes) < 2:
+            return None, None
+        return float(closes[0]), float(closes[1])
+    except Exception as e:
+        logger.error(f"yfinance fallback failed for {yahoo_ticker}: {e}")
         return None, None
 
+
+def fetch_price_at_time(ticker: str, target_time: datetime) -> tuple[float | None, float | None]:
+    """
+    Fetch the price at signal time and ~1 hour after.
+    Tries TwelveData first, then falls back to yfinance.
+    Returns (price_at_signal, price_1h_after) or (None, None) on failure.
+    """
     td_symbol = convert_ticker(ticker)
     
-    # We need the price at signal time and 1h later
-    # Fetch a small window of 1-hour bars
-    # Use timezone=UTC since our signal timestamps are UTC
     start_date = (target_time - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
     end_date = (target_time + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
 
-    try:
-        url = "https://api.twelvedata.com/time_series"
-        params = {
-            "symbol": td_symbol,
-            "interval": "1h",
-            "start_date": start_date,
-            "end_date": end_date,
-            "timezone": "UTC",
-            "outputsize": 5,
-            "apikey": TWELVEDATA_API_KEY,
-        }
-        
-        res = requests.get(url, params=params, timeout=10)
-        res.raise_for_status()
-        data = res.json()
-        
-        if "code" in data and data["code"] != 200:
-            logger.warning(f"Twelve Data error for {td_symbol}: {data.get('message', 'Unknown error')}")
-            return None, None
-        
-        values = data.get("values", [])
-        if not values:
-            logger.warning(f"No data points for {td_symbol}")
-            return None, None
-        
-        if len(values) == 1:
-            # Only 1 bar available (signal was near market close/open)
-            # Use same price for both → will result in Neutral
-            logger.info(f"Only 1 data point for {td_symbol}, marking as Neutral")
-            price = float(values[0]["close"])
-            return price, price
-        
-        # Twelve Data returns values in reverse chronological order (newest first)
-        # So we reverse to get chronological order
-        values.reverse()
-        
-        price_at_signal = float(values[0]["close"])
-        price_1h_after = float(values[1]["close"])
-        
-        return price_at_signal, price_1h_after
-        
-    except Exception as e:
-        logger.error(f"Twelve Data fetch failed for {td_symbol}: {e}")
-        return None, None
+    # --- Try TwelveData first ---
+    if TWELVEDATA_API_KEY:
+        try:
+            url = "https://api.twelvedata.com/time_series"
+            params = {
+                "symbol": td_symbol,
+                "interval": "1h",
+                "start_date": start_date,
+                "end_date": end_date,
+                "timezone": "UTC",
+                "outputsize": 5,
+                "apikey": TWELVEDATA_API_KEY,
+            }
+            
+            res = requests.get(url, params=params, timeout=10)
+            res.raise_for_status()
+            data = res.json()
+            
+            if "code" not in data or data["code"] == 200:
+                values = data.get("values", [])
+                if len(values) >= 2:
+                    values.reverse()
+                    return float(values[0]["close"]), float(values[1]["close"])
+                elif len(values) == 1:
+                    price = float(values[0]["close"])
+                    return price, price
+                    
+        except Exception as e:
+            logger.warning(f"Twelve Data fetch failed for {td_symbol}: {e}, trying yfinance...")
+
+    # --- Fallback to yfinance (completely free, no API key needed) ---
+    # Use the original yahoo-format ticker for yfinance
+    yahoo_ticker = ticker  # ticker is already in yahoo format (e.g. ^GSPC, AAPL, BTC-USD)
+    result = fetch_price_yfinance(yahoo_ticker, target_time)
+    if result[0] is not None:
+        logger.info(f"yfinance fallback succeeded for {yahoo_ticker}")
+        return result
+
+    logger.warning(f"No price data for {ticker} from any source")
+    return None, None
 
 
 def fetch_and_fill_outcomes():
