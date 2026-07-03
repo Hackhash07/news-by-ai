@@ -73,6 +73,28 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Signal History Modal wiring
+  const historyBtn = document.getElementById("view-signal-history-btn");
+  const historyModal = document.getElementById("history-modal");
+  const closeHistoryModal = document.getElementById("close-history-modal");
+
+  if (historyBtn && historyModal && closeHistoryModal) {
+    historyBtn.addEventListener("click", () => {
+      historyModal.style.display = "flex";
+      fetchSignalHistory();
+    });
+
+    closeHistoryModal.addEventListener("click", () => {
+      historyModal.style.display = "none";
+    });
+
+    historyModal.addEventListener("click", (e) => {
+      if (e.target === historyModal) {
+        historyModal.style.display = "none";
+      }
+    });
+  }
+
   if (refs.searchInput) {
     refs.searchInput.addEventListener("input", (e) => {
       state.search = e.target.value || "";
@@ -1149,4 +1171,54 @@ function requireAuth(actionText) {
 
   document.getElementById("quick-close-btn").onclick = () => modal.remove();
   return false;
+}
+
+async function fetchSignalHistory() {
+  const tbody = document.getElementById("history-table-body");
+  const loading = document.getElementById("history-loading");
+  
+  if (!tbody || !loading) return;
+  
+  loading.style.display = "block";
+  tbody.innerHTML = "";
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/signal-history`);
+    const data = await response.json();
+    
+    loading.style.display = "none";
+    
+    if (data.history && data.history.length > 0) {
+      data.history.forEach((signal, index) => {
+        const row = document.createElement("tr");
+        row.style.borderBottom = "1px solid var(--border)";
+        
+        let expectancy = "No";
+        if (signal.signal_direction === "Bullish") expectancy = "+";
+        else if (signal.signal_direction === "Bearish") expectancy = "-";
+        
+        let realMomentStr = "0.00%";
+        let realMomentColor = "var(--text)";
+        if (signal.percentage_change !== null) {
+          const pct = signal.percentage_change * 100;
+          realMomentStr = (pct > 0 ? "+" : "") + pct.toFixed(2) + "%";
+          if (pct > 0.1) realMomentColor = "var(--green)";
+          else if (pct < -0.1) realMomentColor = "var(--red)";
+        }
+        
+        row.innerHTML = `
+          <td style="padding: 12px 8px;">${index + 1}</td>
+          <td style="padding: 12px 8px; font-weight: bold;">${signal.ticker}</td>
+          <td style="padding: 12px 8px;">${expectancy}</td>
+          <td style="padding: 12px 8px; color: ${realMomentColor};">${realMomentStr}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    } else {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 20px; color: var(--muted);">No signals evaluated yet.</td></tr>`;
+    }
+  } catch (error) {
+    console.error("Error fetching signal history:", error);
+    loading.textContent = "Failed to load history.";
+  }
 }

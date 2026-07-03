@@ -344,6 +344,31 @@
         </div>
     </div>
 
+    <!-- Signal History Modal -->
+    <div id="history-modal" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.85); z-index: 10000; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; width: 95%; max-width: 600px; padding: 32px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); position: relative; max-height: 90vh; display: flex; flex-direction: column;">
+            <button id="close-history-modal" style="position: absolute; top: 16px; right: 16px; background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 20px;">✖</button>
+            <h2 style="font-size: 20px; color: var(--accent); margin-bottom: 24px; text-transform: uppercase; letter-spacing: 1px;">Signal History</h2>
+            
+            <div style="overflow-y: auto; flex-grow: 1; margin-right: -16px; padding-right: 16px;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px; color: #fff; text-align: left;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--border); color: var(--muted);">
+                            <th style="padding: 12px 8px; font-weight: 500;">S.No</th>
+                            <th style="padding: 12px 8px; font-weight: 500;">Asset</th>
+                            <th style="padding: 12px 8px; font-weight: 500;">Expectancy</th>
+                            <th style="padding: 12px 8px; font-weight: 500;">Real Moment</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-table-body">
+                        <!-- Rows will be dynamically injected here -->
+                    </tbody>
+                </table>
+                <div id="history-loading" style="text-align: center; padding: 20px; color: var(--muted);">Loading history...</div>
+            </div>
+        </div>
+    </div>
+
     <script type="module" src="app.js"></script>
 </body>
 </html>

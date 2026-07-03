@@ -306,6 +306,22 @@ def api_signal_accuracy():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/signal-history")
+def api_signal_history():
+    try:
+        from backend.database import supabase
+        # Fetch all evaluated signals (Correct, Incorrect, Neutral) for existing articles
+        response = supabase.table("signal_outcomes")\
+            .select("id, ticker, signal_direction, percentage_change, outcome_1h, evaluated_at, news!inner(id)")\
+            .in_("outcome_1h", ["Correct", "Incorrect", "Neutral"])\
+            .order("evaluated_at", desc=True)\
+            .limit(100)\
+            .execute()
+        
+        return jsonify({"history": response.data})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/admin/signal-debug")
 def api_signal_debug():
     secret_param = request.args.get("secret", "")
