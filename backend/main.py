@@ -97,6 +97,10 @@ create_database()
 def home():
     return send_from_directory(str(FRONTEND_DIR), "index.html")
 
+@app.route("/ping")
+def ping():
+    return jsonify({"status": "ok", "message": "Pong! Render is awake."})
+
 @app.route("/<path:filename>")
 def serve_static(filename):
     # If the file exists in frontend, serve it
