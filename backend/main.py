@@ -476,7 +476,8 @@ def api_get_daily_brief():
     today_str = datetime.utcnow().date().isoformat()
     brief = get_morning_brief(today_str)
     if not brief:
-        return jsonify({"error": "No brief found for today"}), 404
+        # Return 200 with error key so frontend suppresses it without throwing a 404 console error
+        return jsonify({"error": "No brief found for today"}), 200
         
     try:
         from backend.database import supabase

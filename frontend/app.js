@@ -1183,7 +1183,7 @@ async function fetchSignalHistory() {
   tbody.innerHTML = "";
   
   try {
-    const response = await fetch(`${API_BASE_URL}/signal-history`);
+    const response = await fetch("https://news-by-ai.onrender.com/api/signal-history");
     const data = await response.json();
     
     loading.style.display = "none";
