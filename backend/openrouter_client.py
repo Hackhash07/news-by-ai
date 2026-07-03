@@ -166,7 +166,7 @@ def analyze_news(article, article_body=""):
         try:
             # Instructor automatically handles retries and validation errors based on the Pydantic schema
             analysis: NewsAnalysis = client.chat.completions.create(
-                model="google/gemini-2.0-flash-lite-preview-02-05:free",
+                model="nvidia/nemotron-3-super-120b-a12b:free",
                 response_model=NewsAnalysis,
                 max_retries=3,
                 messages=[
@@ -206,7 +206,7 @@ Headlines:
 
     try:
         analysis = client.chat.completions.create(
-            model="google/gemini-2.5-flash:free",
+            model="nvidia/nemotron-3-super-120b-a12b:free",
             response_model=MorningBrief,
             max_retries=3,
             messages=[
