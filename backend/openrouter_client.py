@@ -4,10 +4,10 @@ import openai
 from backend.schemas import NewsAnalysis
 
 # Patch the OpenAI client to use OpenRouter with instructor
-def get_client():
-    api_key = os.getenv("OPENROUTER_API_KEY")
+def get_client(api_key=None):
     if not api_key:
-        print("ERROR: OPENROUTER_API_KEY environment variable is not set. Set it in Render/Vercel dashboard.")
+        api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
         return None
         
     return instructor.patch(
@@ -17,6 +17,15 @@ def get_client():
         ),
         mode=instructor.Mode.JSON
     )
+
+def get_all_keys():
+    keys = []
+    k1 = os.getenv("OPENROUTER_API_KEY")
+    if k1: keys.append(k1)
+    for i in range(2, 11):
+        k = os.getenv(f"OPENROUTER_API_KEY_{i}")
+        if k: keys.append(k)
+    return keys if keys else None
 
 SYSTEM_PROMPT = """
 You are a senior institutional macro strategist at a tier-1 hedge fund.
@@ -148,8 +157,9 @@ Return this exact JSON schema:
 """
 
 def analyze_news(article, article_body=""):
-    client = get_client()
-    if not client:
+    keys = get_all_keys()
+    if not keys:
+        print("ERROR: OPENROUTER_API_KEY environment variable is not set. Set it in Render/Vercel dashboard.")
         return None
 
     headline = article.get("headline", "")
@@ -162,31 +172,34 @@ def analyze_news(article, article_body=""):
 
     import time
     
-    for attempt in range(3):
-        try:
-            # Instructor automatically handles retries and validation errors based on the Pydantic schema
-            analysis: NewsAnalysis = client.chat.completions.create(
-                model="nvidia/nemotron-3-super-120b-a12b:free",
-                response_model=NewsAnalysis,
-                max_retries=3,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": content_payload}
-                ]
-            )
-            return analysis.model_dump()
-        except Exception as e:
-            print(f"OpenRouter/Instructor API Error on attempt {attempt+1}: {e}")
-            if "429" in str(e) or "rate-limited" in str(e):
-                time.sleep(5) # wait 5 seconds before retrying
-                continue
-            return None
+    for key in keys:
+        client = get_client(key)
+        for attempt in range(2):
+            try:
+                # Instructor automatically handles retries and validation errors based on the Pydantic schema
+                analysis: NewsAnalysis = client.chat.completions.create(
+                    model="nvidia/nemotron-3-super-120b-a12b:free",
+                    response_model=NewsAnalysis,
+                    max_retries=2,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": content_payload}
+                    ]
+                )
+                return analysis.model_dump()
+            except Exception as e:
+                print(f"OpenRouter API Error: {e}")
+                if "429" in str(e) or "402" in str(e) or "rate-limited" in str(e):
+                    print("Rate limit hit for a key. Rotating to next key...")
+                    break # Break attempt loop, move to next key
+                time.sleep(2)
     return None
 
 def analyze_news_batch(articles_list):
     from backend.schemas import BatchNewsAnalysisItem
-    client = get_client()
-    if not client:
+    keys = get_all_keys()
+    if not keys:
+        print("ERROR: OPENROUTER_API_KEY environment variable is not set.")
         return None
 
     if not articles_list:
@@ -205,30 +218,32 @@ def analyze_news_batch(articles_list):
 
     import time
     
-    for attempt in range(3):
-        try:
-            analyses: list[BatchNewsAnalysisItem] = client.chat.completions.create(
-                model="nvidia/nemotron-3-super-120b-a12b:free",
-                response_model=list[BatchNewsAnalysisItem],
-                max_retries=3,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": content_payload}
-                ]
-            )
-            return [a.model_dump() for a in analyses]
-        except Exception as e:
-            print(f"OpenRouter API Batch Error on attempt {attempt+1}: {e}")
-            if "429" in str(e) or "rate-limited" in str(e):
-                time.sleep(5)
-                continue
-            return None
+    for key in keys:
+        client = get_client(key)
+        for attempt in range(2):
+            try:
+                analyses: list[BatchNewsAnalysisItem] = client.chat.completions.create(
+                    model="nvidia/nemotron-3-super-120b-a12b:free",
+                    response_model=list[BatchNewsAnalysisItem],
+                    max_retries=2,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": content_payload}
+                    ]
+                )
+                return [a.model_dump() for a in analyses]
+            except Exception as e:
+                print(f"OpenRouter API Batch Error: {e}")
+                if "429" in str(e) or "402" in str(e) or "rate-limited" in str(e):
+                    print("Rate limit hit for a key. Rotating to next key...")
+                    break # Break attempt loop, move to next key
+                time.sleep(2)
     return None
 
 def generate_morning_brief(top_news_items):
     from backend.schemas import MorningBrief
-    client = get_client()
-    if not client:
+    keys = get_all_keys()
+    if not keys:
         return {"error": "OPENROUTER_API_KEY missing"}
 
     headlines_text = ""
@@ -246,17 +261,24 @@ Headlines:
 """
     system_prompt = "Generate a concise morning brief. The headline must be one punchy 8-word market summary. The summary must be a 2-3 sentence overview of key market themes today, mentioning specific assets and directional bias. Be direct and confident, not vague."
 
-    try:
-        analysis = client.chat.completions.create(
-            model="nvidia/nemotron-3-super-120b-a12b:free",
-            response_model=MorningBrief,
-            max_retries=3,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        return analysis.model_dump()
-    except Exception as e:
-        print(f"OpenRouter API Error in morning brief: {e}")
-        return {"error": str(e)}
+    import time
+    for key in keys:
+        client = get_client(key)
+        for attempt in range(2):
+            try:
+                analysis = client.chat.completions.create(
+                    model="nvidia/nemotron-3-super-120b-a12b:free",
+                    response_model=MorningBrief,
+                    max_retries=2,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                return analysis.model_dump()
+            except Exception as e:
+                print(f"OpenRouter API Error in morning brief: {e}")
+                if "429" in str(e) or "402" in str(e) or "rate-limited" in str(e):
+                    break
+                time.sleep(2)
+    return {"error": "All API keys failed or rate limited"}
