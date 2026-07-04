@@ -217,9 +217,19 @@ def acquire_refresh_lock():
             locked_at_str = response.data[0].get("locked_at")
             if locked_at_str:
                 from datetime import datetime, timedelta
-                locked_at = datetime.fromisoformat(locked_at_str.replace("Z", "+00:00")).replace(tzinfo=None)
-                if datetime.utcnow() - locked_at > timedelta(minutes=15):
-                    print("Lock is stale (older than 15 minutes). Breaking it.")
+                # Strip timezone info manually to avoid Python 3.9 fromisoformat errors
+                clean_str = locked_at_str.split('+')[0].replace('Z', '')
+                try:
+                    # In case of fractional seconds like .123456
+                    clean_str = clean_str.split('.')[0]
+                    locked_at = datetime.fromisoformat(clean_str)
+                    if datetime.utcnow() - locked_at > timedelta(minutes=15):
+                        print("Lock is stale (older than 15 minutes). Breaking it.")
+                        supabase.table("refresh_locks").update({"is_locked": True, "locked_at": _utc_now_text()}).eq("id", 1).execute()
+                        return True
+                except Exception as parse_e:
+                    print(f"Error parsing lock time {clean_str}: {parse_e}")
+                    # If we can't parse it for some reason, just break the lock as a safety measure
                     supabase.table("refresh_locks").update({"is_locked": True, "locked_at": _utc_now_text()}).eq("id", 1).execute()
                     return True
             return False
