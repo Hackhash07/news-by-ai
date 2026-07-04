@@ -334,6 +334,55 @@ def api_signal_debug():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/admin/pending-signals")
+def api_admin_pending_signals():
+    secret_param = request.args.get("secret", "")
+    if secret_param != ADMIN_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        from backend.database import supabase
+        response = supabase.table("signal_outcomes").select("id, ticker, signal_direction, signal_timestamp, status, news!inner(title)").in_("status", ["PENDING", "RETRY", "NO_DATA", "UNRESOLVABLE"]).order("signal_timestamp", desc=True).limit(50).execute()
+        return jsonify({"signals": response.data})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/admin/manual-evaluate", methods=["POST"])
+def api_admin_manual_evaluate():
+    payload = request.get_json(silent=True) or {}
+    secret = payload.get("secret", "")
+    if secret != ADMIN_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    signal_id = payload.get("id")
+    outcome = payload.get("outcome") # Correct, Incorrect, Neutral
+
+    if not signal_id or outcome not in ["Correct", "Incorrect", "Neutral"]:
+        return jsonify({"error": "Invalid payload"}), 400
+
+    status_map = {
+        "Correct": "CORRECT",
+        "Incorrect": "INCORRECT",
+        "Neutral": "NEUTRAL"
+    }
+    
+    try:
+        from backend.database import supabase
+        from datetime import datetime
+        import pytz
+        current_time = datetime.utcnow().replace(tzinfo=pytz.UTC).isoformat()
+        
+        update_data = {
+            "status": status_map[outcome],
+            "outcome_1h": outcome,
+            "evaluated_at": current_time,
+            "provider_used": "manual"
+        }
+        
+        supabase.table("signal_outcomes").update(update_data).eq("id", signal_id).execute()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/admin/evaluate-signals", methods=["POST", "GET"])
 def api_evaluate_signals():
     secret_param = request.args.get("secret", "")

@@ -89,6 +89,13 @@
     </div>
   </div>
 
+  <div class="panel" style="margin-top: 24px;">
+    <h1>Manual Evaluation</h1>
+    <p>Manually grade signals that failed to evaluate automatically.</p>
+    <button id="loadPendingBtn" onclick="loadPendingSignals()">Load Pending Signals</button>
+    <div id="pendingContainer" style="margin-top: 16px;"></div>
+  </div>
+
   <script>
     async function updateNews() {
       const secret = document.getElementById("secret").value.trim();
@@ -104,7 +111,7 @@
       status.textContent = "Updating...";
 
       try {
-        const res = await fetch(`/update-news?key=${encodeURIComponent(secret)}`, {
+        const res = await fetch(`/update-news?secret=${encodeURIComponent(secret)}`, {
           cache: "no-store"
         });
         const data = await res.json();
@@ -114,11 +121,82 @@
           return;
         }
 
-        status.textContent = `Updated successfully. Articles in DB: ${data.articles}`;
+        status.textContent = `Updated successfully.`;
       } catch (e) {
         status.textContent = `Network error: ${e.message}`;
       } finally {
         btn.disabled = false;
+      }
+    }
+
+    async function loadPendingSignals() {
+      const secret = document.getElementById("secret").value.trim();
+      const container = document.getElementById("pendingContainer");
+      if (!secret) {
+        container.innerHTML = "<div style='color:#ef4444'>Enter the update secret first.</div>";
+        return;
+      }
+
+      container.innerHTML = "Loading...";
+      try {
+        const res = await fetch(`/api/admin/pending-signals?secret=${encodeURIComponent(secret)}`);
+        const data = await res.json();
+        
+        if (!res.ok) throw new Error(data.error || "Failed to load");
+        if (!data.signals || data.signals.length === 0) {
+            container.innerHTML = "<div>No pending signals found.</div>";
+            return;
+        }
+
+        let html = '';
+        data.signals.forEach(sig => {
+            const date = new Date(sig.signal_timestamp).toLocaleString();
+            const title = sig.news ? sig.news.title : 'Unknown News';
+            html += `
+              <div id="sig-${sig.id}" style="background: #1e293b; padding: 16px; border-radius: 8px; margin-bottom: 12px; font-size: 14px;">
+                <div style="font-weight: bold; margin-bottom: 4px;">${sig.ticker} (${sig.signal_direction})</div>
+                <div style="color: #94a3b8; margin-bottom: 8px;">${date}</div>
+                <div style="color: #94a3b8; margin-bottom: 12px; font-style: italic;">${title}</div>
+                <div style="display: flex; gap: 8px;">
+                  <select id="sel-${sig.id}" style="flex: 1; padding: 8px; background: #0f172a; color: white; border: 1px solid #334155; border-radius: 6px;">
+                    <option value="">Select Outcome...</option>
+                    <option value="Correct">Correct</option>
+                    <option value="Incorrect">Incorrect</option>
+                    <option value="Neutral">Neutral</option>
+                  </select>
+                  <button onclick="submitEval('${sig.id}')" style="width: auto; padding: 8px 16px;">Submit</button>
+                </div>
+              </div>
+            `;
+        });
+        container.innerHTML = html;
+      } catch (e) {
+        container.innerHTML = `<div style='color:#ef4444'>${e.message}</div>`;
+      }
+    }
+
+    async function submitEval(id) {
+      const secret = document.getElementById("secret").value.trim();
+      const outcome = document.getElementById(`sel-${id}`).value;
+      if (!outcome) {
+        alert("Select an outcome first");
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/admin/manual-evaluate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ secret, id, outcome })
+        });
+        if (!res.ok) {
+           const err = await res.json();
+           throw new Error(err.error || "Failed to submit");
+        }
+        
+        document.getElementById(`sig-${id}`).remove();
+      } catch (e) {
+        alert(e.message);
       }
     }
   </script>
