@@ -19,7 +19,8 @@ def get_client(api_key=None):
     client = instructor.patch(
         openai.OpenAI(
             base_url="https://openrouter.ai/api/v1",
-            api_key=api_key
+            api_key=api_key,
+            timeout=60.0
         ),
         mode=instructor.Mode.JSON
     )
