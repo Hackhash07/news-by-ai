@@ -3,6 +3,9 @@ import instructor
 import openai
 from backend.schemas import NewsAnalysis
 
+# Cache clients to avoid memory leaks from unclosed httpx connections
+_client_cache = {}
+
 # Patch the OpenAI client to use OpenRouter with instructor
 def get_client(api_key=None):
     if not api_key:
@@ -10,13 +13,18 @@ def get_client(api_key=None):
     if not api_key:
         return None
         
-    return instructor.patch(
+    if api_key in _client_cache:
+        return _client_cache[api_key]
+        
+    client = instructor.patch(
         openai.OpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key
         ),
         mode=instructor.Mode.JSON
     )
+    _client_cache[api_key] = client
+    return client
 
 def get_all_keys():
     keys = []
