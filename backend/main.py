@@ -347,7 +347,7 @@ def api_admin_debug_logs():
         
         locks = supabase.table("refresh_locks").select("*").execute()
         logs = supabase.table("refresh_logs").select("*").order("created_at", desc=True).limit(5).execute()
-        jobs = supabase.table("job_log").select("*").order("id", desc=True).limit(5).execute()
+        jobs = supabase.table("job_log").select("*").order("started_at", desc=True).limit(5).execute()
         
         return jsonify({
             "locks": locks.data,
