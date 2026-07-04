@@ -151,12 +151,16 @@
 
         let html = '';
         data.signals.forEach(sig => {
-            const date = new Date(sig.signal_timestamp).toLocaleString();
+            const date = new Date(sig.signal_timestamp);
+            const evalDate = new Date(date.getTime() + 60 * 60 * 1000); // Add 1 hour
+            const dateStr = date.toLocaleString();
+            const evalDateStr = evalDate.toLocaleString();
             const title = sig.news ? sig.news.title : 'Unknown News';
             html += `
               <div id="sig-${sig.id}" style="background: #1e293b; padding: 16px; border-radius: 8px; margin-bottom: 12px; font-size: 14px;">
                 <div style="font-weight: bold; margin-bottom: 4px;">${sig.ticker} (${sig.signal_direction})</div>
-                <div style="color: #94a3b8; margin-bottom: 8px;">Signal Time: ${date}</div>
+                <div style="color: #94a3b8; margin-bottom: 2px;">Signal Time: <strong style="color: #cbd5e1">${dateStr}</strong></div>
+                <div style="color: #94a3b8; margin-bottom: 8px;">Eval Time (1h): <strong style="color: #cbd5e1">${evalDateStr}</strong></div>
                 <div style="color: #94a3b8; margin-bottom: 12px; font-style: italic;">${title}</div>
                 <div style="display: flex; gap: 8px;">
                   <input type="number" step="any" id="ps-${sig.id}" placeholder="Price at Signal" style="flex: 1; margin-bottom: 0;" />
