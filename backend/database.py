@@ -208,7 +208,7 @@ def acquire_refresh_lock():
     if not supabase:
         return True
     try:
-        response = supabase.table("refresh_locks").select("is_locked").eq("id", 1).execute()
+        response = supabase.table("refresh_locks").select("*").eq("id", 1).execute()
         if not response.data:
             supabase.table("refresh_locks").insert({"id": 1, "is_locked": True, "locked_at": _utc_now_text()}).execute()
             return True
