@@ -307,9 +307,13 @@ Headlines:
 def call_gemini_fallback(system_prompt, content_payload, response_model):
     import os
     gemini_key = os.getenv("GEMINI_API_KEY")
-    if not gemini_key:
-        print("GEMINI_API_KEY not found. Fallback skipped.")
-        return None
+    try:
+        from backend.database import supabase
+        if not gemini_key:
+            supabase.table("refresh_locks").update({"locked_by": "GEMINI_API_KEY IS MISSING IN ENVIRONMENT VARIABLES"}).eq("id", 1).execute()
+            return None
+    except:
+        pass
         
     print("Falling back to Gemini API (google-genai)...")
     try:
