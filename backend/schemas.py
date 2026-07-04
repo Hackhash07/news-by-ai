@@ -12,7 +12,7 @@ class AffectedAsset(BaseModel):
     asset_class: Literal["Equity", "Commodity", "Forex", "Crypto", "Fixed Income", "Index", "Unknown"]
     direction: Literal["Bullish", "Bearish", "Neutral"]
     confidence: float = Field(ge=0.0, le=1.0)
-    evaluation_window_hours: Literal[1, 4, 24, 72, 168]
+    evaluation_window_hours: int = Field(ge=1, le=168)
     reason: str
 
 class ConsensusDeviation(BaseModel):
