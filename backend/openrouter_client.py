@@ -204,7 +204,9 @@ def analyze_news(article, article_body=""):
                     print("Rate limit hit for a key. Rotating to next key...")
                     break # Break attempt loop, move to next key
                 time.sleep(2)
-    return None
+                
+    # If we exhaust all OpenRouter keys, fallback to Gemini
+    return call_gemini_fallback(SYSTEM_PROMPT, content_payload, NewsAnalysis)
 
 def analyze_news_batch(articles_list):
     from backend.schemas import BatchNewsAnalysisItem
@@ -249,7 +251,9 @@ def analyze_news_batch(articles_list):
                     print("Rate limit hit for a key. Rotating to next key...")
                     break # Break attempt loop, move to next key
                 time.sleep(2)
-    return None
+                
+    # If we exhaust all OpenRouter keys, fallback to Gemini
+    return call_gemini_fallback(SYSTEM_PROMPT, content_payload, list[BatchNewsAnalysisItem])
 
 def generate_morning_brief(top_news_items):
     from backend.schemas import MorningBrief
@@ -292,4 +296,47 @@ Headlines:
                 if "429" in str(e) or "402" in str(e) or "rate-limited" in str(e):
                     break
                 time.sleep(2)
+                
+    # If we exhaust all OpenRouter keys, fallback to Gemini
+    result = call_gemini_fallback(system_prompt, prompt, MorningBrief)
+    if result:
+        return result
+        
     return {"error": "All API keys failed or rate limited"}
+
+def call_gemini_fallback(system_prompt, content_payload, response_model):
+    import os
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_key:
+        print("GEMINI_API_KEY not found. Fallback skipped.")
+        return None
+        
+    print("Falling back to Gemini API (google-genai)...")
+    try:
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=gemini_key)
+        
+        # Combine system prompt and user content since Gemini API prefers a single combined instruction for schemas
+        full_content = system_prompt + "\n\n" + content_payload
+        
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=full_content,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=response_model,
+                temperature=0.2
+            ),
+        )
+        # Parse the JSON response into our Pydantic model
+        if hasattr(response_model, '__args__') and type(response_model).__name__ == '_GenericAlias':
+            # It's a list response model
+            from pydantic import TypeAdapter
+            adapter = TypeAdapter(response_model)
+            return [m.model_dump() for m in adapter.validate_json(response.text)]
+        else:
+            return response_model.model_validate_json(response.text).model_dump()
+    except Exception as e:
+        print(f"Gemini fallback error: {e}")
+        return None
