@@ -354,32 +354,68 @@ def api_admin_manual_evaluate():
         return jsonify({"error": "Unauthorized"}), 401
 
     signal_id = payload.get("id")
-    outcome = payload.get("outcome") # Correct, Incorrect, Neutral
+    price_signal = payload.get("price_signal")
+    price_after = payload.get("price_after")
 
-    if not signal_id or outcome not in ["Correct", "Incorrect", "Neutral"]:
-        return jsonify({"error": "Invalid payload"}), 400
+    if not signal_id or price_signal is None or price_after is None:
+        return jsonify({"error": "Invalid payload. Needs id, price_signal, and price_after."}), 400
 
-    status_map = {
-        "Correct": "CORRECT",
-        "Incorrect": "INCORRECT",
-        "Neutral": "NEUTRAL"
-    }
-    
+    try:
+        price_signal = float(price_signal)
+        price_after = float(price_after)
+    except ValueError:
+        return jsonify({"error": "Prices must be numbers."}), 400
+
     try:
         from backend.database import supabase
         from datetime import datetime
         import pytz
+
+        # Fetch the signal to get the direction
+        sig_resp = supabase.table("signal_outcomes").select("signal_direction").eq("id", signal_id).execute()
+        if not sig_resp.data:
+            return jsonify({"error": "Signal not found."}), 404
+            
+        direction = sig_resp.data[0].get("signal_direction")
+        
+        pct_change = (price_after - price_signal) / price_signal if price_signal != 0 else 0
+        outcome_1h = "Neutral"
+        
+        if direction == "Bullish":
+            if pct_change > 0.001:
+                outcome_1h = "Correct"
+            elif pct_change < -0.001:
+                outcome_1h = "Incorrect"
+        elif direction == "Bearish":
+            if pct_change < -0.001:
+                outcome_1h = "Correct"
+            elif pct_change > 0.001:
+                outcome_1h = "Incorrect"
+                
+        status_map = {
+            "Correct": "CORRECT",
+            "Incorrect": "INCORRECT",
+            "Neutral": "NEUTRAL"
+        }
+
         current_time = datetime.utcnow().replace(tzinfo=pytz.UTC).isoformat()
         
         update_data = {
-            "status": status_map[outcome],
-            "outcome_1h": outcome,
+            "price_signal": price_signal,
+            "price_after": price_after,
+            "percentage_change": pct_change,
+            "status": status_map.get(outcome_1h, "NEUTRAL"),
+            "outcome_1h": outcome_1h,
             "evaluated_at": current_time,
             "provider_used": "manual"
         }
         
         supabase.table("signal_outcomes").update(update_data).eq("id", signal_id).execute()
-        return jsonify({"success": True})
+        return jsonify({
+            "success": True, 
+            "computed_outcome": outcome_1h, 
+            "pct_change": pct_change
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

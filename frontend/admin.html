@@ -155,15 +155,11 @@
             html += `
               <div id="sig-${sig.id}" style="background: #1e293b; padding: 16px; border-radius: 8px; margin-bottom: 12px; font-size: 14px;">
                 <div style="font-weight: bold; margin-bottom: 4px;">${sig.ticker} (${sig.signal_direction})</div>
-                <div style="color: #94a3b8; margin-bottom: 8px;">${date}</div>
+                <div style="color: #94a3b8; margin-bottom: 8px;">Signal Time: ${date}</div>
                 <div style="color: #94a3b8; margin-bottom: 12px; font-style: italic;">${title}</div>
                 <div style="display: flex; gap: 8px;">
-                  <select id="sel-${sig.id}" style="flex: 1; padding: 8px; background: #0f172a; color: white; border: 1px solid #334155; border-radius: 6px;">
-                    <option value="">Select Outcome...</option>
-                    <option value="Correct">Correct</option>
-                    <option value="Incorrect">Incorrect</option>
-                    <option value="Neutral">Neutral</option>
-                  </select>
+                  <input type="number" step="any" id="ps-${sig.id}" placeholder="Price at Signal" style="flex: 1; margin-bottom: 0;" />
+                  <input type="number" step="any" id="pa-${sig.id}" placeholder="Price at Eval" style="flex: 1; margin-bottom: 0;" />
                   <button onclick="submitEval('${sig.id}')" style="width: auto; padding: 8px 16px;">Submit</button>
                 </div>
               </div>
@@ -177,9 +173,10 @@
 
     async function submitEval(id) {
       const secret = document.getElementById("secret").value.trim();
-      const outcome = document.getElementById(`sel-${id}`).value;
-      if (!outcome) {
-        alert("Select an outcome first");
+      const ps = document.getElementById(`ps-${id}`).value;
+      const pa = document.getElementById(`pa-${id}`).value;
+      if (!ps || !pa) {
+        alert("Please enter both prices.");
         return;
       }
 
@@ -187,7 +184,7 @@
         const res = await fetch("/api/admin/manual-evaluate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ secret, id, outcome })
+          body: JSON.stringify({ secret, id, price_signal: ps, price_after: pa })
         });
         if (!res.ok) {
            const err = await res.json();
