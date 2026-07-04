@@ -326,18 +326,34 @@ def call_gemini_fallback(system_prompt, content_payload, response_model):
         from google.genai import types
         client = genai.Client(api_key=gemini_key)
         
-        # Combine system prompt and user content since Gemini API prefers a single combined instruction for schemas
         full_content = system_prompt + "\n\n" + content_payload
         
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=full_content,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=response_model,
-                temperature=0.2
-            ),
-        )
+        fallback_models = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro-latest', 'gemini-1.5-flash-8b']
+        response = None
+        last_error = None
+        
+        for m in fallback_models:
+            try:
+                response = client.models.generate_content(
+                    model=m,
+                    contents=full_content,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=response_model,
+                        temperature=0.2
+                    ),
+                )
+                break
+            except Exception as loop_e:
+                last_error = loop_e
+                if "404" in str(loop_e) or "not found" in str(loop_e).lower() or "not supported" in str(loop_e).lower():
+                    continue
+                else:
+                    raise loop_e
+                    
+        if not response:
+            raise last_error
+
         # Parse the JSON response into our Pydantic model
         if hasattr(response_model, '__args__') and type(response_model).__name__ == '_GenericAlias':
             # It's a list response model
