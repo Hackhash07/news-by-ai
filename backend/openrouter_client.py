@@ -112,6 +112,7 @@ AFFECTED ASSETS — For every asset, provide:
   direction: "Bullish", "Bearish", or "Neutral"
   confidence: 0.0 to 1.0 (how confident are you in this specific 
               asset's directional call — score independently per asset)
+  evaluation_window_hours: Integer from 1 to 168. How many hours will it take for this asset to reflect the news?
   reason: one sentence explaining the directional call
 
 CONSENSUS DEVIATION — Assess whether this news deviates from what 
@@ -142,6 +143,7 @@ Return this exact JSON schema:
       "asset_class": <string>,
       "direction": "Bullish" | "Bearish" | "Neutral",
       "confidence": <float 0.0-1.0>,
+      "evaluation_window_hours": <int 1-168>,
       "reason": <string>
     }
   ],
