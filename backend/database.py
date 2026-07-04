@@ -214,6 +214,14 @@ def acquire_refresh_lock():
             return True
             
         if response.data[0].get("is_locked"):
+            locked_at_str = response.data[0].get("locked_at")
+            if locked_at_str:
+                from datetime import datetime, timedelta
+                locked_at = datetime.fromisoformat(locked_at_str.replace("Z", "+00:00")).replace(tzinfo=None)
+                if datetime.utcnow() - locked_at > timedelta(minutes=15):
+                    print("Lock is stale (older than 15 minutes). Breaking it.")
+                    supabase.table("refresh_locks").update({"is_locked": True, "locked_at": _utc_now_text()}).eq("id", 1).execute()
+                    return True
             return False
             
         supabase.table("refresh_locks").update({"is_locked": True, "locked_at": _utc_now_text()}).eq("id", 1).execute()
