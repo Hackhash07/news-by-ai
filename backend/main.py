@@ -283,7 +283,8 @@ def api_signal_accuracy():
     try:
         from backend.database import supabase
         # Use inner join to only fetch outcomes for articles that still exist in the news table
-        response = supabase.table("signal_outcomes").select("outcome_1h, news!inner(id)").execute()
+        # Hide all legacy signals prior to dynamic evaluation launch
+        response = supabase.table("signal_outcomes").select("outcome_1h, news!inner(id)").gte("signal_timestamp", "2026-07-04T08:05:00Z").execute()
         
         if not response.data:
             return jsonify({"error": "No signals tracked yet"}), 404
@@ -311,8 +312,10 @@ def api_signal_history():
     try:
         from backend.database import supabase
         # Fetch all evaluated signals (Correct, Incorrect, Neutral) for existing articles
+        # Hide all legacy signals prior to dynamic evaluation launch
         response = supabase.table("signal_outcomes")\
             .select("id, ticker, signal_direction, percentage_change, outcome_1h, evaluated_at, news!inner(id)")\
+            .gte("signal_timestamp", "2026-07-04T08:05:00Z")\
             .in_("outcome_1h", ["Correct", "Incorrect", "Neutral"])\
             .order("evaluated_at", desc=True)\
             .limit(100)\
