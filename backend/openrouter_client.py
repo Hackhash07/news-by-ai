@@ -321,7 +321,7 @@ def call_gemini_fallback(system_prompt, content_payload, response_model):
         full_content = system_prompt + "\n\n" + content_payload
         
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-1.5-flash',
             contents=full_content,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
