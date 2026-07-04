@@ -339,4 +339,9 @@ def call_gemini_fallback(system_prompt, content_payload, response_model):
             return response_model.model_validate_json(response.text).model_dump()
     except Exception as e:
         print(f"Gemini fallback error: {e}")
+        try:
+            from backend.database import supabase
+            supabase.table("refresh_locks").update({"locked_by": f"GEMINI ERROR: {str(e)[:500]}"}).eq("id", 1).execute()
+        except:
+            pass
         return None
