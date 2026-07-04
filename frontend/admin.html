@@ -111,8 +111,9 @@
       status.textContent = "Updating...";
 
       try {
-        const res = await fetch(`/update-news?secret=${encodeURIComponent(secret)}`, {
-          cache: "no-store"
+        const res = await fetch(`https://news-by-ai.onrender.com/api/admin/refresh-news?secret=${encodeURIComponent(secret)}`, {
+          cache: "no-store",
+          method: "POST"
         });
         const data = await res.json();
 
@@ -139,7 +140,7 @@
 
       container.innerHTML = "Loading...";
       try {
-        const res = await fetch(`/api/admin/pending-signals?secret=${encodeURIComponent(secret)}`);
+        const res = await fetch(`https://news-by-ai.onrender.com/api/admin/pending-signals?secret=${encodeURIComponent(secret)}`);
         const data = await res.json();
         
         if (!res.ok) throw new Error(data.error || "Failed to load");
@@ -181,7 +182,7 @@
       }
 
       try {
-        const res = await fetch("/api/admin/manual-evaluate", {
+        const res = await fetch("https://news-by-ai.onrender.com/api/admin/manual-evaluate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ secret, id, price_signal: ps, price_after: pa })
