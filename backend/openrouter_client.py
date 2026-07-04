@@ -254,8 +254,11 @@ def analyze_news_batch(articles_list):
                 time.sleep(2)
                 
     # If we exhaust all OpenRouter keys, fallback to Gemini
-    from typing import List
-    return call_gemini_fallback(SYSTEM_PROMPT, content_payload, List[BatchNewsAnalysisItem])
+    from backend.schemas import BatchNewsResponse
+    fallback_res = call_gemini_fallback(SYSTEM_PROMPT, content_payload, BatchNewsResponse)
+    if fallback_res and isinstance(fallback_res, dict) and "analyses" in fallback_res:
+        return fallback_res["analyses"]
+    return []
 
 def generate_morning_brief(top_news_items):
     from backend.schemas import MorningBrief

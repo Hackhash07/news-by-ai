@@ -51,3 +51,6 @@ class MorningBrief(BaseModel):
 
 class BatchNewsAnalysisItem(NewsAnalysis):
     article_index: int
+
+class BatchNewsResponse(BaseModel):
+    analyses: List[BatchNewsAnalysisItem]
