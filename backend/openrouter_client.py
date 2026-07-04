@@ -235,9 +235,10 @@ def analyze_news_batch(articles_list):
         client = get_client(key)
         for attempt in range(2):
             try:
-                analyses: list[BatchNewsAnalysisItem] = client.chat.completions.create(
+                from typing import List
+                analyses: List[BatchNewsAnalysisItem] = client.chat.completions.create(
                     model="nvidia/nemotron-3-super-120b-a12b:free",
-                    response_model=list[BatchNewsAnalysisItem],
+                    response_model=List[BatchNewsAnalysisItem],
                     max_retries=2,
                     messages=[
                         {"role": "system", "content": SYSTEM_PROMPT},
@@ -253,7 +254,8 @@ def analyze_news_batch(articles_list):
                 time.sleep(2)
                 
     # If we exhaust all OpenRouter keys, fallback to Gemini
-    return call_gemini_fallback(SYSTEM_PROMPT, content_payload, list[BatchNewsAnalysisItem])
+    from typing import List
+    return call_gemini_fallback(SYSTEM_PROMPT, content_payload, List[BatchNewsAnalysisItem])
 
 def generate_morning_brief(top_news_items):
     from backend.schemas import MorningBrief

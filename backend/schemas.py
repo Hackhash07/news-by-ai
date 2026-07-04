@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Literal
+from typing import Literal, List
 
 VALID_CATEGORIES = Literal[
     "Crypto", "Macro", "Equities", "Forex", "Commodities",
@@ -32,21 +32,21 @@ class NewsAnalysis(BaseModel):
     category: VALID_CATEGORIES
     executive_summary: str
     market_thesis: str
-    affected_assets: list[AffectedAsset]
-    first_order_effects: list[str]
-    second_order_effects: list[str]
+    affected_assets: List[AffectedAsset]
+    first_order_effects: List[str]
+    second_order_effects: List[str]
     bull_case: str
     bear_case: str
     time_horizon: TimeHorizon
-    key_risks: list[str]
-    portfolio_tags: list[str]
-    watch_next: list[str]
+    key_risks: List[str]
+    portfolio_tags: List[str]
+    watch_next: List[str]
     consensus_deviation: ConsensusDeviation
 
 class MorningBrief(BaseModel):
     headline: str
     summary: str
-    top_assets: list[str]
+    top_assets: List[str]
     overall_sentiment: Literal["Bullish", "Bearish", "Mixed", "Cautious"]
 
 class BatchNewsAnalysisItem(NewsAnalysis):
