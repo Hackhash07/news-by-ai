@@ -337,6 +337,26 @@ def api_signal_debug():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/admin/debug-logs")
+def api_admin_debug_logs():
+    secret_param = request.args.get("secret", "")
+    if secret_param != ADMIN_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        from backend.database import supabase
+        
+        locks = supabase.table("refresh_locks").select("*").execute()
+        logs = supabase.table("refresh_logs").select("*").order("created_at", desc=True).limit(5).execute()
+        jobs = supabase.table("job_log").select("*").order("id", desc=True).limit(5).execute()
+        
+        return jsonify({
+            "locks": locks.data,
+            "refresh_logs": logs.data,
+            "job_logs": jobs.data
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/admin/pending-signals")
 def api_admin_pending_signals():
     secret_param = request.args.get("secret", "")
