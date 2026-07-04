@@ -93,7 +93,8 @@ def save_article(
                 for a in affected_assets:
                     if a.get("direction") != "Neutral" and a.get("ticker") != "UNKNOWN":
                         from backend.market_utils import get_evaluation_time
-                        eval_time, status = get_evaluation_time(a.get("ticker"), data["created_at"])
+                        eval_hours = a.get("evaluation_window_hours", 1)
+                        eval_time, status = get_evaluation_time(a.get("ticker"), data["created_at"], hours=eval_hours)
                         
                         signal_data = {
                             "news_id": news_id,

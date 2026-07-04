@@ -14,7 +14,7 @@ def is_crypto(ticker: str) -> bool:
         return True
     return False
 
-def get_evaluation_time(ticker: str, signal_time_iso: str) -> tuple[str, str]:
+def get_evaluation_time(ticker: str, signal_time_iso: str, hours: int = 1) -> tuple[str, str]:
     """
     Given a ticker and signal creation time (ISO format UTC), 
     returns a tuple of (evaluation_time_iso_utc, initial_status).
@@ -23,7 +23,7 @@ def get_evaluation_time(ticker: str, signal_time_iso: str) -> tuple[str, str]:
     if signal_time.tzinfo is None:
         signal_time = signal_time.replace(tzinfo=pytz.UTC)
         
-    target_time = signal_time + timedelta(hours=1)
+    target_time = signal_time + timedelta(hours=hours)
     
     if is_crypto(ticker):
         return target_time.isoformat(), 'PENDING'
@@ -48,7 +48,7 @@ def get_evaluation_time(ticker: str, signal_time_iso: str) -> tuple[str, str]:
     for _, row in schedule.iterrows():
         market_open = row['market_open'].to_pydatetime()
         if market_open > signal_time:
-            next_eval_time = market_open + timedelta(hours=1)
+            next_eval_time = market_open + timedelta(hours=hours)
             return next_eval_time.isoformat(), 'AWAITING_MARKET'
             
     # Fallback just in case (e.g. holidays very far out)

@@ -341,7 +341,7 @@ def api_admin_pending_signals():
         return jsonify({"error": "Unauthorized"}), 401
     try:
         from backend.database import supabase
-        response = supabase.table("signal_outcomes").select("id, ticker, signal_direction, signal_timestamp, status, news!inner(title)").in_("status", ["PENDING", "RETRY", "NO_DATA", "UNRESOLVABLE"]).order("signal_timestamp", desc=True).limit(50).execute()
+        response = supabase.table("signal_outcomes").select("id, ticker, signal_direction, signal_timestamp, evaluation_time, status, news!inner(title)").in_("status", ["PENDING", "RETRY", "NO_DATA", "UNRESOLVABLE"]).order("signal_timestamp", desc=True).limit(50).execute()
         return jsonify({"signals": response.data})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
