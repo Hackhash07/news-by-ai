@@ -328,14 +328,14 @@
             
             <div style="margin-bottom: 20px;">
                 <h3 style="font-size: 14px; color: #fff; margin-bottom: 8px;">How is Accuracy Measured?</h3>
-                <p style="font-size: 13px; color: var(--text); line-height: 1.5;">We record the live market price at the exact second the news breaks. Exactly <strong>1 hour later</strong> (or 1 hour after the next market open for overnight/weekend equity news), we fetch the price again to see if the asset moved in the direction we predicted.</p>
+                <p style="font-size: 13px; color: var(--text); line-height: 1.5;">We record the live market price at the exact second the news breaks. After the AI's dynamically predicted <strong>evaluation window</strong> has passed (or after the next market open for overnight/weekend equity news), we fetch the price again to see if the asset moved in the direction we predicted.</p>
             </div>
 
             <div style="display: flex; gap: 16px; margin-bottom: 24px;">
                 <div style="flex: 1; background: rgba(39, 196, 122, 0.1); border: 1px solid rgba(39, 196, 122, 0.3); padding: 16px; border-radius: 8px;">
                     <div style="color: var(--green); font-size: 12px; font-weight: 700; margin-bottom: 4px; text-transform: uppercase;">Correct Signals</div>
                     <div id="modal-correct-count" style="font-size: 24px; font-weight: 700; color: #fff;">-</div>
-                    <div style="font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 4px;">Predicted direction matched the 1-hour price action.</div>
+                    <div style="font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 4px;">Predicted direction matched the price action at the end of the evaluation window.</div>
                 </div>
                 <div style="flex: 1; background: rgba(255, 82, 82, 0.1); border: 1px solid rgba(255, 82, 82, 0.3); padding: 16px; border-radius: 8px;">
                     <div style="color: var(--red); font-size: 12px; font-weight: 700; margin-bottom: 4px; text-transform: uppercase;">Incorrect Signals</div>
