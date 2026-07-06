@@ -161,8 +161,8 @@
             const gapHours = Math.round(gapMs / (1000 * 60 * 60));
             const gapStr = gapHours >= 24 ? `${Math.round(gapHours/24)}d` : `${gapHours}h`;
 
-            const dateStr = date.toLocaleString();
-            const evalDateStr = evalDate.toLocaleString();
+            const dateStr = date.toLocaleString(undefined, { hour12: false });
+            const evalDateStr = evalDate.toLocaleString(undefined, { hour12: false });
             const title = sig.news ? sig.news.title : 'Unknown News';
             
             html += `
