@@ -46,7 +46,7 @@ document.addEventListener("DOMContentLoaded", () => {
   refs.topBearish = document.getElementById("top-bearish");
   refs.articleCount = document.getElementById("article-count");
   refs.signalStrip = document.getElementById("signal-strip");
-  refs.signalAccuracy = document.getElementById("signal-accuracy");
+
 
   updateClock();
   setInterval(updateClock, 1000);
@@ -243,18 +243,16 @@ async function loadDailyBrief() {
 }
 
 async function loadSignalAccuracy() {
-  if (!refs.signalAccuracy) return;
+  if (!document.getElementById("overall-accuracy")) return;
   try {
     const response = await fetch(
       "https://news-by-ai.onrender.com/api/signal-accuracy",
     );
     if (!response.ok) {
-      refs.signalAccuracy.textContent = "—";
       return;
     }
     const data = await response.json();
     if (data.error) {
-      refs.signalAccuracy.textContent = "—";
       return;
     }
 
@@ -278,7 +276,7 @@ async function loadSignalAccuracy() {
     const modalIncorrect = document.getElementById("modal-incorrect-count");
     if (modalIncorrect && data.overall) modalIncorrect.textContent = data.overall.incorrect || 0;
   } catch (e) {
-    refs.signalAccuracy.textContent = "—";
+    console.error("Failed to load accuracy", e);
   }
 }
 
