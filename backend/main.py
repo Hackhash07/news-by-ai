@@ -282,27 +282,47 @@ def update_outcomes():
 def api_signal_accuracy():
     try:
         from backend.database import supabase
-        # Use inner join to only fetch outcomes for articles that still exist in the news table
-        # Hide all legacy signals prior to dynamic evaluation launch
-        response = supabase.table("signal_outcomes").select("outcome_1h, news!inner(id)").gte("signal_timestamp", "2026-07-04T08:05:00Z").execute()
+        # 1. Active Signals (linked to live news articles on homepage)
+        response_active = supabase.table("signal_outcomes").select("outcome_1h, news!inner(id)").gte("signal_timestamp", "2026-07-04T08:05:00Z").execute()
         
-        if not response.data:
-            return jsonify({"error": "No signals tracked yet"}), 404
-            
-        total = len(response.data)
-        correct = len([r for r in response.data if r.get("outcome_1h") == "Correct"])
-        incorrect = len([r for r in response.data if r.get("outcome_1h") == "Incorrect"])
-        neutral = len([r for r in response.data if r.get("outcome_1h") == "Neutral"])
+        # 2. Lifetime Signals (all signals ever evaluated, even if parent news is deleted)
+        response_lifetime = supabase.table("signal_outcomes").select("outcome_1h").gte("signal_timestamp", "2026-07-04T08:05:00Z").execute()
         
-        accuracy = (correct / (correct + incorrect)) if (correct + incorrect) > 0 else 0
+        active_data = response_active.data or []
+        lifetime_data = response_lifetime.data or []
+        
+        # Calculate Active Stats
+        active_total = len(active_data)
+        active_correct = len([r for r in active_data if r.get("outcome_1h") == "Correct"])
+        active_incorrect = len([r for r in active_data if r.get("outcome_1h") == "Incorrect"])
+        active_neutral = len([r for r in active_data if r.get("outcome_1h") == "Neutral"])
+        active_eval = active_correct + active_incorrect
+        active_accuracy = (active_correct / active_eval) if active_eval > 0 else 0
+        
+        # Calculate Lifetime Stats
+        lifetime_total = len(lifetime_data)
+        lifetime_correct = len([r for r in lifetime_data if r.get("outcome_1h") == "Correct"])
+        lifetime_incorrect = len([r for r in lifetime_data if r.get("outcome_1h") == "Incorrect"])
+        lifetime_neutral = len([r for r in lifetime_data if r.get("outcome_1h") == "Neutral"])
+        lifetime_eval = lifetime_correct + lifetime_incorrect
+        lifetime_accuracy = (lifetime_correct / lifetime_eval) if lifetime_eval > 0 else 0
         
         return jsonify({
-            "total_signals": total,
-            "evaluated_signals": correct + incorrect,
-            "accuracy_1h": round(accuracy, 3),
-            "correct": correct,
-            "incorrect": incorrect,
-            "neutral": neutral
+            # Active Stats
+            "total_signals": active_total,
+            "evaluated_signals": active_eval,
+            "accuracy_1h": round(active_accuracy, 3),
+            "correct": active_correct,
+            "incorrect": active_incorrect,
+            "neutral": active_neutral,
+            
+            # Lifetime Stats
+            "lifetime_total_signals": lifetime_total,
+            "lifetime_evaluated_signals": lifetime_eval,
+            "lifetime_accuracy": round(lifetime_accuracy, 3),
+            "lifetime_correct": lifetime_correct,
+            "lifetime_incorrect": lifetime_incorrect,
+            "lifetime_neutral": lifetime_neutral
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500

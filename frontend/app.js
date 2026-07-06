@@ -268,7 +268,20 @@ async function loadSignalAccuracy() {
     else if (pct >= 50) color = "#f59e0b"; // amber
 
     refs.signalAccuracy.innerHTML = `<span style="color:${color}">${pct}%</span> <span style="font-size:11px; color:var(--muted); font-weight:400;">(${evaluated} signals)</span>`;
-    
+
+    // Lifetime Accuracy
+    const lifetimeAccRef = document.getElementById("lifetime-accuracy");
+    if (lifetimeAccRef) {
+      const lifeAccuracy = data.lifetime_accuracy;
+      const lifeEvaluated = data.lifetime_evaluated_signals || 0;
+      const lifePct = Math.round(lifeAccuracy * 100);
+      
+      let lifeColor = "var(--red)";
+      if (lifePct >= 60) lifeColor = "var(--green)";
+      else if (lifePct >= 50) lifeColor = "#f59e0b";
+      
+      lifetimeAccRef.innerHTML = `<span style="color:${lifeColor}">${lifePct}%</span> <span style="font-size:11px; color:var(--muted); font-weight:400;">(${lifeEvaluated} signals)</span>`;
+    }    
     // Update modal counts
     const modalCorrect = document.getElementById("modal-correct-count");
     if (modalCorrect) modalCorrect.textContent = data.correct || 0;
