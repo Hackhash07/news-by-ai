@@ -47,21 +47,33 @@ document.addEventListener("DOMContentLoaded", () => {
   refs.articleCount = document.getElementById("article-count");
   refs.signalStrip = document.getElementById("signal-strip");
 
-
-  updateClock();
-  setInterval(updateClock, 1000);
-  updateMarketStatus();
-
-  // Accuracy Modal wiring
-  const accuracyCard = document.getElementById("accuracy-card");
+  const todayCard = document.getElementById("today-accuracy-card");
+  const yesterdayCard = document.getElementById("yesterday-accuracy-card");
+  const overallCard = document.getElementById("overall-accuracy-card");
   const accuracyModal = document.getElementById("accuracy-modal");
   const closeAccuracyModal = document.getElementById("close-accuracy-modal");
 
-  if (accuracyCard && accuracyModal && closeAccuracyModal) {
-    accuracyCard.addEventListener("click", () => {
-      accuracyModal.style.display = "flex";
-    });
+  function openModalForStats(type) {
+    if (!window.accuracyData || !accuracyModal) return;
+    const stats = window.accuracyData[type];
+    
+    document.getElementById("modal-correct-count").textContent = stats.correct || 0;
+    document.getElementById("modal-incorrect-count").textContent = stats.incorrect || 0;
+    
+    let titleStr = "Overall";
+    if (type === "today") titleStr = "Today's";
+    if (type === "yesterday") titleStr = "Yesterday's";
+    const titleEl = document.getElementById("accuracy-modal-title");
+    if (titleEl) titleEl.textContent = `How We Measure ${titleStr} Accuracy`;
+    
+    accuracyModal.style.display = "flex";
+  }
 
+  if (todayCard) todayCard.addEventListener("click", () => openModalForStats("today"));
+  if (yesterdayCard) yesterdayCard.addEventListener("click", () => openModalForStats("yesterday"));
+  if (overallCard) overallCard.addEventListener("click", () => openModalForStats("overall"));
+
+  if (closeAccuracyModal && accuracyModal) {
     closeAccuracyModal.addEventListener("click", () => {
       accuracyModal.style.display = "none";
     });
@@ -267,14 +279,10 @@ async function loadSignalAccuracy() {
       ref.innerHTML = `<span style="color:${color}">${pct}%</span> <span style="font-size:11px; color:var(--muted); font-weight:400;">(${evaluated} signals)</span>`;
     }
 
+    window.accuracyData = data;
     renderAccuracyCard("today-accuracy", data.today);
     renderAccuracyCard("yesterday-accuracy", data.yesterday);
     renderAccuracyCard("overall-accuracy", data.overall);
-    // Update modal counts
-    const modalCorrect = document.getElementById("modal-correct-count");
-    if (modalCorrect && data.overall) modalCorrect.textContent = data.overall.correct || 0;
-    const modalIncorrect = document.getElementById("modal-incorrect-count");
-    if (modalIncorrect && data.overall) modalIncorrect.textContent = data.overall.incorrect || 0;
   } catch (e) {
     console.error("Failed to load accuracy", e);
   }
