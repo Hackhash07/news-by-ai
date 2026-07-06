@@ -291,11 +291,32 @@ function updateClock() {
 
 function updateMarketStatus() {
   if (!refs.marketDot || !refs.marketText) return;
-  const now = new Date();
-  const day = now.getDay();
-  const mins = now.getHours() * 60 + now.getMinutes();
-  const isOpen =
-    day >= 1 && day <= 5 && mins >= 9 * 60 + 15 && mins < 15 * 60 + 30;
+  
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  });
+  
+  const parts = formatter.formatToParts(new Date());
+  let weekday = "";
+  let hour = 0;
+  let minute = 0;
+  
+  for (const part of parts) {
+    if (part.type === "weekday") weekday = part.value;
+    if (part.type === "hour") hour = parseInt(part.value, 10);
+    if (part.type === "minute") minute = parseInt(part.value, 10);
+  }
+  
+  const isWeekend = weekday === "Sat" || weekday === "Sun";
+  const mins = hour * 60 + minute;
+  
+  // NYSE: 9:30 AM (570 mins) to 4:00 PM (960 mins) EST
+  const isOpen = !isWeekend && mins >= 570 && mins < 960;
+  
   refs.marketDot.className = "market-dot " + (isOpen ? "open" : "closed");
   refs.marketText.textContent = isOpen ? "Markets Open" : "Markets Closed";
 }
