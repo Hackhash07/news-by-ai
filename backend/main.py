@@ -282,47 +282,60 @@ def update_outcomes():
 def api_signal_accuracy():
     try:
         from backend.database import supabase
-        # 1. Active Signals (linked to live news articles on homepage)
-        response_active = supabase.table("signal_outcomes").select("outcome_1h, news!inner(id)").gte("signal_timestamp", "2026-07-04T08:05:00Z").execute()
+        from datetime import datetime, timedelta, timezone
         
-        # 2. Lifetime Signals (all signals ever evaluated, even if parent news is deleted)
-        response_lifetime = supabase.table("signal_outcomes").select("outcome_1h").gte("signal_timestamp", "2026-07-04T08:05:00Z").execute()
+        # Lifetime Signals (all signals ever evaluated)
+        response_lifetime = supabase.table("signal_outcomes").select("outcome_1h, signal_timestamp").gte("signal_timestamp", "2026-07-04T08:05:00Z").execute()
         
-        active_data = response_active.data or []
         lifetime_data = response_lifetime.data or []
         
-        # Calculate Active Stats
-        active_total = len(active_data)
-        active_correct = len([r for r in active_data if r.get("outcome_1h") == "Correct"])
-        active_incorrect = len([r for r in active_data if r.get("outcome_1h") == "Incorrect"])
-        active_neutral = len([r for r in active_data if r.get("outcome_1h") == "Neutral"])
-        active_eval = active_correct + active_incorrect
-        active_accuracy = (active_correct / active_eval) if active_eval > 0 else 0
+        now = datetime.now(timezone.utc)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday_start = today_start - timedelta(days=1)
         
-        # Calculate Lifetime Stats
-        lifetime_total = len(lifetime_data)
-        lifetime_correct = len([r for r in lifetime_data if r.get("outcome_1h") == "Correct"])
-        lifetime_incorrect = len([r for r in lifetime_data if r.get("outcome_1h") == "Incorrect"])
-        lifetime_neutral = len([r for r in lifetime_data if r.get("outcome_1h") == "Neutral"])
-        lifetime_eval = lifetime_correct + lifetime_incorrect
-        lifetime_accuracy = (lifetime_correct / lifetime_eval) if lifetime_eval > 0 else 0
+        today_data = []
+        yesterday_data = []
+        
+        for r in lifetime_data:
+            ts_str = r.get("signal_timestamp")
+            if not ts_str:
+                continue
+            try:
+                # Handle ISO formats
+                clean_ts = ts_str.replace("Z", "+00:00")
+                ts = datetime.fromisoformat(clean_ts)
+                    
+                if ts >= today_start:
+                    today_data.append(r)
+                elif ts >= yesterday_start and ts < today_start:
+                    yesterday_data.append(r)
+            except:
+                pass
+                
+        def calc_stats(data_list):
+            total = len(data_list)
+            correct = len([r for r in data_list if r.get("outcome_1h") == "Correct"])
+            incorrect = len([r for r in data_list if r.get("outcome_1h") == "Incorrect"])
+            neutral = len([r for r in data_list if r.get("outcome_1h") == "Neutral"])
+            evaluated = correct + incorrect
+            accuracy = (correct / evaluated) if evaluated > 0 else 0
+            return {
+                "total_signals": total,
+                "evaluated_signals": evaluated,
+                "accuracy": round(accuracy, 3),
+                "correct": correct,
+                "incorrect": incorrect,
+                "neutral": neutral
+            }
+            
+        today_stats = calc_stats(today_data)
+        yesterday_stats = calc_stats(yesterday_data)
+        overall_stats = calc_stats(lifetime_data)
         
         return jsonify({
-            # Active Stats
-            "total_signals": active_total,
-            "evaluated_signals": active_eval,
-            "accuracy_1h": round(active_accuracy, 3),
-            "correct": active_correct,
-            "incorrect": active_incorrect,
-            "neutral": active_neutral,
-            
-            # Lifetime Stats
-            "lifetime_total_signals": lifetime_total,
-            "lifetime_evaluated_signals": lifetime_eval,
-            "lifetime_accuracy": round(lifetime_accuracy, 3),
-            "lifetime_correct": lifetime_correct,
-            "lifetime_incorrect": lifetime_incorrect,
-            "lifetime_neutral": lifetime_neutral
+            "today": today_stats,
+            "yesterday": yesterday_stats,
+            "overall": overall_stats
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500

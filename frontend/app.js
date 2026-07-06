@@ -258,35 +258,25 @@ async function loadSignalAccuracy() {
       return;
     }
 
-    const accuracy = data.accuracy_1h;
-    const evaluated = data.evaluated_signals || 0;
-    const pct = Math.round(accuracy * 100);
+    function renderAccuracyCard(elementId, stats) {
+      const ref = document.getElementById(elementId);
+      if (!ref || !stats) return;
+      const pct = Math.round(stats.accuracy * 100);
+      const evaluated = stats.evaluated_signals || 0;
+      let color = "var(--red)";
+      if (pct >= 60) color = "var(--green)";
+      else if (pct >= 50) color = "#f59e0b";
+      ref.innerHTML = `<span style="color:${color}">${pct}%</span> <span style="font-size:11px; color:var(--muted); font-weight:400;">(${evaluated} signals)</span>`;
+    }
 
-    // Color coding based on accuracy
-    let color = "var(--red)"; // < 50%
-    if (pct >= 60) color = "var(--green)";
-    else if (pct >= 50) color = "#f59e0b"; // amber
-
-    refs.signalAccuracy.innerHTML = `<span style="color:${color}">${pct}%</span> <span style="font-size:11px; color:var(--muted); font-weight:400;">(${evaluated} signals)</span>`;
-
-    // Lifetime Accuracy
-    const lifetimeAccRef = document.getElementById("lifetime-accuracy");
-    if (lifetimeAccRef) {
-      const lifeAccuracy = data.lifetime_accuracy;
-      const lifeEvaluated = data.lifetime_evaluated_signals || 0;
-      const lifePct = Math.round(lifeAccuracy * 100);
-      
-      let lifeColor = "var(--red)";
-      if (lifePct >= 60) lifeColor = "var(--green)";
-      else if (lifePct >= 50) lifeColor = "#f59e0b";
-      
-      lifetimeAccRef.innerHTML = `<span style="color:${lifeColor}">${lifePct}%</span> <span style="font-size:11px; color:var(--muted); font-weight:400;">(${lifeEvaluated} signals)</span>`;
-    }    
+    renderAccuracyCard("today-accuracy", data.today);
+    renderAccuracyCard("yesterday-accuracy", data.yesterday);
+    renderAccuracyCard("overall-accuracy", data.overall);
     // Update modal counts
     const modalCorrect = document.getElementById("modal-correct-count");
-    if (modalCorrect) modalCorrect.textContent = data.correct || 0;
+    if (modalCorrect && data.overall) modalCorrect.textContent = data.overall.correct || 0;
     const modalIncorrect = document.getElementById("modal-incorrect-count");
-    if (modalIncorrect) modalIncorrect.textContent = data.incorrect || 0;
+    if (modalIncorrect && data.overall) modalIncorrect.textContent = data.overall.incorrect || 0;
   } catch (e) {
     refs.signalAccuracy.textContent = "—";
   }
