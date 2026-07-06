@@ -445,6 +445,27 @@ def api_admin_manual_evaluate():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/admin/dismiss-signal", methods=["POST"])
+def api_admin_dismiss_signal():
+    payload = request.get_json(silent=True) or {}
+    secret = payload.get("secret", "")
+    if secret != ADMIN_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    signal_id = payload.get("id")
+    if not signal_id:
+        return jsonify({"error": "Missing signal ID"}), 400
+
+    try:
+        from backend.database import supabase
+        supabase.table("signal_outcomes").update({
+            "status": "UNRESOLVABLE",
+            "outcome_1h": "Neutral"
+        }).eq("id", signal_id).execute()
+        return jsonify({"message": "Successfully dismissed signal"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/admin/evaluate-signals", methods=["POST", "GET"])
 def api_evaluate_signals():
     secret_param = request.args.get("secret", "")

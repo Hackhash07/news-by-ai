@@ -448,6 +448,7 @@ def cleanup_old_news(max_total=210, target_total=200, delete_up_to_importance=4)
             if ids_to_delete:
                 # First delete foreign key dependencies
                 supabase.table("news_votes").delete().in_("news_id", ids_to_delete).execute()
+                supabase.table("signal_outcomes").delete().in_("news_id", ids_to_delete).execute()
                 # Now delete the actual news rows
                 supabase.table("news").delete().in_("id", ids_to_delete).execute()
                 ids_deleted += len(ids_to_delete)
@@ -467,6 +468,7 @@ def cleanup_old_news(max_total=210, target_total=200, delete_up_to_importance=4)
                 hard_ids_to_delete = [row["id"] for row in res_hard_oldest.data]
                 if hard_ids_to_delete:
                     supabase.table("news_votes").delete().in_("news_id", hard_ids_to_delete).execute()
+                    supabase.table("signal_outcomes").delete().in_("news_id", hard_ids_to_delete).execute()
                     supabase.table("news").delete().in_("id", hard_ids_to_delete).execute()
                     print(f"Cleaned up {len(hard_ids_to_delete)} oldest overall articles to reach target limit.")
             

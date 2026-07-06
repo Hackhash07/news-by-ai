@@ -175,6 +175,7 @@
                   <input type="number" step="any" id="ps-${sig.id}" placeholder="Price at Signal" style="flex: 1; margin-bottom: 0;" />
                   <input type="number" step="any" id="pa-${sig.id}" placeholder="Price at Eval" style="flex: 1; margin-bottom: 0;" />
                   <button onclick="submitEval('${sig.id}')" style="width: auto; padding: 8px 16px;">Submit</button>
+                  <button onclick="dismissEval('${sig.id}')" style="width: auto; padding: 8px 16px; background: #475569; border-color: #475569;">Dismiss</button>
                 </div>
               </div>
             `;
@@ -203,6 +204,27 @@
         if (!res.ok) {
            const err = await res.json();
            throw new Error(err.error || "Failed to submit");
+        }
+        
+        document.getElementById(`sig-${id}`).remove();
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    async function dismissEval(id) {
+      const secret = document.getElementById("secret").value.trim();
+      if (!confirm("Are you sure you want to dismiss this signal? It will be marked as UNRESOLVABLE.")) return;
+      
+      try {
+        const res = await fetch("https://news-by-ai.onrender.com/api/admin/dismiss-signal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ secret, id })
+        });
+        if (!res.ok) {
+           const err = await res.json();
+           throw new Error(err.error || "Failed to dismiss");
         }
         
         document.getElementById(`sig-${id}`).remove();
