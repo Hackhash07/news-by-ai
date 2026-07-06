@@ -26,28 +26,40 @@ def get_closest_price_yfinance(yahoo_ticker: str, target_time: datetime) -> floa
         if target_time.tzinfo is None:
             target_time = target_time.replace(tzinfo=pytz.UTC)
             
-        start = target_time - timedelta(minutes=30)
-        end = target_time + timedelta(minutes=30)
+        start = int((target_time - timedelta(minutes=30)).timestamp())
+        end = int((target_time + timedelta(minutes=30)).timestamp())
         
-        hist = yf.download(yahoo_ticker, start=start, end=end, interval="5m", progress=False, auto_adjust=True)
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_ticker}?period1={start}&period2={end}&interval=5m"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        res = requests.get(url, headers=headers, timeout=10)
         
-        if hist.empty:
+        if res.status_code != 200:
+            logger.error(f"yfinance direct API failed for {yahoo_ticker}: HTTP {res.status_code}")
             return None
             
-        # Convert index to UTC timezone-aware
-        if hist.index.tzinfo is None:
-            hist.index = hist.index.tz_localize('UTC')
-        else:
-            hist.index = hist.index.tz_convert('UTC')
+        data = res.json()
+        result = data.get("chart", {}).get("result")
+        if not result:
+            return None
             
-        # Find closest index
-        time_diffs = abs(hist.index - target_time)
-        closest_idx = time_diffs.argmin()
-        closest_price = hist["Close"].iloc[closest_idx]
+        timestamps = result[0].get("timestamp", [])
+        indicators = result[0].get("indicators", {}).get("quote", [{}])[0]
+        closes = indicators.get("close", [])
         
-        # If it's a pandas series/dataframe (multi-index), extract scalar
-        if hasattr(closest_price, "item"):
-            return float(closest_price.item())
+        if not timestamps or not closes:
+            return None
+            
+        # Find closest timestamp
+        target_ts = target_time.timestamp()
+        
+        # Some closes might be None, filter them out with valid indices
+        valid_indices = [i for i, c in enumerate(closes) if c is not None]
+        if not valid_indices:
+            return None
+            
+        closest_idx = min(valid_indices, key=lambda i: abs(timestamps[i] - target_ts))
+        closest_price = closes[closest_idx]
+        
         return float(closest_price)
         
     except Exception as e:
