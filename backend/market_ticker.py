@@ -36,8 +36,17 @@ def get_ticker_data():
 
     for key, symbol in symbols.items():
         try:
-            ticker = yf.Ticker(symbol)
-            result[key] = ticker.fast_info.last_price
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1m&range=1d"
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            res = requests.get(url, headers=headers, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                meta = data.get("chart", {}).get("result", [{}])[0].get("meta", {})
+                price = meta.get("regularMarketPrice")
+                result[key] = float(price) if price is not None else None
+            else:
+                logger.error(f"Error fetching {key} ({symbol}): HTTP {res.status_code}")
+                result[key] = None
         except Exception as e:
             logger.error(f"Error fetching {key} ({symbol}): {e}")
             result[key] = None
