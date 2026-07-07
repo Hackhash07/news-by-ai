@@ -4,7 +4,7 @@ from backend.database import supabase
 from backend.market_utils import is_market_open_now, get_evaluation_time
 import logging
 import pytz
-import yfinance as yf
+
 
 logger = logging.getLogger(__name__)
 
