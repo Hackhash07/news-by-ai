@@ -189,7 +189,7 @@ def analyze_news(article, article_body=""):
             try:
                 # Instructor automatically handles retries and validation errors based on the Pydantic schema
                 analysis: NewsAnalysis = client.chat.completions.create(
-                    model="meta-llama/llama-3.3-70b-instruct:free",
+                    model="nvidia/nemotron-3-super-120b-a12b:free",
                     response_model=NewsAnalysis,
                     max_retries=2,
                     messages=[
@@ -237,7 +237,7 @@ def analyze_news_batch(articles_list):
             try:
                 from typing import List
                 analyses: List[BatchNewsAnalysisItem] = client.chat.completions.create(
-                    model="meta-llama/llama-3.3-70b-instruct:free",
+                    model="nvidia/nemotron-3-super-120b-a12b:free",
                     response_model=List[BatchNewsAnalysisItem],
                     max_retries=2,
                     messages=[
@@ -287,7 +287,7 @@ Headlines:
         for attempt in range(2):
             try:
                 analysis = client.chat.completions.create(
-                    model="meta-llama/llama-3.3-70b-instruct:free",
+                    model="nvidia/nemotron-3-super-120b-a12b:free",
                     response_model=MorningBrief,
                     max_retries=2,
                     messages=[
