@@ -31,7 +31,7 @@ def get_next_market_open(current_time: datetime) -> datetime:
         # Move to next day at 9:30 AM EST
         check_date = (check_date + timedelta(days=1)).replace(hour=9, minute=30, second=0, microsecond=0)
 
-def get_evaluation_time(ticker: str, signal_time_iso: str, hours: int = 1) -> tuple[str, str]:
+def get_evaluation_time(ticker: str, signal_time_iso: str, hours: float = 0.5) -> tuple[str, str]:
     """
     Given a ticker and signal creation time (ISO format UTC), 
     returns a tuple of (evaluation_time_iso_utc, initial_status).
