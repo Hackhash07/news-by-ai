@@ -204,7 +204,8 @@ scheduler.add_job(
     id='news_collection_job',
     name='Collect and analyze news every 30 minutes',
     replace_existing=True,
-    max_instances=1
+    max_instances=1,
+    next_run_time=datetime.now()
 )
 scheduler.add_job(
     func=fetch_and_fill_outcomes,
@@ -212,7 +213,8 @@ scheduler.add_job(
     id='outcome_tracker_job',
     name='Fetch yfinance data and fill backtest outcomes',
     replace_existing=True,
-    max_instances=1
+    max_instances=1,
+    next_run_time=datetime.now()
 )
 scheduler.start()
 
