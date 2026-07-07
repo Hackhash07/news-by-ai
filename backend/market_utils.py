@@ -61,12 +61,31 @@ def get_evaluation_time(ticker: str, signal_time_iso: str, hours: float = 0.5) -
     next_eval_time = next_open + timedelta(hours=hours)
     return next_eval_time.isoformat(), 'AWAITING_MARKET'
 
+FOREX_SUFFIXES = ('=X', '=F')
+
+def is_forex_or_futures(ticker: str) -> bool:
+    return any(ticker.upper().endswith(s) for s in FOREX_SUFFIXES)
+
 def is_market_open_now(ticker: str, target_time_iso: str) -> bool:
     """
     Check if the market was open at target_time_iso.
     We check this before querying yfinance to ensure we don't fetch if the market is closed.
     """
     if is_crypto(ticker):
+        return True
+
+    # Forex and futures trade nearly 24/5
+    if is_forex_or_futures(ticker):
+        target_time = datetime.fromisoformat(target_time_iso.replace("Z", "+00:00"))
+        if target_time.tzinfo is None:
+            target_time = target_time.replace(tzinfo=pytz.UTC)
+        # Forex closes Fri 5 PM ET to Sun 5 PM ET
+        eastern = pytz.timezone('US/Eastern')
+        target_est = target_time.astimezone(eastern)
+        if target_est.weekday() == 5:  # Saturday
+            return False
+        if target_est.weekday() == 6 and target_est.hour < 17:  # Sunday before 5 PM
+            return False
         return True
         
     target_time = datetime.fromisoformat(target_time_iso.replace("Z", "+00:00"))

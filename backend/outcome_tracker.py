@@ -77,13 +77,13 @@ def fetch_and_fill_outcomes():
     try:
         now_utc = datetime.utcnow().replace(tzinfo=pytz.UTC).isoformat()
         
-        # Pull up to 2 rows where status in PENDING, RETRY, AWAITING_MARKET and eval_time <= NOW
+        # Pull up to 10 rows where status in PENDING, RETRY, AWAITING_MARKET and eval_time <= NOW
         response = supabase.table("signal_outcomes")\
             .select("*")\
             .in_("status", ["PENDING", "RETRY", "AWAITING_MARKET"])\
             .lte("evaluation_time", now_utc)\
             .order("evaluation_time", desc=True)\
-            .limit(2)\
+            .limit(10)\
             .execute()
             
         signals = response.data
