@@ -1,4 +1,3 @@
-import pandas_market_calendars as mcal
 from datetime import datetime, timedelta
 import pytz
 
@@ -14,6 +13,24 @@ def is_crypto(ticker: str) -> bool:
         return True
     return False
 
+def get_next_market_open(current_time: datetime) -> datetime:
+    """Find the next NYSE market open (9:30 AM Eastern) after current_time."""
+    eastern = pytz.timezone('US/Eastern')
+    curr_est = current_time.astimezone(eastern)
+    
+    # Start checking from today
+    check_date = curr_est
+    
+    while True:
+        # Check if it's a weekday (0 = Monday, 4 = Friday)
+        if check_date.weekday() < 5:
+            market_open = check_date.replace(hour=9, minute=30, second=0, microsecond=0)
+            if curr_est < market_open:
+                return market_open.astimezone(pytz.UTC)
+                
+        # Move to next day at 9:30 AM EST
+        check_date = (check_date + timedelta(days=1)).replace(hour=9, minute=30, second=0, microsecond=0)
+
 def get_evaluation_time(ticker: str, signal_time_iso: str, hours: int = 1) -> tuple[str, str]:
     """
     Given a ticker and signal creation time (ISO format UTC), 
@@ -28,31 +45,21 @@ def get_evaluation_time(ticker: str, signal_time_iso: str, hours: int = 1) -> tu
     if is_crypto(ticker):
         return target_time.isoformat(), 'PENDING'
         
-    # For equities, check NYSE market hours
-    nyse = mcal.get_calendar('NYSE')
+    eastern = pytz.timezone('US/Eastern')
+    target_est = target_time.astimezone(eastern)
     
-    # Check if target_time is within market hours
-    # get schedule for a window to be safe
-    schedule = nyse.schedule(start_date=target_time.date() - timedelta(days=5), 
-                             end_date=target_time.date() + timedelta(days=5))
-                             
-    # check if target_time falls inside any of the open hours
-    for _, row in schedule.iterrows():
-        market_open = row['market_open'].to_pydatetime()
-        market_close = row['market_close'].to_pydatetime()
+    # Check if target_est is during market hours (Mon-Fri, 9:30 AM to 4:00 PM)
+    if target_est.weekday() < 5:
+        market_open = target_est.replace(hour=9, minute=30, second=0, microsecond=0)
+        market_close = target_est.replace(hour=16, minute=0, second=0, microsecond=0)
         
-        if market_open <= target_time <= market_close:
+        if market_open <= target_est <= market_close:
             return target_time.isoformat(), 'PENDING'
             
     # If not within market hours, find the *next* market open after signal_time
-    for _, row in schedule.iterrows():
-        market_open = row['market_open'].to_pydatetime()
-        if market_open > signal_time:
-            next_eval_time = market_open + timedelta(hours=hours)
-            return next_eval_time.isoformat(), 'AWAITING_MARKET'
-            
-    # Fallback just in case (e.g. holidays very far out)
-    return target_time.isoformat(), 'AWAITING_MARKET'
+    next_open = get_next_market_open(signal_time)
+    next_eval_time = next_open + timedelta(hours=hours)
+    return next_eval_time.isoformat(), 'AWAITING_MARKET'
 
 def is_market_open_now(ticker: str, target_time_iso: str) -> bool:
     """
@@ -66,14 +73,13 @@ def is_market_open_now(ticker: str, target_time_iso: str) -> bool:
     if target_time.tzinfo is None:
         target_time = target_time.replace(tzinfo=pytz.UTC)
         
-    nyse = mcal.get_calendar('NYSE')
-    schedule = nyse.schedule(start_date=target_time.date(), end_date=target_time.date())
+    eastern = pytz.timezone('US/Eastern')
+    target_est = target_time.astimezone(eastern)
     
-    if schedule.empty:
+    if target_est.weekday() >= 5:
         return False
         
-    row = schedule.iloc[0]
-    market_open = row['market_open'].to_pydatetime()
-    market_close = row['market_close'].to_pydatetime()
+    market_open = target_est.replace(hour=9, minute=30, second=0, microsecond=0)
+    market_close = target_est.replace(hour=16, minute=0, second=0, microsecond=0)
     
-    return market_open <= target_time <= market_close
+    return market_open <= target_est <= market_close

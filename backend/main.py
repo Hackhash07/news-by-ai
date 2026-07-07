@@ -603,6 +603,7 @@ def api_morning_brief():
     secret_param = request.args.get("secret", "")
     
     provided_secret = ""
+    auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         provided_secret = auth_header.split(" ")[1]
     elif secret_param:

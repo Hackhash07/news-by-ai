@@ -12,6 +12,4 @@ pydantic
 trafilatura
 apscheduler
 datasketch
-yfinance
 openai
-pandas_market_calendars
