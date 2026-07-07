@@ -84,7 +84,7 @@ def fetch_and_fill_outcomes():
             .select("*")\
             .in_("status", ["PENDING", "RETRY", "AWAITING_MARKET"])\
             .lte("evaluation_time", now_utc)\
-            .order("evaluation_time", desc=False)\
+            .order("evaluation_time", desc=True)\
             .limit(2)\
             .execute()
             
