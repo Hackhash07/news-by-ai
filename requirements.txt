@@ -13,3 +13,4 @@ trafilatura
 apscheduler
 datasketch
 openai
+gevent
