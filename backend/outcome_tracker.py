@@ -77,7 +77,7 @@ def fetch_and_fill_outcomes():
             .in_("status", ["PENDING", "RETRY", "AWAITING_MARKET"])\
             .lte("evaluation_time", now_utc)\
             .order("evaluation_time", desc=False)\
-            .limit(20)\
+            .limit(5)\
             .execute()
             
         signals = response.data
