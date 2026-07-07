@@ -981,7 +981,14 @@ function renderDashboard() {
 }
 
 // ── LOAD NEWS (Flask API on Render) ───────────────────────────────────
+let newsFetchController = null;
 async function loadNews() {
+  if (newsFetchController) {
+    newsFetchController.abort();
+  }
+  newsFetchController = new AbortController();
+  const signal = newsFetchController.signal;
+
   try {
     if (refs.lastUpdated) refs.lastUpdated.textContent = "Refreshing…";
     if (refs.refreshBtn) {
@@ -1030,7 +1037,7 @@ async function loadNews() {
 
     const targetUrl = new URL(API_URL);
     targetUrl.searchParams.set("filter", state.sortFilter);
-    const response = await fetch(targetUrl.toString(), { cache: "no-store" });
+    const response = await fetch(targetUrl.toString(), { cache: "no-store", signal });
     isFetching = false;
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
@@ -1060,6 +1067,7 @@ async function loadNews() {
         "Updated " + new Date().toLocaleTimeString("en-IN", { hour12: true });
     }
   } catch (error) {
+    if (error.name === 'AbortError') return;
     if (state.articles.length === 0) {
       // Offline fallback
       const cached = localStorage.getItem("trade_trends_cache");
