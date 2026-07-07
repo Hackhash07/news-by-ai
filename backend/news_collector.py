@@ -81,7 +81,11 @@ def rebuild_lsh_from_db():
         response = supabase.table("news").select("link, content_signature").order('created_at', desc=True).limit(500).execute()
         for row in response.data:
             if row.get("content_signature") and row.get("link"):
-                m = MinHash(num_perm=128, hashvalues=row["content_signature"])
+                try:
+                    m = MinHash(num_perm=128, hashvalues=row["content_signature"])
+                except Exception:
+                    # Fallback for datasketch >= 2.0
+                    m = MinHash(num_perm=128, hashvalues=row["content_signature"], scheme='legacy')
                 lsh.insert(row["link"], m)
         print(f"LSH index rebuilt with {len(response.data)} articles.")
         lsh_initialized = True
