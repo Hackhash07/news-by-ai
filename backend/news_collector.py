@@ -66,7 +66,11 @@ lsh = MinHashLSH(threshold=0.85, num_perm=128)
 lsh_initialized = False
 
 def get_minhash(text: str) -> MinHash:
-    m = MinHash(num_perm=128)
+    try:
+        m = MinHash(num_perm=128, scheme='legacy')
+    except TypeError:
+        m = MinHash(num_perm=128)
+        
     for word in text.lower().split():
         m.update(word.encode('utf8'))
     return m
