@@ -33,18 +33,15 @@ def get_closest_price_yfinance(yahoo_ticker: str, target_time: datetime) -> floa
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_ticker}?period1={start}&period2={end}&interval=5m"
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         try:
-            res = requests.get(url, headers=headers, timeout=10)
+            import urllib.request, json
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as res:
+                if res.status != 200:
+                    logger.error(f"yfinance direct API failed for {yahoo_ticker}: HTTP {res.status}")
+                    return None
+                data = json.loads(res.read().decode())
         except Exception as e:
             logger.error(f"yfinance direct API timed out for {yahoo_ticker}: {e}")
-            return None
-        
-        if res.status_code != 200:
-            logger.error(f"yfinance direct API failed for {yahoo_ticker}: HTTP {res.status_code}")
-            return None
-            
-        try:
-            data = res.json()
-        except Exception:
             return None
         result = data.get("chart", {}).get("result")
         if not result:
