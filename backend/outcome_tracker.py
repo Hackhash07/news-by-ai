@@ -19,7 +19,7 @@ SKIP_TICKERS = {
     "ASOS.L", "DJT", "UAL", "IBIT",
     "EUROBANKS=F", "UK10Y=RR", "DXY", "DX-Y.NYB",
     "^TNX", "^IRX", "^TYX", "^FVX", "^VIX", "IT=F", "EXSZ.DE",
-    "RHM.DE", "DX-Y.N"
+    "RHM.DE", "DX-Y.N", "SX8P", "SXPP"
 }
 
 def get_closest_price_yfinance(yahoo_ticker: str, target_time: datetime) -> float | None:
