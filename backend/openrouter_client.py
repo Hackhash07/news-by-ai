@@ -346,7 +346,10 @@ def call_gemini_fallback(system_prompt, content_payload, response_model):
                 break
             except Exception as loop_e:
                 last_error = loop_e
-                if "404" in str(loop_e) or "not found" in str(loop_e).lower() or "not supported" in str(loop_e).lower():
+                err_str = str(loop_e).lower()
+                if "404" in err_str or "not found" in err_str or "not supported" in err_str:
+                    continue
+                elif "429" in err_str or "quota" in err_str or "exhausted" in err_str:
                     continue
                 else:
                     raise loop_e
