@@ -17,7 +17,7 @@ def get_ticker_data():
     
     # USD/INR
     try:
-        req = urllib.request.Request("https://api.frankfurter.app/latest?from=USD&to=INR")
+        req = urllib.request.Request("https://api.frankfurter.app/latest?from=USD&to=INR", headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
         with urllib.request.urlopen(req, timeout=5) as res:
             data = json.loads(res.read().decode())
             result["USDINR"] = data["rates"]["INR"]
