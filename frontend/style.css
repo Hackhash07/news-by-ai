@@ -231,6 +231,19 @@ input {
   color: #f4d88a;
 }
 
+.nav-badge {
+  background-color: rgba(244, 216, 138, 0.15);
+  color: #f4d88a;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1px solid rgba(244, 216, 138, 0.3);
+}
+
 .nav-right {
   display: flex;
   align-items: center;

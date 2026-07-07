@@ -990,6 +990,31 @@ async function loadNews() {
     }
 
     let isFetching = true;
+
+    // Immediately show skeleton loaders if container is empty
+    if (state.articles.length === 0 && refs.newsContainer) {
+      refs.newsContainer.innerHTML = Array(4).fill(`
+        <article class="news-card">
+            <div class="card-header" style="justify-content: flex-start; gap: 8px;">
+                <div class="skeleton skeleton-tag"></div>
+                <div class="skeleton skeleton-tag" style="width:100px;"></div>
+            </div>
+            <div class="card-body">
+                <div class="skeleton skeleton-text title" style="width: 80%"></div>
+                <div class="skeleton skeleton-text title" style="width: 60%"></div>
+                <div style="margin-top: 16px;">
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text" style="width: 90%"></div>
+                    <div class="skeleton skeleton-text" style="width: 40%"></div>
+                </div>
+            </div>
+            <div class="card-footer" style="margin-top:auto;">
+                <div class="skeleton skeleton-text" style="width: 80px; margin:0;"></div>
+            </div>
+        </article>
+      `).join('');
+    }
+
     setTimeout(() => {
       if (isFetching && refs.heroTitle && state.articles.length === 0) {
         refs.heroTitle.textContent = "Market Intelligence Pending";
@@ -1011,6 +1036,7 @@ async function loadNews() {
 
     const data = await response.json();
     localStorage.setItem("trade_trends_cache", JSON.stringify(data));
+    localStorage.setItem("trade_trends_cache_time", Date.now().toString());
     state.articles = data.map(normalizeArticle);
 
     if (refs.heroTitle) refs.heroTitle.className = "hero-title";
@@ -1035,6 +1061,25 @@ async function loadNews() {
     }
   } catch (error) {
     if (state.articles.length === 0) {
+      // Offline fallback
+      const cached = localStorage.getItem("trade_trends_cache");
+      const cachedTimestamp = localStorage.getItem("trade_trends_cache_time");
+      if (cached && cachedTimestamp) {
+        try {
+          const data = JSON.parse(cached);
+          state.articles = data.map(normalizeArticle);
+          renderFilters();
+          renderDashboard();
+          const timeAgo = formatTimeAgo(parseInt(cachedTimestamp));
+          if (refs.lastUpdated) {
+            refs.lastUpdated.innerHTML = `<span style="color:#f4d88a;"><span class="market-dot" style="background:#f4d88a;"></span> Showing cached data from ${timeAgo}</span>`;
+          }
+          return;
+        } catch (e) {
+          console.error("Cache parsing failed:", e);
+        }
+      }
+
       if (refs.lastUpdated) refs.lastUpdated.textContent = "Load failed";
       if (refs.newsContainer) {
         refs.newsContainer.innerHTML = `<div class="empty-state"><strong>Unable to load feed</strong> Check that the API is running, then refresh.</div>`;
@@ -1049,6 +1094,15 @@ async function loadNews() {
 }
 
 // ── UTIL ──────────────────────────────────────────────────────────────
+function formatTimeAgo(timestamp) {
+  const diffMs = Date.now() - timestamp;
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return `${Math.floor(diffHours / 24)}d ago`;
+}
+
 function escapeHtml(str) {
   if (str === null || str === undefined) return "";
   return String(str)
@@ -1105,6 +1159,24 @@ async function updateTickerBar() {
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const data = await res.json();
     
+    localStorage.setItem("trade_trends_ticker_cache", JSON.stringify(data));
+    
+    renderTickerData(data);
+  } catch (err) {
+    console.error("Failed to fetch market ticker, using cache if available", err);
+    const cached = localStorage.getItem("trade_trends_ticker_cache");
+    if (cached) {
+      try {
+        const data = JSON.parse(cached);
+        renderTickerData(data);
+      } catch (e) {
+        console.error("Ticker cache parse error", e);
+      }
+    }
+  }
+}
+
+function renderTickerData(data) {
     const formats = {
       USDINR: { prefix: "₹", suffix: "" },
       GOLD: { prefix: "$", suffix: "/oz" },
@@ -1160,10 +1232,6 @@ async function updateTickerBar() {
       
       prevTicker[key] = numVal;
     });
-    
-  } catch (err) {
-    console.warn('Ticker update failed:', err);
-  }
 }
 
 // ── AUTHENTICATION ──────────────────────────────────────────────────
